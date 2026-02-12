@@ -98,7 +98,6 @@ const initDatabase = async () => {
                 CONSTRAINT fk_user_updatedby FOREIGN KEY (Updated_by) REFERENCES users(Userid) ON DELETE SET NULL
             )
         `);
-
     // 4) Student Details - Stores detailed student information
     await connection.execute(`
             CREATE TABLE IF NOT EXISTS student_details (
