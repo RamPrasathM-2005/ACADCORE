@@ -1,7 +1,7 @@
 // pages/ForgotPassword.jsx
 import { useNavigate } from "react-router-dom";
 import { useState } from "react";
-import API from "../api";
+import API from "../../api";
 import { toast } from "react-toastify";
 
 export default function ForgotPassword() {

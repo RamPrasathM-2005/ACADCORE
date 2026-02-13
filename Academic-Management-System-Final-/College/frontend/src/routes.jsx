@@ -64,17 +64,32 @@ import StudentCourseMapping from "./pages/admin/StudentCourseMapping.jsx";
 
 // ProtectedRoute
 const ProtectedRoute = ({ children, role }) => {
-  if (!isAuthenticated()) {
+  const { user, loading } = useAuth();
+
+  // Show nothing or a spinner while the refresh() function is checking the token
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  // If no user is found in context, go to login
+  if (!user) {
     return <Navigate to="/login" replace />;
   }
 
-  if (role && getUserRole() !== role.toLowerCase()) {
+  // Check roles (Context stores roles as lowercase usually)
+  const userRole = user.role?.toLowerCase();
+  const requiredRole = role?.toLowerCase();
+
+  if (requiredRole && userRole !== requiredRole) {
     return <Navigate to="/login" replace />;
   }
 
   return children;
 };
-
 const routes = [
   { path: "/", element: <Navigate to="/login" replace /> },
   { path: "/login", element: <Login /> },

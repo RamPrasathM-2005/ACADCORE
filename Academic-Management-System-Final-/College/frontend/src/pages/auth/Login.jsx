@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Lock, Eye, EyeOff, Mail } from "lucide-react";
 import { GoogleLogin } from "@react-oauth/google";
 import { toast, ToastContainer } from "react-toastify";
-import { useAuth } from "../../auth/AuthContext"; 
+import { useAuth } from "./AuthContext"; 
 import API from "../../api"; 
 
 const InputField = ({ label, type = "text", icon: Icon, value, onChange, placeholder, showPassword, setShowPassword }) => (

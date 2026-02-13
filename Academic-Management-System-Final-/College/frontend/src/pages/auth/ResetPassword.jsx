@@ -1,7 +1,7 @@
 // pages/ResetPassword.jsx
 import { useNavigate, useParams } from "react-router-dom";
 import { useState } from "react";
-import API from "../api";
+import API from "../../api";
 import { toast } from "react-toastify";
 
 export default function ResetPassword() {
