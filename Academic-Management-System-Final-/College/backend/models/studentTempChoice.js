@@ -1,5 +1,5 @@
 // models/studentTempChoice.js
-module.exports = (sequelize, DataTypes) => {
+export default (sequelize, DataTypes) => {
   const studentTempChoice = sequelize.define('studentTempChoice', {
     choiceId: { type: DataTypes.BIGINT, primaryKey: true, autoIncrement: true },
     regno: { type: DataTypes.STRING(20), allowNull: false },
@@ -16,7 +16,7 @@ module.exports = (sequelize, DataTypes) => {
   }, { tableName: 'student_temp_choice', timestamps: true });
 
   studentTempChoice.associate = (models) => {
-    studentTempChoice.belongsTo(models.StudentDetails, { foreignKey: 'regno' });
+    studentTempChoice.belongsTo(models.StudentDetails, { foreignKey: 'regno', targetKey: 'registerNumber'});
     studentTempChoice.belongsTo(models.CBCS, { foreignKey: 'cbcs_id' });
     studentTempChoice.belongsTo(models.Course, { foreignKey: 'courseId' });
     studentTempChoice.belongsTo(models.Section, { foreignKey: 'preferred_sectionId' });

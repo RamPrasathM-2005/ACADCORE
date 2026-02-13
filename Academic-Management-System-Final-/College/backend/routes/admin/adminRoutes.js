@@ -91,17 +91,19 @@ import {
   getAvailableCoursesForVertical,
   allocateCoursesToVertical,
   allocateRegulationToBatch,
-  getCoursesByVertical, // Added this import
-  getElectivesForSemester, // Added this import
+  getCoursesByVertical, 
+  getElectivesForSemester, 
 } from "../../controllers/regulationController.js";
-import { protect } from "../../controllers/auth/authController.js";
+
+// FIXED IMPORT: Changed 'protect' to 'requireAuth'
+import { requireAuth } from "../../middleware/requireAuth.js";
+
 import { getStudentEnrollments } from "../../controllers/studentEnrollmentViewController.js";
 import { getElectiveSelections } from "../../controllers/studentpageController.js";
 import { getCOsForCourseAdmin, getStudentCOMarksAdmin, updateStudentCOMarkAdmin } from "../../controllers/markController.js";
 import multer from 'multer';
 import { uploadGrades, viewGPA, viewCGPA } from '../../controllers/gradeController.js';
 import { getStudentsForGrade } from '../../controllers/gradeController.js';
-
 
 import {
   addNptelCourse,
@@ -111,179 +113,146 @@ import {
   deleteNptelCourse,
   getPendingNptelTransfers,
   approveRejectTransfer
-
 } from "../../controllers/nptelCourseController.js";
 
-
 const upload = multer({ dest: 'tmp/' });
-
 const router = express.Router();
 
-// Base API: http://localhost:4000/api/admin
+/* =========================
+📌 Semester Routes
+========================= */
+router.route("/semesters").post(requireAuth, addSemester).get(requireAuth, getAllSemesters);
+router.get("/semesters/search", requireAuth, getSemester);
+router.get("/semesters/by-batch-branch", requireAuth, getSemestersByBatchBranch);
+router.route("/semesters/:semesterId").put(requireAuth, updateSemester).delete(requireAuth, deleteSemester);
 
 /* =========================
-   📌 Semester Routes
-   ========================= */
-router.route("/semesters").post(protect, addSemester).get(protect, getAllSemesters);
-router.get("/semesters/search", protect, getSemester);
-router.get("/semesters/by-batch-branch", protect, getSemestersByBatchBranch);
-router.route("/semesters/:semesterId").put(protect, updateSemester).delete(protect, deleteSemester);
+📌 Course Routes
+========================= */
+router.route("/semesters/:semesterId/courses").post(requireAuth, addCourse).get(requireAuth, getCourseBySemester);
+router.route("/courses").get(requireAuth, getAllCourse).post(requireAuth, importCourses);
+router.route("/courses/:courseId").put(requireAuth, updateCourse).delete(requireAuth, deleteCourse);
 
 /* =========================
-   📌 Course Routes
-   ========================= */
-router
-  .route("/semesters/:semesterId/courses")
-  .post(protect, addCourse)
-  .get(protect, getCourseBySemester);
-
-router
-  .route("/courses")
-  .get(protect, getAllCourse)
-  .post(protect, importCourses);
-
-router
-  .route("/courses/:courseId")
-  .put(protect, updateCourse)
-  .delete(protect, deleteCourse);
+📌 Staff-Course Allocation Routes
+========================= */
+router.get("/users", requireAuth, getUsers);
+router.post("/courses/:courseId/staff", requireAuth, allocateStaffToCourse);
+router.post("/staff/:Userid/courses", requireAuth, allocateCourseToStaff);
+router.put("/staff-courses/:staffCourseId", requireAuth, updateStaffAllocation);
+router.patch("/staff-courses/:staffCourseId", requireAuth, updateStaffCourseBatch);
+router.get("/courses/:courseId/staff", requireAuth, getStaffAllocationsByCourse);
+router.get("/staff/:Userid/courses", requireAuth, getCourseAllocationsByStaff);
+router.delete("/staff-courses/:staffCourseId", requireAuth, deleteStaffAllocation);
+router.get("/staff/:Userid/courses-enhanced", requireAuth, getCourseAllocationsByStaffEnhanced);
 
 /* =========================
-   📌 Staff-Course Allocation Routes
-   ========================= */
-router.get("/users", protect, getUsers);
-router.post("/courses/:courseId/staff", protect, allocateStaffToCourse);
-router.post("/staff/:Userid/courses", protect, allocateCourseToStaff);
-router.put("/staff-courses/:staffCourseId", protect, updateStaffAllocation);
-router.patch("/staff-courses/:staffCourseId", protect, updateStaffCourseBatch);
-router.get("/courses/:courseId/staff", protect, getStaffAllocationsByCourse);
-router.get("/staff/:Userid/courses", protect, getCourseAllocationsByStaff);
-router.delete("/staff-courses/:staffCourseId", protect, deleteStaffAllocation);
-router.get("/staff/:Userid/courses-enhanced", protect, getCourseAllocationsByStaffEnhanced);
+📌 Student Allocation Routes
+========================= */
+router.get("/students/search", requireAuth, searchStudents);
+router.get("/courses/available/:semesterNumber", requireAuth, getAvailableCourses);
+router.post("/students/enroll", requireAuth, enrollStudentInCourse);
+router.put("/students/:rollNumber/batch", requireAuth, updateStudentBatch);
+router.get("/courses/available/:batchId/:semesterNumber", requireAuth, getAvailableCoursesForBatch);
+router.delete("/students/unenroll", requireAuth, unenrollStudentFromCourse);
 
 /* =========================
-   📌 Student Allocation Routes
-   ========================= */
-router.get("/students/search", protect, searchStudents);
-router.get("/courses/available/:semesterNumber", protect, getAvailableCourses);
-router.post("/students/enroll", protect, enrollStudentInCourse);
-router.put("/students/:rollNumber/batch", protect, updateStudentBatch);
-router.get("/courses/available/:batchId/:semesterNumber", protect, getAvailableCoursesForBatch);
-router.delete("/students/unenroll", protect, unenrollStudentFromCourse);
+📌 Section Routes
+========================= */
+router.get("/sections", requireAuth, getSections);
+router.get("/courses/:courseId/sections", requireAuth, getSectionsForCourse);
+router.post("/courses/:courseId/sections", requireAuth, addSectionsToCourse);
+router.put("/courses/:courseId/sections", requireAuth, updateSectionsForCourse);
+router.delete("/courses/:courseId/sections/:sectionName", requireAuth, deleteSection);
 
 /* =========================
-   📌 Section Routes
-   ========================= */
-router.get("/sections", protect, getSections);
-router.get("/courses/:courseId/sections", protect, getSectionsForCourse);
-router.post("/courses/:courseId/sections", protect, addSectionsToCourse);
-router.put("/courses/:courseId/sections", protect, updateSectionsForCourse);
-router.delete("/courses/:courseId/sections/:sectionName", protect, deleteSection);
+📌 Student Routes
+========================= */
+router.route("/students").post(requireAuth, addStudent).get(requireAuth, getAllStudents);
+router.get("/students/branches", requireAuth, getBranches);
+router.get("/students/semesters", requireAuth, getSemesters);
+router.get("/students/batches", requireAuth, getBatches);
+router.get("/students/enrolled-courses", requireAuth, getStudentsByCourseAndSection);
+router.route("/students/:rollNumber").get(requireAuth, getStudentByRollNumber).put(requireAuth, updateStudent).delete(requireAuth, deleteStudent);
+router.get("/students/:rollNumber/enrolled-courses", requireAuth, getStudentEnrolledCourses);
 
 /* =========================
-   📌 Student Routes
-   ========================= */
-router.route("/students").post(protect, addStudent).get(protect, getAllStudents);
-router.get("/students/branches", protect, getBranches);
-router.get("/students/semesters", protect, getSemesters);
-router.get("/students/batches", protect, getBatches);
-router.get("/students/enrolled-courses", protect, getStudentsByCourseAndSection);
-router
-  .route("/students/:rollNumber")
-  .get(protect, getStudentByRollNumber)
-  .put(protect, updateStudent)
-  .delete(protect, deleteStudent);
-router.get("/students/:rollNumber/enrolled-courses", protect, getStudentEnrolledCourses);
+📌 Batch Routes
+========================= */
+router.get("/batches/find", requireAuth, getBatchByDetails);
+router.route("/batches").get(requireAuth, getAllBatches).post(requireAuth, createBatch);
+router.route("/batches/:batchId").get(requireAuth, getBatchById).put(requireAuth, updateBatch).delete(requireAuth, deleteBatch);
 
 /* =========================
-   📌 Batch Routes
-   ========================= */
-router.get("/batches/find", protect, getBatchByDetails);
-router.route("/batches").get(protect, getAllBatches).post(protect, createBatch);
-router
-  .route("/batches/:batchId")
-  .get(protect, getBatchById)
-  .put(protect, updateBatch)
-  .delete(protect, deleteBatch);
+📌 Timetable Routes
+========================= */
+router.get("/timetable/batches", requireAuth, getAllTimetableBatches);
+router.get("/timetable/departments", requireAuth, getAllTimetableDepartments);
+router.get("/timetable/by-filters", requireAuth, getTimetableByFilters);
+router.get("/timetable/semester/:semesterId", requireAuth, getTimetable);
+router.post("/timetable/entry", requireAuth, createTimetableEntry);
+router.put("/timetable/entry/:timetableId", requireAuth, updateTimetableEntry);
+router.delete("/timetable/entry/:timetableId", requireAuth, deleteTimetableEntry);
+router.get("/elective-buckets/:semesterId", requireAuth, getElectiveBucketsBySemester);
+router.get("/bucket-courses/:bucketId", requireAuth, getCoursesInBucket);
 
 /* =========================
-   📌 Timetable Routes
-   ========================= */
-router.get("/timetable/batches", protect, getAllTimetableBatches);
-router.get("/timetable/departments", protect, getAllTimetableDepartments);
-router.get("/timetable/by-filters", protect, getTimetableByFilters);
-router.get("/timetable/semester/:semesterId", protect, getTimetable);
-router.post("/timetable/entry", protect, createTimetableEntry);
-router.put("/timetable/entry/:timetableId", protect, updateTimetableEntry);
-router.delete("/timetable/entry/:timetableId", protect, deleteTimetableEntry);
-router.get("/elective-buckets/:semesterId", getElectiveBucketsBySemester);
-router.get("/bucket-courses/:bucketId", getCoursesInBucket);
-/* =========================
-   📌 Elective Bucket Routes
-   ========================= */
-router.get("/semesters/:semesterId/buckets", protect, getElectiveBuckets);
-router.post("/semesters/:semesterId/buckets", protect, createElectiveBucket);
-router.put("/buckets/:bucketId", protect, updateElectiveBucketName);
-router.post("/buckets/:bucketId/courses", protect, addCoursesToBucket);
-router.delete("/buckets/:bucketId", protect, deleteElectiveBucket);
-router.delete("/buckets/:bucketId/courses/:courseId", protect, removeCourseFromBucket);
-router.get('/regulations/:regulationId/electives/:semesterNumber', protect, getElectivesForSemester);
+📌 Elective Bucket Routes
+========================= */
+router.get("/semesters/:semesterId/buckets", requireAuth, getElectiveBuckets);
+router.post("/semesters/:semesterId/buckets", requireAuth, createElectiveBucket);
+router.put("/buckets/:bucketId", requireAuth, updateElectiveBucketName);
+router.post("/buckets/:bucketId/courses", requireAuth, addCoursesToBucket);
+router.delete("/buckets/:bucketId", requireAuth, deleteElectiveBucket);
+router.delete("/buckets/:bucketId/courses/:courseId", requireAuth, removeCourseFromBucket);
+router.get('/regulations/:regulationId/electives/:semesterNumber', requireAuth, getElectivesForSemester);
 
 /* =========================
-   📌 Consolidated Marks Routes
-   ========================= */
-router.get("/consolidated-marks", protect, getConsolidatedMarks);
+📌 Consolidated Marks Routes
+========================= */
+router.get("/consolidated-marks", requireAuth, getConsolidatedMarks);
 
 /* =========================
-   📌 Regulation Routes
-   ========================= */
-router.route('/regulations').get(protect, getAllRegulations);
-router.route('/regulations/courses').post(protect, importRegulationCourses);
-router.route('/regulations/verticals').post(protect, createVertical);
-router.route('/regulations/:regulationId/verticals').get(protect, getVerticalsByRegulation);
-router.route('/regulations/:regulationId/courses/available').get(protect, getAvailableCoursesForVertical);
-router.route('/regulations/verticals/courses').post(protect, allocateCoursesToVertical);
-router.route('/regulations/verticals/:verticalId/courses').get(protect, getCoursesByVertical); // Added this route
-router.route('/regulations/allocate-to-batch').post(protect, allocateRegulationToBatch); // Added this route
+📌 Regulation Routes
+========================= */
+router.route('/regulations').get(requireAuth, getAllRegulations);
+router.route('/regulations/courses').post(requireAuth, importRegulationCourses);
+router.route('/regulations/verticals').post(requireAuth, createVertical);
+router.route('/regulations/:regulationId/verticals').get(requireAuth, getVerticalsByRegulation);
+router.route('/regulations/:regulationId/courses/available').get(requireAuth, getAvailableCoursesForVertical);
+router.route('/regulations/verticals/courses').post(requireAuth, allocateCoursesToVertical);
+router.route('/regulations/verticals/:verticalId/courses').get(requireAuth, getCoursesByVertical);
+router.route('/regulations/allocate-to-batch').post(requireAuth, allocateRegulationToBatch);
 
+router.get("/enrollments/view", requireAuth, getStudentEnrollments);
 
+router.get("/admin-marks/cos/:courseCode", requireAuth, getCOsForCourseAdmin);
+router.get("/admin-marks/marks/co/:courseCode", requireAuth, getStudentCOMarksAdmin);
+router.put("/admin-marks/marks/co/:regno/:coId", requireAuth, updateStudentCOMarkAdmin);
+router.get('/export/course/:courseCode', requireAuth, exportCourseWiseCsvAdmin);
 
+router.get("/elective-selections", requireAuth, getElectiveSelections);
 
-router.get("/enrollments/view", protect, getStudentEnrollments);
-
-
-router.get("/admin-marks/cos/:courseCode", protect, getCOsForCourseAdmin);
-router.get("/admin-marks/marks/co/:courseCode", protect, getStudentCOMarksAdmin);
-router.put("/admin-marks/marks/co/:regno/:coId", protect, updateStudentCOMarkAdmin);
-router.get('/export/course/:courseCode', protect, exportCourseWiseCsvAdmin);
-
-
-router.get("/elective-selections", getElectiveSelections);
-
-router.post('/grades/import', protect, upload.single('file'), uploadGrades);
-router.get('/grades/gpa', protect, viewGPA);     
-router.get('/grades/cgpa', protect, viewCGPA);       
-router.get('/grades/students-grade', protect, getStudentsForGrade);
-
-
-
+router.post('/grades/import', requireAuth, upload.single('file'), uploadGrades);
+router.get('/grades/gpa', requireAuth, viewGPA);
+router.get('/grades/cgpa', requireAuth, viewCGPA);
+router.get('/grades/students-grade', requireAuth, getStudentsForGrade);
 
 /* =========================
-   📌 NPTEL Course Routes
-   ========================= */
+📌 NPTEL Course Routes
+========================= */
 router.route("/nptel-courses")
-  .post(protect, addNptelCourse)
-  .get(protect, getAllNptelCourses);
+  .post(requireAuth, addNptelCourse)
+  .get(requireAuth, getAllNptelCourses);
 
 router.route("/nptel-courses/bulk")
-  .post(protect, bulkAddNptelCourses);
+  .post(requireAuth, bulkAddNptelCourses);
 
 router.route("/nptel-courses/:nptelCourseId")
-  .put(protect, updateNptelCourse)
-  .delete(protect, deleteNptelCourse);
+  .put(requireAuth, updateNptelCourse)
+  .delete(requireAuth, deleteNptelCourse);
 
-
-router.get("/nptel-credit-transfers", protect, getPendingNptelTransfers);
-router.post("/nptel-credit-transfer-action", protect, approveRejectTransfer);
-
+router.get("/nptel-credit-transfers", requireAuth, getPendingNptelTransfers);
+router.post("/nptel-credit-transfer-action", requireAuth, approveRejectTransfer);
 
 export default router;

@@ -1,5 +1,5 @@
 // models/batch.js
-module.exports = (sequelize, DataTypes) => {
+export default (sequelize, DataTypes) => {
   const Batch = sequelize.define('Batch', {
     batchId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     degree: { type: DataTypes.STRING(50), allowNull: false },
@@ -10,7 +10,12 @@ module.exports = (sequelize, DataTypes) => {
     isActive: { type: DataTypes.ENUM('YES', 'NO'), defaultValue: 'YES' },
     createdBy: { type: DataTypes.STRING(150) },
     updatedBy: { type: DataTypes.STRING(150) },
-  }, { tableName: 'Batch', timestamps: true, createdAt: 'createdDate', updatedAt: 'updatedDate' });
+  }, { 
+    tableName: 'Batch', 
+    timestamps: true, 
+    createdAt: 'createdDate', 
+    updatedAt: 'updatedDate' 
+  });
 
   Batch.associate = (models) => {
     Batch.belongsTo(models.Regulation, { foreignKey: 'regulationId' });

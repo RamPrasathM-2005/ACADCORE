@@ -1,10 +1,14 @@
-import pool from "../db.js";
+// controllers/sectionController.js
+import db from "../models/index.js";
 import catchAsync from "../utils/catchAsync.js";
+import { Op } from "sequelize";
+
+const { sequelize, Section, Course, User, StaffCourse, Semester, Batch, DepartmentAcademic } = db;
 
 export const addSectionsToCourse = catchAsync(async (req, res) => {
   const { courseId } = req.params;
   const { numberOfSections } = req.body;
-  const userEmail = req.user?.email || 'admin';
+  const userName = req.user?.userName || 'admin';
 
   if (!courseId || !numberOfSections || isNaN(numberOfSections) || numberOfSections < 1) {
     return res.status(400).json({
@@ -13,451 +17,226 @@ export const addSectionsToCourse = catchAsync(async (req, res) => {
     });
   }
 
-  const connection = await pool.getConnection();
+  const transaction = await sequelize.transaction();
+
   try {
-    await connection.beginTransaction();
-
-    // Validate user email
-    const [userCheck] = await connection.execute(
-      'SELECT Userid FROM users WHERE email = ? AND status = "active"',
-      [userEmail]
-    );
-    if (userCheck.length === 0) {
-      return res.status(400).json({
-        status: 'failure',
-        message: `No active user found with email ${userEmail}`,
-      });
+    // 1. Validate course
+    const course = await Course.findOne({ 
+      where: { courseId, isActive: 'YES' },
+      transaction 
+    });
+    if (!course) {
+      throw new Error(`No active course found with courseId ${courseId}`);
     }
 
-    // Validate course
-    const [courseRows] = await connection.execute(
-      `SELECT courseId, courseCode FROM Course WHERE courseId = ? AND isActive = 'YES'`,
-      [courseId]
-    );
-    if (courseRows.length === 0) {
-      return res.status(404).json({
-        status: 'failure',
-        message: `No active course found with courseId ${courseId}`,
-      });
-    }
-    const courseCode = courseRows[0].courseCode;
+    // 2. Find the current maximum Batch number (SQL: Batch 1, Batch 2...)
+    // We use a literal replacement for the SUBSTRING logic
+    const maxSection = await Section.findOne({
+      attributes: [
+        [sequelize.literal("MAX(CAST(SUBSTRING(sectionName, 7) AS UNSIGNED))"), "maxNum"]
+      ],
+      where: { 
+        courseId, 
+        sectionName: { [Op.like]: 'Batch %' } 
+      },
+      transaction,
+      raw: true
+    });
 
-    // Find the current maximum Batch number among active sections
-    const [maxRows] = await connection.execute(
-      `SELECT MAX(CAST(SUBSTRING(sectionName, 6) AS UNSIGNED)) as maxNum 
-       FROM Section 
-       WHERE courseId = ? AND sectionName LIKE 'Batch%' AND isActive = 'YES'`,
-      [courseId]
-    );
-    const currentMax = maxRows[0].maxNum || 0;
-
-    const sectionsToAdd = [];
-    const sectionsToUpdate = [];
-    let newSectionsAdded = 0;
-    let sectionsUpdated = 0;
+    const currentMax = maxSection?.maxNum || 0;
+    const sectionsAdded = [];
+    const sectionsReactivated = [];
 
     for (let i = 1; i <= numberOfSections; i++) {
       const sectionNum = currentMax + i;
       const sectionName = `Batch ${sectionNum}`;
 
-      // Check for existing section (active or inactive)
-      const [existingSection] = await connection.execute(
-        `SELECT sectionId, isActive FROM Section WHERE courseId = ? AND sectionName = ?`,
-        [courseId, sectionName]
-      );
+      // 3. Find or Create logic manually to handle reactivation
+      const [section, created] = await Section.findOrCreate({
+        where: { courseId, sectionName },
+        defaults: {
+          courseId,
+          sectionName,
+          isActive: 'YES',
+          createdBy: userName,
+          updatedBy: userName
+        },
+        transaction
+      });
 
-      if (existingSection.length > 0) {
-        if (existingSection[0].isActive === 'YES') {
-          continue; // Skip to avoid duplicate active sections
-        } else {
-          // Inactive section exists, mark for update
-          sectionsToUpdate.push([userEmail, existingSection[0].sectionId, sectionName]);
-          sectionsUpdated++;
-        }
-      } else {
-        // No section exists, mark for insert
-        sectionsToAdd.push([courseId, sectionName, userEmail, userEmail]);
-        newSectionsAdded++;
+      if (!created && section.isActive === 'NO') {
+        // Reactivate
+        await section.update({ 
+            isActive: 'YES', 
+            updatedBy: userName 
+        }, { transaction });
+        sectionsReactivated.push(sectionName);
+      } else if (created) {
+        sectionsAdded.push(sectionName);
       }
     }
 
-    // Update inactive sections
-    if (sectionsToUpdate.length > 0) {
-      for (const [updatedBy, sectionId, sectionName] of sectionsToUpdate) {
-        const [updateResult] = await connection.execute(
-          `UPDATE Section 
-           SET isActive = 'YES', updatedBy = ?, updatedDate = CURRENT_TIMESTAMP
-           WHERE sectionId = ?`,
-          [updatedBy, sectionId]
-        );
-        if (updateResult.affectedRows === 0) {
-          throw new Error(`Failed to update section ${sectionName}`);
-        }
-      }
-    }
-
-    // Insert new sections
-    if (sectionsToAdd.length > 0) {
-      const placeholders = sectionsToAdd.map(() => "(?, ?, ?, ?)").join(",");
-      const query = `
-        INSERT INTO Section (courseId, sectionName, createdBy, updatedBy)
-        VALUES ${placeholders}
-      `;
-      const values = sectionsToAdd.flat();
-      await connection.execute(query, values);
-    }
-
-    await connection.commit();
+    await transaction.commit();
     res.status(201).json({
       status: 'success',
-      message: `${newSectionsAdded} new section(s) added and ${sectionsUpdated} section(s) reactivated for course ${courseCode}`,
-      data: [
-        ...sectionsToAdd.map(([_, sectionName]) => ({ sectionName })),
-        ...sectionsToUpdate.map(([_, __, sectionName]) => ({ sectionName })),
-      ],
+      message: `${sectionsAdded.length} new section(s) added and ${sectionsReactivated.length} section(s) reactivated for course ${course.courseCode}`,
+      data: { added: sectionsAdded, reactivated: sectionsReactivated }
     });
   } catch (err) {
-    await connection.rollback();
-    console.error('Error adding sections:', err.message, err.stack);
-    res.status(500).json({
-      status: 'failure',
-      message: `Failed to add sections: ${err.message}`,
-    });
-  } finally {
-    connection.release();
+    await transaction.rollback();
+    res.status(500).json({ status: 'failure', message: err.message });
   }
 });
 
 export const getSectionsForCourse = catchAsync(async (req, res) => {
   const { courseId } = req.params;
 
-  const connection = await pool.getConnection();
-  try {
-    const [sectionRows] = await connection.execute(
-      `SELECT sectionId, sectionName, c.courseCode 
-       FROM Section s 
-       JOIN Course c ON s.courseId = c.courseId 
-       WHERE s.courseId = ? AND s.isActive = 'YES'`,
-      [courseId]
-    );
-    res.status(200).json({
-      status: 'success',
-      data: sectionRows.map(row => ({ sectionId: row.sectionId, sectionName: row.sectionName, courseCode: row.courseCode })),
-    });
-  } catch (err) {
-    console.error('Error fetching sections:', err);
-    res.status(500).json({ status: 'failure', message: 'Failed to fetch sections' });
-  } finally {
-    connection.release();
-  }
+  const sections = await Section.findAll({
+    where: { courseId, isActive: 'YES' },
+    include: [{
+      model: Course,
+      attributes: ['courseCode']
+    }]
+  });
+
+  res.status(200).json({
+    status: 'success',
+    data: sections.map(s => ({
+      sectionId: s.sectionId,
+      sectionName: s.sectionName,
+      courseCode: s.Course?.courseCode
+    })),
+  });
 });
 
 export const updateSectionsForCourse = catchAsync(async (req, res) => {
   const { courseId } = req.params;
-  const { sections } = req.body;
-  const userEmail = req.user?.email || 'admin';
+  const { sections } = req.body; // Array of { sectionId, sectionName, isActive }
+  const userName = req.user?.userName || 'admin';
 
-  if (!courseId || !sections || !Array.isArray(sections)) {
-    return res.status(400).json({
-      status: 'failure',
-      message: 'courseId and an array of sections are required',
-    });
-  }
-
-  const connection = await pool.getConnection();
+  const transaction = await sequelize.transaction();
   try {
-    await connection.beginTransaction();
-
-    // Validate user email
-    const [userCheck] = await connection.execute(
-      'SELECT Userid FROM users WHERE email = ? AND status = "active"',
-      [userEmail]
-    );
-    if (userCheck.length === 0) {
-      return res.status(400).json({
-        status: 'failure',
-        message: `No active user found with email ${userEmail}`,
+    for (const item of sections) {
+      const { sectionId, sectionName, isActive } = item;
+      
+      const section = await Section.findOne({
+        where: { sectionId, courseId },
+        transaction
       });
-    }
 
-    // Validate course
-    const [courseRows] = await connection.execute(
-      `SELECT courseId, courseCode FROM Course WHERE courseId = ? AND isActive = 'YES'`,
-      [courseId]
-    );
-    if (courseRows.length === 0) {
-      return res.status(404).json({
-        status: 'failure',
-        message: `No active course found with courseId ${courseId}`,
-      });
-    }
-    const courseCode = courseRows[0].courseCode;
-
-    for (const section of sections) {
-      const { sectionId, sectionName, isActive } = section;
-      if (!sectionId || (sectionName && typeof sectionName !== 'string') || (isActive && !['YES', 'NO'].includes(isActive))) {
-        return res.status(400).json({
-          status: 'failure',
-          message: 'Each section must have a valid sectionId, optional sectionName, and optional isActive (YES/NO)',
-        });
-      }
-
-      // Validate existing section
-      const [sectionRows] = await connection.execute(
-        `SELECT sectionId FROM Section WHERE sectionId = ? AND courseId = ? AND isActive = 'YES'`,
-        [sectionId, courseId]
-      );
-      if (sectionRows.length === 0) {
-        return res.status(404).json({
-          status: 'failure',
-          message: `No active section found with sectionId ${sectionId} for courseId ${courseId}`,
-        });
-      }
-
-      // Update section
-      const updateFields = [];
-      const values = [];
-      if (sectionName) {
-        updateFields.push('sectionName = ?');
-        values.push(sectionName);
-      }
-      if (isActive) {
-        updateFields.push('isActive = ?');
-        values.push(isActive);
-      }
-      updateFields.push('updatedBy = ?', 'updatedDate = CURRENT_TIMESTAMP');
-      values.push(userEmail);
-
-      if (updateFields.length > 0) {
-        const query = `
-          UPDATE Section
-          SET ${updateFields.join(', ')}
-          WHERE sectionId = ?
-        `;
-        values.push(sectionId);
-        await connection.execute(query, values);
+      if (section) {
+        await section.update({
+          sectionName: sectionName || section.sectionName,
+          isActive: isActive || section.isActive,
+          updatedBy: userName
+        }, { transaction });
       }
     }
 
-    await connection.commit();
-    res.status(200).json({
-      status: 'success',
-      message: `Sections updated successfully for course ${courseCode}`,
-    });
+    await transaction.commit();
+    res.status(200).json({ status: 'success', message: 'Sections updated successfully' });
   } catch (err) {
-    await connection.rollback();
-    console.error('Error updating sections:', err);
-    res.status(500).json({ status: 'failure', message: 'Failed to update sections' });
-  } finally {
-    connection.release();
+    await transaction.rollback();
+    res.status(500).json({ status: 'failure', message: err.message });
   }
 });
 
 export const deleteSection = catchAsync(async (req, res) => {
   const { courseId, sectionName } = req.params;
-  const userEmail = req.user?.email || 'admin';
+  const userName = req.user?.userName || 'admin';
 
-  const connection = await pool.getConnection();
-  try {
-    await connection.beginTransaction();
+  const section = await Section.findOne({
+    where: { courseId, sectionName, isActive: 'YES' }
+  });
 
-    // Validate user email
-    const [userCheck] = await connection.execute(
-      'SELECT Userid FROM users WHERE email = ? AND status = "active"',
-      [userEmail]
-    );
-    if (userCheck.length === 0) {
-      return res.status(400).json({
-        status: 'failure',
-        message: `No active user found with email ${userEmail}`,
-      });
-    }
-
-    // Validate course
-    const [courseRows] = await connection.execute(
-      `SELECT courseId, courseCode FROM Course WHERE courseId = ? AND isActive = 'YES'`,
-      [courseId]
-    );
-    if (courseRows.length === 0) {
-      return res.status(404).json({
-        status: 'failure',
-        message: `No active course found with courseId ${courseId}`,
-      });
-    }
-    const courseCode = courseRows[0].courseCode;
-
-    // Validate section
-    const [sectionRows] = await connection.execute(
-      `SELECT sectionId FROM Section WHERE courseId = ? AND sectionName = ? AND isActive = 'YES'`,
-      [courseId, sectionName]
-    );
-    if (sectionRows.length === 0) {
-      return res.status(404).json({
-        status: 'failure',
-        message: `No active section found with sectionName ${sectionName} for courseId ${courseId}`,
-      });
-    }
-    const sectionId = sectionRows[0].sectionId;
-
-    // Soft delete the section
-    await connection.execute(
-      `UPDATE Section SET isActive = 'NO', updatedBy = ?, updatedDate = CURRENT_TIMESTAMP WHERE sectionId = ?`,
-      [userEmail, sectionId]
-    );
-
-    await connection.commit();
-    res.status(200).json({
-      status: 'success',
-      message: `Section ${sectionName} deleted successfully for course ${courseCode}`,
-    });
-  } catch (err) {
-    await connection.rollback();
-    console.error('Error deleting section:', err.message, err.stack);
-    res.status(500).json({
-      status: 'failure',
-      message: `Failed to delete section: ${err.message}`,
-    });
-  } finally {
-    connection.release();
+  if (!section) {
+    return res.status(404).json({ status: 'failure', message: 'Section not found' });
   }
+
+  // Soft delete
+  await section.update({ isActive: 'NO', updatedBy: userName });
+
+  res.status(200).json({ status: 'success', message: `Section ${sectionName} deleted successfully` });
 });
 
 export const allocateStaffToCourse = catchAsync(async (req, res) => {
   const { courseId } = req.params;
   const { Userid, sectionId, Deptid } = req.body;
-  const userEmail = req.user?.email || 'admin';
+  const userName = req.user?.userName || 'admin';
 
-  if (!courseId || !Userid || !sectionId || !Deptid) {
-    return res.status(400).json({
-      status: 'failure',
-      message: 'Missing required fields: courseId, Userid, sectionId, Deptid',
-    });
-  }
-
-  const connection = await pool.getConnection();
+  const transaction = await sequelize.transaction();
   try {
-    await connection.beginTransaction();
+    // 1. Validations
+    const course = await Course.findOne({ where: { courseId, isActive: 'YES' }, transaction });
+    if (!course) throw new Error('Active course not found');
 
-    // Validate user email
-    const [userCheck] = await connection.execute(
-      'SELECT Userid FROM users WHERE email = ? AND status = "active"',
-      [userEmail]
-    );
-    if (userCheck.length === 0) {
-      return res.status(400).json({
-        status: 'failure',
-        message: `No active user found with email ${userEmail}`,
-      });
-    }
+    const section = await Section.findOne({ where: { sectionId, courseId, isActive: 'YES' }, transaction });
+    if (!section) throw new Error('Active section not found for this course');
 
-    // Validate course
-    const [courseRows] = await connection.execute(
-      `SELECT courseId, courseCode FROM Course WHERE courseId = ? AND isActive = 'YES'`,
-      [courseId]
-    );
-    if (courseRows.length === 0) {
-      return res.status(404).json({
-        status: 'failure',
-        message: `No active course found with courseId ${courseId}`,
-      });
-    }
-    const courseCode = courseRows[0].courseCode;
-
-    // Validate section
-    const [sectionRows] = await connection.execute(
-      `SELECT sectionId FROM Section WHERE sectionId = ? AND courseId = ? AND isActive = 'YES'`,
-      [sectionId, courseId]
-    );
-    if (sectionRows.length === 0) {
-      return res.status(404).json({
-        status: 'failure',
-        message: `No active section found with sectionId ${sectionId} for courseId ${courseId}`,
-      });
-    }
-
-    // Validate Userid and Deptid
-    const [staffRows] = await connection.execute(
-      `SELECT Userid FROM users WHERE Userid = ? AND Deptid = ? AND status = 'active'`,
-      [Userid, Deptid]
-    );
-    if (staffRows.length === 0) {
-      return res.status(404).json({
-        status: 'failure',
-        message: `No active staff found with Userid ${Userid} in department ${Deptid}`,
-      });
-    }
-
-    // Check if staff is already allocated to another section for this course
-    const [existingAllocation] = await connection.execute(
-      `SELECT staffCourseId, sectionId FROM StaffCourse 
-       WHERE Userid = ? AND courseId = ? AND sectionId != ?`,
-      [Userid, courseId, sectionId]
-    );
-    if (existingAllocation.length > 0) {
-      return res.status(400).json({
-        status: 'failure',
-        message: `Staff ${Userid} is already allocated to another section for courseId ${courseId}`,
-      });
-    }
-
-    // Insert new allocation
-    const [result] = await connection.execute(
-      `INSERT INTO StaffCourse (Userid, courseId, sectionId, Deptid, createdBy, updatedBy)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [Userid, courseId, sectionId, Deptid, userEmail, userEmail]
-    );
-
-    await connection.commit();
-    res.status(201).json({
-      status: 'success',
-      message: 'Staff allocated successfully',
-      data: {
-        staffCourseId: result.insertId,
-        Userid,
-        courseId,
-        sectionId,
-        Deptid,
-        courseCode,
-      },
+    const staff = await User.findOne({ 
+      where: { userId: Userid, departmentId: Deptid, status: 'Active' },
+      transaction 
     });
+    if (!staff) throw new Error('Staff user not found or inactive');
+
+    // 2. Prevent duplicate allocation for the same course in different sections
+    const existing = await StaffCourse.findOne({
+      where: { Userid, courseId, sectionId: { [Op.ne]: sectionId } },
+      transaction
+    });
+    if (existing) throw new Error('Staff is already allocated to another section of this course');
+
+    // 3. Create allocation
+    const allocation = await StaffCourse.create({
+      Userid,
+      courseId,
+      sectionId,
+      Deptid,
+      createdBy: userName,
+      updatedBy: userName
+    }, { transaction });
+
+    await transaction.commit();
+    res.status(201).json({ status: 'success', data: allocation });
   } catch (err) {
-    await connection.rollback();
-    console.error('Error allocating staff:', err);
-    res.status(500).json({ status: 'failure', message: 'Failed to allocate staff' });
-  } finally {
-    connection.release();
+    await transaction.rollback();
+    res.status(400).json({ status: 'failure', message: err.message });
   }
 });
 
 export const getSections = catchAsync(async (req, res) => {
-  const { courseId, semesterId } = req.query; // Optional filters
-  const connection = await pool.getConnection();
-  try {
-    let query = `
-      SELECT s.sectionId, s.sectionName, s.courseId, c.courseCode, c.semesterId, sem.batchId, b.branch
-      FROM Section s
-      JOIN Course c ON s.courseId = c.courseId
-      JOIN Semester sem ON c.semesterId = sem.semesterId
-      JOIN Batch b ON sem.batchId = b.batchId
-      WHERE s.isActive = 'YES' AND c.isActive = 'YES' AND sem.isActive = 'YES'
-    `;
-    const params = [];
+  const { courseId, semesterId } = req.query;
 
-    if (courseId) {
-      query += ` AND s.courseId = ?`;
-      params.push(parseInt(courseId, 10));
-    }
-    if (semesterId) {
-      query += ` AND c.semesterId = ?`;
-      params.push(parseInt(semesterId, 10));
-    }
+  const whereCondition = { isActive: 'YES' };
+  if (courseId) whereCondition.courseId = courseId;
 
-    const [rows] = await connection.execute(query, params);
-    res.status(200).json({ status: 'success', data: rows });
-  } catch (err) {
-    console.error('Error fetching sections:', err);
-    res.status(500).json({ status: 'failure', message: 'Failed to fetch sections' });
-  } finally {
-    connection.release();
-  }
+  const sections = await Section.findAll({
+    where: whereCondition,
+    include: [{
+      model: Course,
+      where: { isActive: 'YES', ...(semesterId && { semesterId }) },
+      attributes: ['courseCode', 'semesterId'],
+      include: [{
+        model: Semester,
+        attributes: ['batchId'],
+        include: [{
+            model: Batch,
+            attributes: ['branch']
+        }]
+      }]
+    }]
+  });
+
+  // Flatten the data for the frontend
+  const formatted = sections.map(s => ({
+    sectionId: s.sectionId,
+    sectionName: s.sectionName,
+    courseId: s.courseId,
+    courseCode: s.Course?.courseCode,
+    semesterId: s.Course?.semesterId,
+    batchId: s.Course?.Semester?.batchId,
+    branch: s.Course?.Semester?.Batch?.branch
+  }));
+
+  res.status(200).json({ status: 'success', data: formatted });
 });

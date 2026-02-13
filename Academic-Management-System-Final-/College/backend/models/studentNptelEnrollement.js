@@ -1,5 +1,5 @@
 // models/studentNptelEnrollment.js
-module.exports = (sequelize, DataTypes) => {
+export default (sequelize, DataTypes) => {
   const StudentNptelEnrollment = sequelize.define('StudentNptelEnrollment', {
     enrollmentId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     regno: { type: DataTypes.STRING(50), allowNull: false },
@@ -9,7 +9,7 @@ module.exports = (sequelize, DataTypes) => {
   }, { tableName: 'StudentNptelEnrollment', timestamps: true, createdAt: 'enrolledAt', updatedAt: false });
 
   StudentNptelEnrollment.associate = (models) => {
-    StudentNptelEnrollment.belongsTo(models.StudentDetails, { foreignKey: 'regno' });
+    StudentNptelEnrollment.belongsTo(models.StudentDetails, { foreignKey: 'regno', targetKey: 'registerNumber' });
     StudentNptelEnrollment.belongsTo(models.NptelCourse, { foreignKey: 'nptelCourseId' });
     StudentNptelEnrollment.belongsTo(models.Semester, { foreignKey: 'semesterId' });
     StudentNptelEnrollment.hasOne(models.NptelCreditTransfer, { foreignKey: 'enrollmentId' });

@@ -6,12 +6,14 @@ import {
   getSubjectWiseAttendance,
   getUnmarkedAttendanceReport
 } from "../../controllers/attendanceReportController.js";
-import { protect } from "../../controllers/auth/authController.js";
+
+// FIXED IMPORT: Changed 'protect' to 'requireAuth'
+import { requireAuth } from "../../middleware/requireAuth.js";
 
 const router = express.Router();
 
-// Protect all routes - require authentication
-router.use(protect);
+// FIXED: Protect all routes using requireAuth
+router.use(requireAuth);
 
 // Attendance report-specific routes
 router.get("/batches", getBatches);

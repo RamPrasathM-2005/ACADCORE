@@ -1,5 +1,5 @@
 // models/nptelCreditTransfer.js
-module.exports = (sequelize, DataTypes) => {
+export default  (sequelize, DataTypes) => {
   const NptelCreditTransfer = sequelize.define('NptelCreditTransfer', {
     transferId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     enrollmentId: { type: DataTypes.INTEGER, allowNull: false },
@@ -13,7 +13,7 @@ module.exports = (sequelize, DataTypes) => {
 
   NptelCreditTransfer.associate = (models) => {
     NptelCreditTransfer.belongsTo(models.StudentNptelEnrollment, { foreignKey: 'enrollmentId' });
-    NptelCreditTransfer.belongsTo(models.StudentDetails, { foreignKey: 'regno' });
+    NptelCreditTransfer.belongsTo(models.StudentDetails, { foreignKey: 'regno' , targetKey: 'registerNumber'});
     NptelCreditTransfer.belongsTo(models.NptelCourse, { foreignKey: 'nptelCourseId' });
   };
 

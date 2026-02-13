@@ -1,5 +1,5 @@
 // models/timetable.js
-module.exports = (sequelize, DataTypes) => {
+export default  (sequelize, DataTypes) => {
   const Timetable = sequelize.define('Timetable', {
     timetableId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     courseId: { type: DataTypes.INTEGER, allowNull: false },

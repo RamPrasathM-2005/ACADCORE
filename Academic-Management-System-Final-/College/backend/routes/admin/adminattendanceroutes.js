@@ -8,29 +8,27 @@ import {
   getStudentsBySemester,
   getStudentsByDeptAndSem,
 } from "../../controllers/adminattendancecontroller.js";
-import { protect } from "../../controllers/auth/authController.js";
+
+// FIXED IMPORT: Changed 'protect' to 'requireAuth'
+import { requireAuth } from "../../middleware/requireAuth.js";
 
 const router = express.Router();
 
-// Protect all routes - require authentication
-router.use(protect);
+// FIXED: Protect all routes using requireAuth middleware
+router.use(requireAuth);
 
 // Admin-specific routes
 router.get("/timetable", getTimetableAdmin);
-
-
 
 router.get(
   "/students/:courseId/all/:dayOfWeek/:periodNumber",
   getStudentsForPeriodAdmin
 );
 
-
 router.get(
   "/department-view/:dayOfWeek/:periodNumber", 
   getStudentsByDeptAndSem
 );
-
 
 router.get("/students-list",  getStudentsBySemester);
 router.post("/mark-full-day-od",  markFullDayOD);

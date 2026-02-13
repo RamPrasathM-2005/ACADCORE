@@ -1,5 +1,5 @@
 // models/electiveBucketCourse.js
-module.exports = (sequelize, DataTypes) => {
+export default  (sequelize, DataTypes) => {
   const ElectiveBucketCourse = sequelize.define('ElectiveBucketCourse', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     bucketId: { type: DataTypes.INTEGER, allowNull: false },

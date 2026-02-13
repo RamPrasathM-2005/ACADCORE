@@ -1,5 +1,5 @@
 // models/studentCoTool.js
-module.exports = (sequelize, DataTypes) => {
+export default  (sequelize, DataTypes) => {
   const StudentCOTool = sequelize.define('StudentCOTool', {
     studentToolId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     regno: { type: DataTypes.STRING(50), allowNull: false },
@@ -8,7 +8,7 @@ module.exports = (sequelize, DataTypes) => {
   }, { tableName: 'StudentCOTool', timestamps: false });
 
   StudentCOTool.associate = (models) => {
-    StudentCOTool.belongsTo(models.StudentDetails, { foreignKey: 'regno' });
+    StudentCOTool.belongsTo(models.StudentDetails, { foreignKey: 'regno', targetKey: 'registerNumber'});
     StudentCOTool.belongsTo(models.COTool, { foreignKey: 'toolId' });
   };
 

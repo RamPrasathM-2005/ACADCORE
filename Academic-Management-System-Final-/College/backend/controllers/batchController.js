@@ -1,205 +1,203 @@
-// batchController.js
-import pool from "../db.js";
+// controllers/batchController.js
+import db from "../models/index.js";
 import catchAsync from "../utils/catchAsync.js";
 
+const { Batch, DepartmentAcademic, sequelize } = db;
+
+/**
+ * GET ALL ACTIVE BATCHES
+ */
 export const getAllBatches = catchAsync(async (req, res) => {
-  const connection = await pool.getConnection();
-  try {
-    const [rows] = await connection.execute(
-      `SELECT batchId, degree, branch, batch, batchYears, createdBy, createdDate, isActive 
-       FROM Batch WHERE isActive = 'YES'`
-    );
-    res.status(200).json({ status: "success", data: rows });
-  } catch (err) {
-    throw err;
-  } finally {
-    connection.release();
-  }
+  const rows = await Batch.findAll({
+    where: { isActive: 'YES' }
+  });
+  res.status(200).json({ status: "success", data: rows });
 });
 
+/**
+ * GET BATCH BY ID
+ */
 export const getBatchById = catchAsync(async (req, res) => {
   const { batchId } = req.params;
-  const connection = await pool.getConnection();
-  try {
-    const [rows] = await connection.execute(
-      `SELECT batchId, degree, branch, batch, batchYears, createdBy, createdDate, isActive 
-       FROM Batch WHERE batchId = ? AND isActive = 'YES'`,
-      [batchId]
-    );
-    if (rows.length === 0) {
-      return res.status(404).json({ status: "failure", message: `No active batch found with batchId ${batchId}` });
-    }
-    res.status(200).json({ status: "success", data: rows[0] });
-  } catch (err) {
-    throw err;
-  } finally {
-    connection.release();
+  
+  const batch = await Batch.findOne({
+    where: { batchId, isActive: 'YES' }
+  });
+
+  if (!batch) {
+    return res.status(404).json({ 
+      status: "failure", 
+      message: `No active batch found with batchId ${batchId}` 
+    });
   }
+
+  res.status(200).json({ status: "success", data: batch });
 });
 
+/**
+ * GET BATCH BY DETAILS (Query Params)
+ */
 export const getBatchByDetails = catchAsync(async (req, res) => {
   const { degree, branch, batch } = req.query;
+  
   if (!degree || !branch || !batch) {
-    return res.status(400).json({ status: "failure", message: "degree, branch, and batch are required query parameters" });
+    return res.status(400).json({ 
+      status: "failure", 
+      message: "degree, branch, and batch are required query parameters" 
+    });
   }
 
-  const connection = await pool.getConnection();
-  try {
-    const [rows] = await connection.execute(
-      `SELECT batchId, degree, branch, batch, batchYears, createdBy, createdDate, isActive, regulationId 
-       FROM Batch WHERE degree = ? AND branch = ? AND batch = ? AND isActive = 'YES'`,
-      [degree, branch, batch]
-    );
-    if (rows.length === 0) {
-      return res.status(404).json({ status: "failure", message: `No active batch found with degree ${degree}, branch ${branch}, and batch ${batch}` });
-    }
-    res.status(200).json({ status: "success", data: rows[0] });
-  } catch (err) {
-    console.error('Error fetching batch:', err);
-    res.status(500).json({ status: "failure", message: `Server error: ${err.message}` });
-  } finally {
-    connection.release();
+  const row = await Batch.findOne({
+    where: { degree, branch, batch, isActive: 'YES' }
+  });
+
+  if (!row) {
+    return res.status(404).json({ 
+      status: "failure", 
+      message: `No active batch found with degree ${degree}, branch ${branch}, and batch ${batch}` 
+    });
   }
+
+  res.status(200).json({ status: "success", data: row });
 });
 
+/**
+ * CREATE NEW BATCH
+ */
 export const createBatch = catchAsync(async (req, res) => {
   const { degree, branch, batch, batchYears, createdBy } = req.body;
+
   if (!degree || !branch || !batch || !batchYears || !createdBy) {
-    return res.status(400).json({ status: "failure", message: "All fields (degree, branch, batch, batchYears, createdBy) are required" });
+    return res.status(400).json({ 
+      status: "failure", 
+      message: "All fields (degree, branch, batch, batchYears, createdBy) are required" 
+    });
   }
 
-  const connection = await pool.getConnection();
-  try {
-    await connection.beginTransaction();
-
-    const [existingRows] = await connection.execute(
-      `SELECT batchId FROM Batch WHERE batch = ? AND degree = ? AND branch = ? AND isActive = 'YES'`,
-      [batch, degree, branch]
-    );
-    if (existingRows.length > 0) {
-      return res.status(400).json({ status: "failure", message: "Batch already exists" });
+  // Use findOrCreate to handle the existence check and creation atomically
+  const [newBatch, created] = await Batch.findOrCreate({
+    where: { batch, degree, branch, isActive: 'YES' },
+    defaults: {
+      degree,
+      branch,
+      batch,
+      batchYears,
+      createdBy,
+      isActive: 'YES'
     }
+  });
 
-    const [result] = await connection.execute(
-      `INSERT INTO Batch (degree, branch, batch, batchYears, createdBy, createdDate, isActive) 
-       VALUES (?, ?, ?, ?, ?, NOW(), 'YES')`,
-      [degree, branch, batch, batchYears, createdBy]
-    );
-
-    await connection.commit();
-    res.status(201).json({ status: "success", batchId: result.insertId, message: "Batch created successfully" });
-  } catch (err) {
-    await connection.rollback();
-    throw err;
-  } finally {
-    connection.release();
+  if (!created) {
+    return res.status(400).json({ status: "failure", message: "Batch already exists" });
   }
+
+  res.status(201).json({ 
+    status: "success", 
+    batchId: newBatch.batchId, 
+    message: "Batch created successfully" 
+  });
 });
 
+/**
+ * UPDATE BATCH
+ */
 export const updateBatch = catchAsync(async (req, res) => {
   const { batchId } = req.params;
   const { degree, branch, batch, batchYears, isActive, updatedBy } = req.body;
-  if (!batchId || (!degree && !branch && !batch && !batchYears && !isActive && !updatedBy)) {
-    return res.status(400).json({ status: "failure", message: "At least one field to update is required" });
+
+  const existingBatch = await Batch.findOne({ where: { batchId, isActive: 'YES' } });
+
+  if (!existingBatch) {
+    return res.status(404).json({ 
+      status: "failure", 
+      message: `No active batch found with batchId ${batchId}` 
+    });
   }
 
-  const connection = await pool.getConnection();
-  try {
-    await connection.beginTransaction();
+  // Sequelize update handles partial fields automatically
+  await existingBatch.update({
+    degree: degree || existingBatch.degree,
+    branch: branch || existingBatch.branch,
+    batch: batch || existingBatch.batch,
+    batchYears: batchYears || existingBatch.batchYears,
+    isActive: isActive || existingBatch.isActive,
+    updatedBy: updatedBy || req.user?.userMail || 'admin'
+  });
 
-    const [existingRows] = await connection.execute(
-      `SELECT batchId FROM Batch WHERE batchId = ? AND isActive = 'YES'`,
-      [batchId]
-    );
-    if (existingRows.length === 0) {
-      return res.status(404).json({ status: "failure", message: `No active batch found with batchId ${batchId}` });
-    }
-
-    const updateFields = [];
-    const values = [];
-    if (degree) { updateFields.push("degree = ?"); values.push(degree); }
-    if (branch) { updateFields.push("branch = ?"); values.push(branch); }
-    if (batch) { updateFields.push("batch = ?"); values.push(batch); }
-    if (batchYears) { updateFields.push("batchYears = ?"); values.push(batchYears); }
-    if (isActive) { updateFields.push("isActive = ?"); values.push(isActive); }
-    updateFields.push("updatedBy = ?", "updatedDate = NOW()");
-    values.push(updatedBy || req.user?.email || 'admin');
-
-    const query = `UPDATE Batch SET ${updateFields.join(", ")} WHERE batchId = ?`;
-    values.push(batchId);
-    await connection.execute(query, values);
-
-    await connection.commit();
-    res.status(200).json({ status: "success", message: "Batch updated successfully" });
-  } catch (err) {
-    await connection.rollback();
-    throw err;
-  } finally {
-    connection.release();
-  }
+  res.status(200).json({ status: "success", message: "Batch updated successfully" });
 });
 
+/**
+ * DELETE BATCH (Soft Delete)
+ */
 export const deleteBatch = catchAsync(async (req, res) => {
   const { batchId } = req.params;
-  const connection = await pool.getConnection();
-  try {
-    await connection.beginTransaction();
 
-    const [existingRows] = await connection.execute(
-      `SELECT batchId FROM Batch WHERE batchId = ? AND isActive = 'YES'`,
-      [batchId]
-    );
-    if (existingRows.length === 0) {
-      return res.status(404).json({ status: "failure", message: `No active batch found with batchId ${batchId}` });
-    }
+  const existingBatch = await Batch.findOne({ where: { batchId, isActive: 'YES' } });
 
-    await connection.execute(
-      `UPDATE Batch SET isActive = 'NO', updatedDate = NOW(), updatedBy = ? WHERE batchId = ?`,
-      [req.user?.email || 'admin', batchId]
-    );
-
-    await connection.commit();
-    res.status(200).json({ status: "success", message: "Batch deleted successfully" });
-  } catch (err) {
-    await connection.rollback();
-    throw err;
-  } finally {
-    connection.release();
+  if (!existingBatch) {
+    return res.status(404).json({ 
+      status: "failure", 
+      message: `No active batch found with batchId ${batchId}` 
+    });
   }
+
+  await existingBatch.update({
+    isActive: 'NO',
+    updatedBy: req.user?.userMail || 'admin'
+  });
+
+  res.status(200).json({ status: "success", message: "Batch deleted successfully" });
 });
 
-
+/**
+ * INTERNAL HELPER: getOrCreateBatch
+ * Used by other controllers (like Regulation)
+ */
 export const getOrCreateBatch = async (Deptid, regulationYear, createdBy, updatedBy) => {
-  let connection;
+  const t = await sequelize.transaction();
   try {
-    connection = await pool.getConnection();
-    await connection.beginTransaction();
+    // Find if the batch exists for this department and year
+    // Note: The original query used Deptid which wasn't in your Batch model snippet, 
+    // but the branch name subquery suggests it matches the department acronym.
+    
+    const dept = await DepartmentAcademic.findByPk(Deptid, { transaction: t });
+    if (!dept) throw new Error("Department not found");
 
-    // Try to find an existing batch
-    const [batches] = await connection.execute(
-      `SELECT batchId FROM Batch WHERE Deptid = ? AND batch = ? AND isActive = 'YES'`,
-      [Deptid, regulationYear.toString()]
-    );
+    const batchName = regulationYear.toString();
 
-    if (batches.length > 0) {
-      await connection.commit();
-      return batches[0].batchId;
+    let batch = await Batch.findOne({
+      where: { 
+        batch: batchName, 
+        branch: dept.Deptacronym, 
+        isActive: 'YES' 
+      },
+      transaction: t
+    });
+
+    if (batch) {
+      await t.commit();
+      return batch.batchId;
     }
 
-    // Create a new batch
-    const batchYears = `${regulationYear}-${regulationYear + 4}`; // e.g., "2023-2027"
-    const [result] = await connection.execute(
-      `INSERT INTO Batch (Deptid, degree, branch, batch, batchYears, isActive, createdBy, updatedBy)
-       VALUES (?, 'B.Tech', (SELECT Deptacronym FROM department WHERE Deptid = ?), ?, ?, 'YES', ?, ?)`,
-      [Deptid, Deptid, regulationYear.toString(), batchYears, createdBy, updatedBy]
-    );
+    // Create a new batch if not found
+    const startYear = parseInt(regulationYear);
+    const batchYears = `${startYear}-${startYear + 4}`;
 
-    await connection.commit();
-    return result.insertId;
+    batch = await Batch.create({
+      degree: 'B.Tech',
+      branch: dept.Deptacronym,
+      batch: batchName,
+      batchYears: batchYears,
+      isActive: 'YES',
+      createdBy: createdBy,
+      updatedBy: updatedBy
+    }, { transaction: t });
+
+    await t.commit();
+    return batch.batchId;
   } catch (err) {
-    if (connection) await connection.rollback();
+    await t.rollback();
     throw new Error(`Error getting or creating batch: ${err.message}`);
-  } finally {
-    if (connection) connection.release();
   }
 };

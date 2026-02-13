@@ -1,5 +1,5 @@
 // models/nptelCourse.js
-module.exports = (sequelize, DataTypes) => {
+export default  (sequelize, DataTypes) => {
   const NptelCourse = sequelize.define('NptelCourse', {
     nptelCourseId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     courseTitle: { type: DataTypes.STRING(255), allowNull: false },

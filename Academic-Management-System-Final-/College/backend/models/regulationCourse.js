@@ -1,5 +1,5 @@
 // models/regulationCourse.js
-module.exports = (sequelize, DataTypes) => {
+export default  (sequelize, DataTypes) => {
   const RegulationCourse = sequelize.define('RegulationCourse', {
     regCourseId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     regulationId: { type: DataTypes.INTEGER, allowNull: false },

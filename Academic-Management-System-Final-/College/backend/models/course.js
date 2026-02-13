@@ -1,5 +1,5 @@
 // models/course.js
-module.exports = (sequelize, DataTypes) => {
+export default  (sequelize, DataTypes) => {
   const Course = sequelize.define('Course', {
     courseId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     courseCode: { type: DataTypes.STRING(20), allowNull: false },

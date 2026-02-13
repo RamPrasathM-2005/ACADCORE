@@ -1,5 +1,5 @@
 // models/semester.js
-module.exports = (sequelize, DataTypes) => {
+export default(sequelize, DataTypes) => {
   const Semester = sequelize.define('Semester', {
     semesterId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     batchId: { type: DataTypes.INTEGER, allowNull: false },

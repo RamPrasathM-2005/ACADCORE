@@ -1,5 +1,5 @@
 // models/periodAttendance.js
-module.exports = (sequelize, DataTypes) => {
+export default (sequelize, DataTypes) => {
   const PeriodAttendance = sequelize.define('PeriodAttendance', {
     periodAttendanceId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     regno: { type: DataTypes.STRING(50), allowNull: false },
@@ -16,7 +16,7 @@ module.exports = (sequelize, DataTypes) => {
   }, { tableName: 'PeriodAttendance', timestamps: false });
 
   PeriodAttendance.associate = (models) => {
-    PeriodAttendance.belongsTo(models.StudentDetails, { foreignKey: 'regno' });
+    PeriodAttendance.belongsTo(models.StudentDetails, { foreignKey: 'regno',targetKey: 'registerNumber'});
     PeriodAttendance.belongsTo(models.User, { foreignKey: 'staffId' });
     PeriodAttendance.belongsTo(models.DepartmentAcademic, { foreignKey: 'Deptid' });
     PeriodAttendance.belongsTo(models.Course, { foreignKey: 'courseId' });

@@ -1,5 +1,5 @@
 // models/studentSemesterGPA.js
-module.exports = (sequelize, DataTypes) => {
+export default  (sequelize, DataTypes) => {
   const StudentSemesterGPA = sequelize.define('StudentSemesterGPA', {
     studentGPAId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     regno: { type: DataTypes.STRING(50), allowNull: false },
@@ -9,7 +9,7 @@ module.exports = (sequelize, DataTypes) => {
   }, { tableName: 'StudentSemesterGPA', timestamps: true });
 
   StudentSemesterGPA.associate = (models) => {
-    StudentSemesterGPA.belongsTo(models.StudentDetails, { foreignKey: 'regno' });
+    StudentSemesterGPA.belongsTo(models.StudentDetails, { foreignKey: 'regno' , targetKey: 'registerNumber'});
     StudentSemesterGPA.belongsTo(models.Semester, { foreignKey: 'semesterId' });
   };
 

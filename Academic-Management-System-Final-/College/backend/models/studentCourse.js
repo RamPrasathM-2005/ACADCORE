@@ -1,5 +1,5 @@
 // models/studentCourse.js
-module.exports = (sequelize, DataTypes) => {
+export default  (sequelize, DataTypes) => {
   const StudentCourse = sequelize.define('StudentCourse', {
     studentCourseId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     regno: { type: DataTypes.STRING(50), allowNull: false },
@@ -10,7 +10,7 @@ module.exports = (sequelize, DataTypes) => {
   }, { tableName: 'StudentCourse', timestamps: true, createdAt: 'createdDate', updatedAt: 'updatedDate' });
 
   StudentCourse.associate = (models) => {
-    StudentCourse.belongsTo(models.StudentDetails, { foreignKey: 'regno' });
+    StudentCourse.belongsTo(models.StudentDetails, { foreignKey: 'regno', targetKey: 'registerNumber' });
     StudentCourse.belongsTo(models.Course, { foreignKey: 'courseId' });
     StudentCourse.belongsTo(models.Section, { foreignKey: 'sectionId' });
   };

@@ -6,12 +6,14 @@ import {
   markAttendance,
   getSkippedStudents,
 } from "../../controllers/attendanceController.js";
-import { protect } from "../../controllers/auth/authController.js";
+
+// FIXED IMPORT: Changed 'protect' to 'requireAuth'
+import { requireAuth } from "../../middleware/requireAuth.js";
 
 const router = express.Router();
 
-// Protect all routes - require authentication
-router.use(protect);
+// FIXED: Protect all routes using requireAuth
+router.use(requireAuth);
 
 router.get("/timetable", getTimetable);
 router.get(

@@ -1,12 +1,24 @@
-import dotenv from 'dotenv';
+// server.js
+import db, { initDatabase } from './models/index.js';
+import app from './app.js';
 
-dotenv.config({ path: './config.env' });
+const PORT = process.env.PORT || 4000;
 
-import app from "./app.js";
-import pool from "./db.js";
+// Single initialization flow
+const startServer = async () => {
+  try {
+    // 1. Initialize DB and Seed (This handles sync and seeding internally)
+    await initDatabase();
 
-const PORT = process.env.PORT || 5000;
+    // 2. Start the Express Server
+    app.listen(PORT, () => {
+      console.log(`✅ Server is running perfectly on port ${PORT}`);
+    });
 
-app.listen(PORT, () => {
-  console.log(`✅ Server running on http://localhost:${PORT}`);
-});
+  } catch (err) {
+    console.error('❌ Failed to start server due to Data Error:', err);
+    process.exit(1); // Stop the process if DB fails
+  }
+};
+
+startServer();

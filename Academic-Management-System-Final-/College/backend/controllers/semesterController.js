@@ -1,5 +1,9 @@
-import pool from "../db.js";
+// controllers/semesterController.js
+import db from "../models/index.js";
 import catchAsync from "../utils/catchAsync.js";
+import { Op } from "sequelize";
+
+const { Semester, Batch, sequelize } = db;
 
 // Utility: format YYYY-MM-DD safely
 function formatDate(dateStr) {
@@ -7,31 +11,24 @@ function formatDate(dateStr) {
   return dateStr.length > 10 ? dateStr.substring(0, 10) : dateStr;
 }
 
-
-// Helper function to calculate difference in days between two dates
+// Helper function to calculate difference in days
 const calculateDaysDifference = (startDate, endDate) => {
   const start = new Date(startDate);
   const end = new Date(endDate);
   const diffTime = end - start;
-  return Math.ceil(diffTime / (1000 * 60 * 60 * 24)); // Convert milliseconds to days
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 };
 
 export const addSemester = catchAsync(async (req, res) => {
-  const {
-    degree,
-    batch,
-    branch,
-    semesterNumber,
-    startDate,
-    endDate,
-  } = req.body;
+  const { degree, batch, branch, semesterNumber, startDate, endDate } = req.body;
+  const userName = req.user?.userName || req.user?.userMail || 'admin';
 
-  // Validation: required fields
+  // 1. Validation: required fields
   if (!batch || !branch || !degree || !semesterNumber || !startDate || !endDate) {
     return res.status(400).json({ status: "failure", message: "All fields are required" });
   }
 
-  // Validate dates
+  // 2. Date Validations
   const formattedStartDate = formatDate(startDate);
   const formattedEndDate = formatDate(endDate);
 
@@ -39,44 +36,40 @@ export const addSemester = catchAsync(async (req, res) => {
     return res.status(400).json({ status: "failure", message: "startDate must be before endDate" });
   }
 
-  // Validate that endDate is exactly 90 days after startDate
   const daysDifference = calculateDaysDifference(formattedStartDate, formattedEndDate);
   if (daysDifference !== 90) {
     return res.status(400).json({ 
       status: "failure", 
-      message: `The duration between startDate and endDate must be exactly 90 days, but got ${daysDifference} days` 
+      message: `The duration must be exactly 90 days, but got ${daysDifference} days` 
     });
   }
 
-  // 🔍 Get batchId
-  const [batchRows] = await pool.execute(
-    `SELECT batchId FROM Batch WHERE batch = ? AND branch = ? AND degree = ? AND isActive = 'YES'`,
-    [batch, branch, degree]
-  );
+  // 3. Find the Batch
+  const batchRecord = await Batch.findOne({
+    where: { batch, branch, degree, isActive: 'YES' }
+  });
 
-  if (batchRows.length === 0) {
+  if (!batchRecord) {
     return res.status(404).json({ status: "failure", message: `Batch ${batch} - ${branch} not found` });
   }
 
-  const batchId = batchRows[0].batchId;
+  const batchId = batchRecord.batchId;
 
-  // Prevent duplicate semester
-  const [existing] = await pool.execute(
-    `SELECT semesterId FROM Semester WHERE batchId = ? AND semesterNumber = ?`,
-    [batchId, semesterNumber]
-  );
+  // 4. Prevent duplicate semester
+  const existing = await Semester.findOne({
+    where: { batchId, semesterNumber }
+  });
 
-  if (existing.length > 0) {
+  if (existing) {
     return res.status(400).json({ status: "failure", message: "Semester already exists for this batch" });
   }
 
-  // Ensure sequential order
+  // 5. Ensure sequential order
   if (semesterNumber > 1) {
-    const [previous] = await pool.execute(
-      `SELECT semesterNumber FROM Semester WHERE batchId = ? ORDER BY semesterNumber`,
-      [batchId]
-    );
-    if (previous.length !== semesterNumber - 1) {
+    const previousCount = await Semester.count({
+      where: { batchId }
+    });
+    if (previousCount !== semesterNumber - 1) {
       return res.status(400).json({
         status: "failure",
         message: `You must first create semesters 1 to ${semesterNumber - 1} for this batch`,
@@ -84,60 +77,58 @@ export const addSemester = catchAsync(async (req, res) => {
     }
   }
 
-  // Insert semester
-  const [rows] = await pool.execute(
-    `INSERT INTO Semester (batchId, semesterNumber, startDate, endDate, createdBy, updatedBy)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [batchId, semesterNumber, formattedStartDate, formattedEndDate, req.user?.email || 'admin', req.user?.email || 'admin']
-  );
+  // 6. Insert semester
+  const newSemester = await Semester.create({
+    batchId,
+    semesterNumber,
+    startDate: formattedStartDate,
+    endDate: formattedEndDate,
+    createdBy: userName,
+    updatedBy: userName
+  });
 
   return res.status(201).json({
     status: "success",
     message: "Semester added successfully",
-    semesterId: rows.insertId,
+    semesterId: newSemester.semesterId,
   });
 });
-// ✅ Get a single Semester
+
 export const getSemester = catchAsync(async (req, res) => {
   const { batch, branch, degree, semesterNumber } = req.query;
 
   if (!batch || !branch || !degree || !semesterNumber) {
-    return res.status(400).json({
-      status: "failure",
-      message: "batch, branch, degree, and semesterNumber are required",
-    });
+    return res.status(400).json({ status: "failure", message: "Missing required query parameters" });
   }
 
-  const [rows] = await pool.execute(
-    `SELECT s.*, b.degree, b.branch, b.batch, b.batchYears
-     FROM Semester s
-     INNER JOIN Batch b ON s.batchId = b.batchId
-     WHERE b.batch = ? AND b.branch = ? AND b.degree = ? AND s.semesterNumber = ? AND s.isActive = 'YES'`,
-    [batch, branch, degree, semesterNumber]
-  );
+  const semester = await Semester.findOne({
+    where: { semesterNumber, isActive: 'YES' },
+    include: [{
+      model: Batch,
+      where: { batch, branch, degree, isActive: 'YES' },
+      required: true
+    }]
+  });
 
-  if (rows.length === 0) {
-    return res.status(404).json({
-      status: "failure",
-      message: `Semester ${semesterNumber} not found for batch ${batch} - ${branch}`,
-    });
+  if (!semester) {
+    return res.status(404).json({ status: "failure", message: "Semester not found" });
   }
 
-  res.status(200).json({ status: "success", data: rows[0] });
+  res.status(200).json({ status: "success", data: semester });
 });
 
-// ✅ Get all Semesters
 export const getAllSemesters = catchAsync(async (req, res) => {
-  const [rows] = await pool.execute(
-    `SELECT s.*, b.degree, b.branch, b.batch, b.batchYears
-     FROM Semester s
-     INNER JOIN Batch b ON s.batchId = b.batchId
-     WHERE s.isActive = 'YES' AND b.isActive = 'YES'`
-  );
-  return res.status(200).json({ status: "success", data: rows });
+  const semesters = await Semester.findAll({
+    where: { isActive: 'YES' },
+    include: [{
+      model: Batch,
+      where: { isActive: 'YES' },
+      required: true
+    }]
+  });
+  return res.status(200).json({ status: "success", data: semesters });
 });
 
-// ✅ Get Semesters by Batch+Branch
 export const getSemestersByBatchBranch = catchAsync(async (req, res) => {
   const { batch, branch, degree } = req.query;
 
@@ -145,72 +136,50 @@ export const getSemestersByBatchBranch = catchAsync(async (req, res) => {
     return res.status(400).json({ status: "failure", message: "batch, branch, and degree are required" });
   }
 
-  const [rows] = await pool.execute(
-    `SELECT s.*, b.degree, b.branch, b.batch, b.batchYears
-     FROM Semester s
-     INNER JOIN Batch b ON s.batchId = b.batchId
-     WHERE b.batch = ? AND b.branch = ? AND b.degree = ? AND s.isActive = 'YES'
-     ORDER BY s.semesterNumber ASC`,
-    [batch, branch, degree]
-  );
+  const semesters = await Semester.findAll({
+    where: { isActive: 'YES' },
+    include: [{
+      model: Batch,
+      where: { batch, branch, degree, isActive: 'YES' },
+      required: true
+    }],
+    order: [['semesterNumber', 'ASC']]
+  });
 
-  if (rows.length === 0) {
-    return res.status(404).json({ status: "failure", message: `No semesters found for batch ${batch} - ${branch}` });
+  if (semesters.length === 0) {
+    return res.status(404).json({ status: "failure", message: "No semesters found" });
   }
 
-  res.status(200).json({ status: "success", data: rows });
+  res.status(200).json({ status: "success", data: semesters });
 });
 
-// ✅ Update Semester
 export const updateSemester = catchAsync(async (req, res) => {
   const { semesterId } = req.params;
-  const {
-    batch,
-    branch,
-    degree,
+  const { degree, batch, branch, semesterNumber, startDate, endDate, isActive } = req.body;
+  const userName = req.user?.userName || req.user?.userMail || 'admin';
+
+  // 1. Validate the Batch linked to the update request
+  const batchRecord = await Batch.findOne({
+    where: { batch, branch, degree, isActive: 'YES' }
+  });
+
+  if (!batchRecord) {
+    return res.status(404).json({ status: "failure", message: "Linked batch not found" });
+  }
+
+  // 2. Perform Update
+  const [updatedRows] = await Semester.update({
+    batchId: batchRecord.batchId,
     semesterNumber,
-    startDate,
-    endDate,
-    isActive,
-  } = req.body;
+    startDate: formatDate(startDate),
+    endDate: formatDate(endDate),
+    isActive: isActive || 'YES',
+    updatedBy: userName
+  }, {
+    where: { semesterId }
+  });
 
-  if (!semesterId) {
-    return res.status(400).json({ status: "failure", message: "semesterId is required" });
-  }
-
-  const id = parseInt(semesterId, 10);
-  if (isNaN(id)) {
-    return res.status(400).json({ status: "failure", message: "Invalid semesterId provided." });
-  }
-
-  // Validate dates
-  const formattedStartDate = formatDate(startDate);
-  const formattedEndDate = formatDate(endDate);
-
-  if (formattedStartDate && formattedEndDate && formattedStartDate >= formattedEndDate) {
-    return res.status(400).json({ status: "failure", message: "startDate must be before endDate" });
-  }
-
-  // Resolve batchId
-  const [batchRows] = await pool.execute(
-    `SELECT batchId FROM Batch WHERE batch = ? AND branch = ? AND degree = ? AND isActive = 'YES'`,
-    [batch, branch, degree]
-  );
-
-  if (batchRows.length === 0) {
-    return res.status(404).json({ status: "failure", message: `Batch ${batch} - ${branch} not found` });
-  }
-
-  const batchId = batchRows[0].batchId;
-
-  const [result] = await pool.query(
-    `UPDATE Semester
-     SET batchId = ?, semesterNumber = ?, startDate = ?, endDate = ?, isActive = ?, updatedBy = ?, updatedDate = NOW()
-     WHERE semesterId = ?`,
-    [batchId, semesterNumber, formattedStartDate, formattedEndDate, isActive || 'YES', req.user?.email || 'admin', id]
-  );
-
-  if (result.affectedRows === 0) {
+  if (updatedRows === 0) {
     return res.status(404).json({ status: "failure", message: "Semester not found" });
   }
 
@@ -220,27 +189,19 @@ export const updateSemester = catchAsync(async (req, res) => {
   });
 });
 
-// ✅ Delete Semester
 export const deleteSemester = catchAsync(async (req, res) => {
   const { semesterId } = req.params;
 
-  if (!semesterId) {
-    return res.status(400).json({ status: "failure", message: "semesterId is required" });
-  }
+  const deleted = await Semester.destroy({
+    where: { semesterId }
+  });
 
-  const id = parseInt(semesterId, 10);
-  if (isNaN(id)) {
-    return res.status(400).json({ status: "failure", message: "Invalid semesterId provided." });
-  }
-
-  const [result] = await pool.query(`DELETE FROM Semester WHERE semesterId = ?`, [id]);
-
-  if (result.affectedRows === 0) {
+  if (!deleted) {
     return res.status(404).json({ status: "failure", message: "Semester not found" });
   }
 
   res.status(200).json({
     status: "success",
-    message: `Semester with id ${id} deleted successfully`,
+    message: `Semester with id ${semesterId} deleted successfully`,
   });
 });

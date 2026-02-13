@@ -1,259 +1,185 @@
+// controllers/timetableAllocationController.js
+import db from "../models/index.js";
+import catchAsync from "../utils/catchAsync.js";
+import { Op } from "sequelize";
 
-import { pool } from "../db.js"; // adjust path as needed
+const { 
+  sequelize, Batch, Regulation, Vertical, VerticalCourse, 
+  RegulationCourse, Timetable, ElectiveBucketCourse, Course 
+} = db;
 
 // GET regulation for a batch + department
-export const getRegulationByBatchAndDept = async (req, res) => {
+export const getRegulationByBatchAndDept = catchAsync(async (req, res) => {
   const { batchId, Deptid } = req.query;
 
   if (!batchId || !Deptid) {
-    return res.status(400).json({
+    return res.status(400).json({ status: "error", message: "batchId and Deptid are required" });
+  }
+
+  const batch = await Batch.findOne({
+    where: { batchId },
+    include: [{
+      model: Regulation,
+      where: { Deptid, isActive: 'YES' },
+      required: true,
+      attributes: ['regulationId', 'regulationYear', 'Deptid']
+    }]
+  });
+
+  if (!batch || !batch.Regulation) {
+    return res.status(404).json({
       status: "error",
-      message: "batchId and Deptid are required",
+      message: "No active regulation found for this batch and department",
     });
   }
 
-  try {
-    const [rows] = await pool.execute(
-      `SELECT r.regulationId, r.regulationYear, r.Deptid
-       FROM Batch b
-       JOIN Regulation r ON b.regulationId = r.regulationId
-       WHERE b.batchId = ? AND r.Deptid = ? AND r.isActive = 'YES'`,
-      [batchId, Deptid]
-    );
-
-    if (rows.length === 0) {
-      return res.status(404).json({
-        status: "error",
-        message: "No active regulation found for this batch and department",
-      });
-    }
-
-    res.json({
-      status: "success",
-      data: rows[0],
-    });
-  } catch (error) {
-    console.error("Error fetching regulation:", error);
-    res.status(500).json({
-      status: "error",
-      message: "Server error",
-      details: error.message,
-    });
-  }
-};
+  res.json({
+    status: "success",
+    data: batch.Regulation,
+  });
+});
 
 // GET all verticals for a regulation
-export const getVerticalsByRegulation = async (req, res) => {
+export const getVerticalsByRegulation = catchAsync(async (req, res) => {
   const { regulationId } = req.params;
 
-  if (!regulationId) {
-    return res.status(400).json({
-      status: "error",
-      message: "regulationId is required",
-    });
-  }
+  const verticals = await Vertical.findAll({
+    where: { regulationId, isActive: 'YES' },
+    order: [['verticalName', 'ASC']]
+  });
 
-  try {
-    const [rows] = await pool.execute(
-      `SELECT verticalId, verticalName 
-       FROM Vertical 
-       WHERE regulationId = ? AND isActive = 'YES'
-       ORDER BY verticalName`,
-      [regulationId]
-    );
-
-    res.json({
-      status: "success",
-      data: rows,
-    });
-  } catch (error) {
-    console.error("Error fetching verticals:", error);
-    res.status(500).json({
-      status: "error",
-      message: "Failed to fetch verticals",
-    });
-  }
-};
+  res.json({
+    status: "success",
+    data: verticals,
+  });
+});
 
 // GET vertical courses for a vertical + semester number
-export const getVerticalCourses = async (req, res) => {
+export const getVerticalCourses = catchAsync(async (req, res) => {
   const { verticalId, semesterNumber } = req.params;
 
-  if (!verticalId || !semesterNumber) {
-    return res.status(400).json({
-      status: "error",
-      message: "verticalId and semesterNumber are required",
-    });
-  }
+  const courses = await RegulationCourse.findAll({
+    where: { semesterNumber, isActive: 'YES' },
+    include: [{
+      model: VerticalCourse,
+      where: { verticalId },
+      required: true,
+      attributes: []
+    }],
+    order: [['courseCode', 'ASC']]
+  });
 
-  try {
-    const [rows] = await pool.execute(
-      `SELECT 
-         rc.regCourseId,
-         rc.courseCode,
-         rc.courseTitle,
-         rc.credits,
-         rc.category,
-         rc.type
-       FROM VerticalCourse vc
-       JOIN RegulationCourse rc ON vc.regCourseId = rc.regCourseId
-       WHERE vc.verticalId = ? 
-         AND rc.semesterNumber = ? 
-         AND rc.isActive = 'YES'
-       ORDER BY rc.courseCode`,
-      [verticalId, semesterNumber]
-    );
+  res.json({
+    status: "success",
+    data: courses,
+  });
+});
 
-    res.json({
-      status: "success",
-      data: rows,
-    });
-  } catch (error) {
-    console.error("Error fetching vertical courses:", error);
-    res.status(500).json({
-      status: "error",
-      message: "Failed to fetch vertical courses",
-    });
-  }
-};
+// Allocate Slot (Complex Logic)
+export const allocateTimetableSlot = catchAsync(async (req, res) => {
+  const { dayOfWeek, periodNumber, course, bucketId, semesterId, Deptid } = req.body;
+  const userName = req.user?.userName || 'admin';
 
-export const allocateTimetableSlot = async (req, res) => {
-  const {
-    dayOfWeek, // e.g., "MON"
-    periodNumber, // 1 to 8
-    course, // single courseId (regular) — optional
-    bucketId, // optional: allocate all courses in bucket
-    semesterId,
-    Deptid,
-  } = req.body;
-
-  // Validation
+  // 1. Basic Validation
   if (!dayOfWeek || !periodNumber || !semesterId || !Deptid) {
-    return res.status(400).json({
-      status: "error",
-      message: "dayOfWeek, periodNumber, semesterId, and Deptid are required",
-    });
+    return res.status(400).json({ status: "error", message: "Required fields missing" });
   }
 
   const validDays = ["MON", "TUE", "WED", "THU", "FRI"];
   if (!validDays.includes(dayOfWeek.toUpperCase())) {
-    return res.status(400).json({
-      status: "error",
-      message: `Invalid dayOfWeek. Must be one of: ${validDays.join(", ")}`,
-    });
+    return res.status(400).json({ status: "error", message: "Invalid dayOfWeek" });
   }
 
-  if (
-    !Number.isInteger(Number(periodNumber)) ||
-    periodNumber < 1 ||
-    periodNumber > 8
-  ) {
-    return res.status(400).json({
-      status: "error",
-      message: "periodNumber must be an integer between 1 and 8",
-    });
+  if (periodNumber < 1 || periodNumber > 8) {
+    return res.status(400).json({ status: "error", message: "Period must be 1-8" });
   }
+
+  const transaction = await sequelize.transaction();
 
   try {
-    // Clear existing entries for this day + period
-    await pool.execute(
-      `DELETE FROM Timetable 
-       WHERE semesterId = ? 
-         AND Deptid = ? 
-         AND dayOfWeek = ? 
-         AND periodNumber = ?`,
-      [semesterId, Deptid, dayOfWeek.toUpperCase(), periodNumber]
-    );
+    // 2. Clear existing entries for this slot
+    await Timetable.destroy({
+      where: {
+        semesterId,
+        Deptid,
+        dayOfWeek: dayOfWeek.toUpperCase(),
+        periodNumber
+      },
+      transaction
+    });
 
-    const insertions = [];
+    const entriesToCreate = [];
 
-    // CASE 1: Bucket allocation — insert ALL courses from bucket
+    // CASE 1: Bucket allocation (Electives)
     if (bucketId) {
-      const [bucketCourses] = await pool.execute(
-        `SELECT c.courseId
-         FROM ElectiveBucketCourse ebc
-         JOIN Course c ON ebc.courseId = c.courseId
-         WHERE ebc.bucketId = ?
-         ORDER BY c.courseCode`,
-        [bucketId]
-      );
+      const bucketCourses = await ElectiveBucketCourse.findAll({
+        where: { bucketId },
+        include: [{ model: Course, attributes: ['courseId', 'courseCode'] }],
+        transaction
+      });
 
       if (bucketCourses.length === 0) {
-        return res.status(400).json({
-          status: "error",
-          message: "This bucket has no courses",
-        });
+        throw new Error("This bucket has no courses");
       }
 
-      bucketCourses.forEach((c) => {
-        insertions.push([
-          semesterId,
-          c.courseId, // courseId
-          null, // sectionId (NULL)
-          dayOfWeek.toUpperCase(),
-          periodNumber,
-          Deptid,
-        ]);
+      bucketCourses.forEach((ebc) => {
+        if (ebc.Course) {
+          entriesToCreate.push({
+            semesterId,
+            courseId: ebc.Course.courseId,
+            dayOfWeek: dayOfWeek.toUpperCase(),
+            periodNumber,
+            Deptid,
+            createdBy: userName
+          });
+        }
       });
     }
     // CASE 2: Single regular course
-    else if (course !== undefined && course !== null && course !== "") {
-      const [courseRow] = await pool.execute(
-        `SELECT courseId FROM Course WHERE courseId = ?
-         UNION
-         SELECT regCourseId AS courseId FROM RegulationCourse WHERE regCourseId = ?`,
-        [course, course]
-      );
-
-      if (courseRow.length === 0) {
-        return res.status(400).json({
-          status: "error",
-          message: "Course not found",
-        });
+    else if (course) {
+      // Check standard Course table first, then RegulationCourse (fallback)
+      let targetCourse = await Course.findByPk(course, { transaction });
+      if (!targetCourse) {
+        targetCourse = await RegulationCourse.findByPk(course, { transaction });
       }
 
-      insertions.push([
+      if (!targetCourse) throw new Error("Course not found");
+
+      entriesToCreate.push({
         semesterId,
-        courseRow[0].courseId,
-        null, // sectionId
-        dayOfWeek.toUpperCase(),
+        courseId: targetCourse.courseId || targetCourse.regCourseId,
+        dayOfWeek: dayOfWeek.toUpperCase(),
         periodNumber,
         Deptid,
-      ]);
+        createdBy: userName
+      });
     }
-    // CASE 3: Free period — insert one row with courseId = NULL
+    // CASE 3: Free period
     else {
-      insertions.push([
+      entriesToCreate.push({
         semesterId,
-        null, // courseId = NULL → free period
-        null, // sectionId
-        dayOfWeek.toUpperCase(),
+        courseId: null,
+        dayOfWeek: dayOfWeek.toUpperCase(),
         periodNumber,
         Deptid,
-      ]);
+        createdBy: userName
+      });
     }
 
-    // Bulk insert — only if there are rows
-    if (insertions.length > 0) {
-      await pool.query(
-        `INSERT INTO Timetable 
-         (semesterId, courseId, sectionId, dayOfWeek, periodNumber, Deptid)
-         VALUES ?`,
-        [insertions]
-      );
+    // 3. Bulk Create
+    if (entriesToCreate.length > 0) {
+      await Timetable.bulkCreate(entriesToCreate, { transaction });
     }
 
+    await transaction.commit();
     res.json({
       status: "success",
-      message: `Successfully allocated ${insertions.length} course(s) to ${dayOfWeek} Period ${periodNumber}`,
-      allocatedCourses: insertions.length,
+      message: `Allocated ${entriesToCreate.length} course(s) to slot`,
+      count: entriesToCreate.length
     });
+
   } catch (error) {
-    console.error("Allocate timetable error:", error);
-    res.status(500).json({
-      status: "error",
-      message: "Failed to allocate slot",
-      details: error.message,
-    });
+    await transaction.rollback();
+    res.status(400).json({ status: "error", message: error.message });
   }
-};
+});

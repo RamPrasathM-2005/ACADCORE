@@ -1,5 +1,5 @@
 // models/toolDetails.js
-module.exports = (sequelize, DataTypes) => {
+export default  (sequelize, DataTypes) => {
   const ToolDetails = sequelize.define('ToolDetails', {
     toolDetailId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     toolId: { type: DataTypes.INTEGER, allowNull: false, unique: true },

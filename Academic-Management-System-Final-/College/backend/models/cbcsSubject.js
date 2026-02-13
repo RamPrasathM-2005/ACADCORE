@@ -1,5 +1,5 @@
 // models/cbcsSubject.js
-module.exports = (sequelize, DataTypes) => {
+export default (sequelize, DataTypes) => {
   const CBCSSubject = sequelize.define('CBCSSubject', {
     cbcs_subject_id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     cbcs_id: { type: DataTypes.INTEGER, allowNull: false },
@@ -10,7 +10,10 @@ module.exports = (sequelize, DataTypes) => {
     type: { type: DataTypes.STRING(50) },
     credits: { type: DataTypes.INTEGER },
     bucketName: { type: DataTypes.STRING(100) },
-  }, { tableName: 'CBCS_Subject', timestamps: false });
+  }, { 
+    tableName: 'CBCS_Subject', 
+    timestamps: false 
+  });
 
   CBCSSubject.associate = (models) => {
     CBCSSubject.belongsTo(models.CBCS, { foreignKey: 'cbcs_id' });

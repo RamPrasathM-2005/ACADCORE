@@ -1,5 +1,5 @@
 // models/dayAttendance.js
-module.exports = (sequelize, DataTypes) => {
+export default (sequelize, DataTypes) => {
   const DayAttendance = sequelize.define('DayAttendance', {
     dayAttendanceId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     regno: { type: DataTypes.STRING(50), allowNull: false },
@@ -9,7 +9,10 @@ module.exports = (sequelize, DataTypes) => {
   }, { tableName: 'DayAttendance', timestamps: false });
 
   DayAttendance.associate = (models) => {
-    DayAttendance.belongsTo(models.StudentDetails, { foreignKey: 'regno' });
+    DayAttendance.belongsTo(models.StudentDetails, { 
+      foreignKey: 'regno', 
+      targetKey: 'registerNumber' 
+    });
   };
 
   return DayAttendance;

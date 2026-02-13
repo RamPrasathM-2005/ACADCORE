@@ -1,5 +1,5 @@
 // models/coursePartitions.js
-module.exports = (sequelize, DataTypes) => {
+export default (sequelize, DataTypes) => {
   const CoursePartitions = sequelize.define('CoursePartitions', {
     partitionId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     courseId: { type: DataTypes.INTEGER, allowNull: false, unique: true },

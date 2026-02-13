@@ -1,6 +1,19 @@
-import pool from "../db.js";
+// controllers/nptelCourseController.js
+import db from "../models/index.js";
 import catchAsync from "../utils/catchAsync.js";
 import Joi from 'joi';
+
+const { 
+  sequelize, 
+  NptelCourse, 
+  Semester, 
+  Batch, 
+  NptelCreditTransfer, 
+  StudentNptelEnrollment, 
+  StudentDetails, 
+  User 
+} = db;
+const { Op } = db.Sequelize;
 
 const validNptelTypes = ['OEC', 'PEC'];
 
@@ -13,383 +26,212 @@ const nptelCourseSchema = Joi.object({
 });
 
 export const addNptelCourse = catchAsync(async (req, res) => {
-  const userEmail = req.user?.email || 'admin';
-  const connection = await pool.getConnection();
+  const userName = req.user?.userName || 'admin';
 
-  try {
-    await connection.beginTransaction();
-
-    const { error, value } = nptelCourseSchema.validate(req.body, {
-      abortEarly: false,
-      convert: true,
+  const { error, value } = nptelCourseSchema.validate(req.body, { abortEarly: false });
+  if (error) {
+    return res.status(400).json({
+      status: 'failure',
+      message: 'Validation error: ' + error.details.map(d => d.message).join('; '),
     });
+  }
 
-    if (error) {
-      return res.status(400).json({
-        status: 'failure',
-        message: 'Validation error: ' + error.details.map(d => d.message).join('; '),
-      });
-    }
+  const { courseTitle, courseCode, type, credits, semesterId } = value;
 
-    const { courseTitle, courseCode, type, credits, semesterId } = value;
+  const transaction = await sequelize.transaction();
+  try {
+    // Check Semester
+    const semester = await Semester.findOne({ 
+      where: { semesterId, isActive: 'YES' },
+      transaction 
+    });
+    if (!semester) throw new Error(`No active semester found with ID ${semesterId}`);
 
-    // Validate semester exists and is active
-    const [semesterRows] = await connection.execute(
-      `SELECT semesterId FROM Semester WHERE semesterId = ? AND isActive = 'YES'`,
-      [semesterId]
-    );
-    if (semesterRows.length === 0) {
-      return res.status(400).json({
-        status: 'failure',
-        message: `No active semester found with ID ${semesterId}`,
-      });
-    }
+    // Check Duplicate
+    const existing = await NptelCourse.findOne({
+      where: { courseCode, semesterId, isActive: 'YES' },
+      transaction
+    });
+    if (existing) throw new Error(`NPTEL course with code ${courseCode} already exists in this semester`);
 
-    // Check for duplicate courseCode in same semester
-    const [existing] = await connection.execute(
-      `SELECT nptelCourseId FROM NptelCourse WHERE courseCode = ? AND semesterId = ? AND isActive = 'YES'`,
-      [courseCode, semesterId]
-    );
-    if (existing.length > 0) {
-      return res.status(400).json({
-        status: 'failure',
-        message: `NPTEL course with code ${courseCode} already exists in this semester`,
-      });
-    }
+    const newCourse = await NptelCourse.create({
+      courseTitle, courseCode, type, credits, semesterId,
+      createdBy: userName,
+      updatedBy: userName
+    }, { transaction });
 
-    const [result] = await connection.execute(
-      `INSERT INTO NptelCourse 
-         (courseTitle, courseCode, type, credits, semesterId, createdBy, updatedBy)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [courseTitle, courseCode, type, credits, semesterId, userEmail, userEmail]
-    );
-
-    await connection.commit();
-
+    await transaction.commit();
     res.status(201).json({
       status: 'success',
       message: 'NPTEL course added successfully',
-      nptelCourseId: result.insertId,
+      nptelCourseId: newCourse.nptelCourseId,
     });
   } catch (err) {
-    await connection.rollback();
-    console.error('Error adding NPTEL course:', err);
-    res.status(500).json({
-      status: 'failure',
-      message: 'Server error: ' + err.message,
-    });
-  } finally {
-    connection.release();
+    await transaction.rollback();
+    res.status(400).json({ status: 'failure', message: err.message });
   }
 });
 
 export const bulkAddNptelCourses = catchAsync(async (req, res) => {
   const { courses } = req.body;
-  const userEmail = req.user?.email || 'admin';
-  const connection = await pool.getConnection();
+  const userName = req.user?.userName || 'admin';
 
   if (!Array.isArray(courses) || courses.length === 0) {
-    return res.status(400).json({
-      status: 'failure',
-      message: 'No courses provided for bulk import',
-    });
+    return res.status(400).json({ status: 'failure', message: 'No courses provided' });
   }
 
+  const transaction = await sequelize.transaction();
   try {
-    await connection.beginTransaction();
     let importedCount = 0;
     const errors = [];
 
-    for (let i = 0; i < courses.length; i++) {
-      const course = courses[i];
-      const { error, value } = nptelCourseSchema.validate(course, { convert: true });
-
+    for (const [index, course] of courses.entries()) {
+      const { error, value } = nptelCourseSchema.validate(course);
       if (error) {
-        errors.push(`Row ${i + 2}: Validation failed - ${error.details.map(d => d.message).join(', ')}`);
+        errors.push(`Row ${index + 2}: ${error.message}`);
         continue;
       }
 
-      const { courseTitle, courseCode, type, credits, semesterId } = value;
-
-      // Validate semester
-      const [semesterRows] = await connection.execute(
-        `SELECT semesterId FROM Semester WHERE semesterId = ? AND isActive = 'YES'`,
-        [semesterId]
-      );
-      if (semesterRows.length === 0) {
-        errors.push(`Row ${i + 2}: Invalid or inactive semesterId ${semesterId}`);
+      const semester = await Semester.findOne({ where: { semesterId: value.semesterId, isActive: 'YES' }, transaction });
+      if (!semester) {
+        errors.push(`Row ${index + 2}: Invalid semesterId`);
         continue;
       }
 
-      // Check duplicate
-      const [existing] = await connection.execute(
-        `SELECT nptelCourseId FROM NptelCourse WHERE courseCode = ? AND semesterId = ? AND isActive = 'YES'`,
-        [courseCode, semesterId]
-      );
-      if (existing.length > 0) {
-        errors.push(`Row ${i + 2}: Duplicate courseCode ${courseCode} in semester ${semesterId}`);
-        continue;
-      }
+      const [record, created] = await NptelCourse.findOrCreate({
+        where: { courseCode: value.courseCode, semesterId: value.semesterId, isActive: 'YES' },
+        defaults: { ...value, createdBy: userName, updatedBy: userName },
+        transaction
+      });
 
-      await connection.execute(
-        `INSERT INTO NptelCourse 
-           (courseTitle, courseCode, type, credits, semesterId, createdBy, updatedBy)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [courseTitle, courseCode, type, credits, semesterId, userEmail, userEmail]
-      );
-      importedCount++;
+      if (created) importedCount++;
+      else errors.push(`Row ${index + 2}: Duplicate courseCode ${value.courseCode}`);
     }
 
-    await connection.commit();
-
+    await transaction.commit();
     res.status(200).json({
       status: 'success',
-      message: `Successfully imported ${importedCount} NPTEL courses`,
-      importedCount,
-      errors: errors.length > 0 ? errors : undefined,
+      message: `Successfully imported ${importedCount} courses`,
+      errors: errors.length > 0 ? errors : undefined
     });
   } catch (err) {
-    await connection.rollback();
-    console.error('Bulk NPTEL import error:', err);
-    res.status(500).json({
-      status: 'failure',
-      message: 'Server error during bulk import: ' + err.message,
-    });
-  } finally {
-    connection.release();
+    await transaction.rollback();
+    res.status(500).json({ status: 'failure', message: err.message });
   }
 });
 
 export const getAllNptelCourses = catchAsync(async (req, res) => {
-  const connection = await pool.getConnection();
-  try {
-    const [rows] = await connection.execute(`
-  SELECT nc.*, s.semesterNumber, b.branch, b.batch
-  FROM NptelCourse nc
-  JOIN Semester s ON nc.semesterId = s.semesterId
-  JOIN Batch b ON s.batchId = b.batchId
-  WHERE nc.isActive = 'YES'
-  ORDER BY nc.nptelCourseId DESC
-`);
+  const rows = await NptelCourse.findAll({
+    where: { isActive: 'YES' },
+    include: [{
+      model: Semester,
+      attributes: ['semesterNumber'],
+      include: [{ model: Batch, attributes: ['branch', 'batch'] }]
+    }],
+    order: [['nptelCourseId', 'DESC']]
+  });
 
-    res.status(200).json({
-      status: 'success',
-      data: rows,
-      results: rows.length,
-    });
-  } catch (err) {
-    console.error('Error fetching NPTEL courses:', err);
-    res.status(500).json({
-      status: 'failure',
-      message: 'Failed to fetch NPTEL courses',
-    });
-  } finally {
-    connection.release();
-  }
+  res.status(200).json({ status: 'success', data: rows });
 });
 
 export const updateNptelCourse = catchAsync(async (req, res) => {
   const { nptelCourseId } = req.params;
-  const userEmail = req.user?.email || 'admin';
-  const connection = await pool.getConnection();
+  const userName = req.user?.userName || 'admin';
 
+  const { error, value } = nptelCourseSchema.validate(req.body);
+  if (error) return res.status(400).json({ status: 'failure', message: error.message });
+
+  const transaction = await sequelize.transaction();
   try {
-    await connection.beginTransaction();
+    const course = await NptelCourse.findByPk(nptelCourseId, { transaction });
+    if (!course || course.isActive === 'NO') throw new Error('Course not found');
 
-    const { error, value } = nptelCourseSchema.validate(req.body, {
-      abortEarly: false,
-      convert: true,
-      allowUnknown: false,
+    // Check duplicates if code or semester changed
+    const duplicate = await NptelCourse.findOne({
+      where: {
+        courseCode: value.courseCode,
+        semesterId: value.semesterId,
+        nptelCourseId: { [Op.ne]: nptelCourseId },
+        isActive: 'YES'
+      },
+      transaction
     });
+    if (duplicate) throw new Error('Course code already exists in this semester');
 
-    if (error) {
-      return res.status(400).json({
-        status: 'failure',
-        message: 'Validation error: ' + error.details.map(d => d.message).join('; '),
-      });
-    }
+    await course.update({ ...value, updatedBy: userName }, { transaction });
+    await transaction.commit();
 
-    const { courseTitle, courseCode, type, credits, semesterId } = value;
-
-    // Check if course exists
-    const [existing] = await connection.execute(
-      `SELECT nptelCourseId FROM NptelCourse WHERE nptelCourseId = ? AND isActive = 'YES'`,
-      [nptelCourseId]
-    );
-    if (existing.length === 0) {
-      return res.status(404).json({
-        status: 'failure',
-        message: 'NPTEL course not found',
-      });
-    }
-
-    // Validate semester if changed
-    if (semesterId) {
-      const [sem] = await connection.execute(
-        `SELECT semesterId FROM Semester WHERE semesterId = ? AND isActive = 'YES'`,
-        [semesterId]
-      );
-      if (sem.length === 0) {
-        return res.status(400).json({
-          status: 'failure',
-          message: 'Invalid semester',
-        });
-      }
-    }
-
-    // Prevent duplicate code in same semester
-    if (courseCode && semesterId) {
-      const [dup] = await connection.execute(
-        `SELECT nptelCourseId FROM NptelCourse 
-         WHERE courseCode = ? AND semesterId = ? AND nptelCourseId != ? AND isActive = 'YES'`,
-        [courseCode, semesterId, nptelCourseId]
-      );
-      if (dup.length > 0) {
-        return res.status(400).json({
-          status: 'failure',
-          message: `Course code ${courseCode} already exists in this semester`,
-        });
-      }
-    }
-
-    await connection.execute(
-      `UPDATE NptelCourse 
-       SET courseTitle = ?, courseCode = ?, type = ?, credits = ?, semesterId = ?, updatedBy = ?, updatedAt = CURRENT_TIMESTAMP
-       WHERE nptelCourseId = ?`,
-      [courseTitle, courseCode, type, credits, semesterId, userEmail, nptelCourseId]
-    );
-
-    await connection.commit();
-
-    res.status(200).json({
-      status: 'success',
-      message: 'NPTEL course updated successfully',
-    });
+    res.status(200).json({ status: 'success', message: 'NPTEL course updated successfully' });
   } catch (err) {
-    await connection.rollback();
-    console.error('Error updating NPTEL course:', err);
-    res.status(500).json({
-      status: 'failure',
-      message: 'Server error',
-    });
-  } finally {
-    connection.release();
+    await transaction.rollback();
+    res.status(400).json({ status: 'failure', message: err.message });
   }
 });
 
 export const deleteNptelCourse = catchAsync(async (req, res) => {
   const { nptelCourseId } = req.params;
-  const userEmail = req.user?.email || 'admin';
-  const connection = await pool.getConnection();
+  const userName = req.user?.userName || 'admin';
 
-  try {
-    await connection.beginTransaction();
+  const course = await NptelCourse.findByPk(nptelCourseId);
+  if (!course) return res.status(404).json({ status: 'failure', message: 'Not found' });
 
-    const [existing] = await connection.execute(
-      `SELECT nptelCourseId FROM NptelCourse WHERE nptelCourseId = ? AND isActive = 'YES'`,
-      [nptelCourseId]
-    );
-    if (existing.length === 0) {
-      return res.status(404).json({
-        status: 'failure',
-        message: 'NPTEL course not found',
-      });
-    }
-
-    await connection.execute(
-      `UPDATE NptelCourse SET isActive = 'NO', updatedBy = ?, updatedAt = CURRENT_TIMESTAMP WHERE nptelCourseId = ?`,
-      [userEmail, nptelCourseId]
-    );
-
-    await connection.commit();
-
-    res.status(200).json({
-      status: 'success',
-      message: 'NPTEL course deleted successfully',
-    });
-  } catch (err) {
-    await connection.rollback();
-    console.error('Error deleting NPTEL course:', err);
-    res.status(500).json({
-      status: 'failure',
-      message: 'Server error',
-    });
-  } finally {
-    connection.release();
-  }
+  await course.update({ isActive: 'NO', updatedBy: userName });
+  res.status(200).json({ status: 'success', message: 'NPTEL course deleted successfully' });
 });
 
 export const getPendingNptelTransfers = catchAsync(async (req, res) => {
-  const connection = await pool.getConnection();
-  try {
-    const [rows] = await connection.execute(`
-      SELECT
-        nct.transferId,
-        nct.regno,
-        u.username AS studentName,
-        nc.courseTitle,
-        nc.courseCode,
-        nc.type,
-        nc.credits,
-        nct.grade,
-        nct.studentStatus,
-        nct.studentRespondedAt,
-        nct.studentRemarks
-      FROM NptelCreditTransfer nct
-      JOIN StudentNptelEnrollment sne ON nct.enrollmentId = sne.enrollmentId
-      JOIN NptelCourse nc ON nct.nptelCourseId = nc.nptelCourseId
-      JOIN student_details sd ON nct.regno = sd.regno
-      JOIN users u ON sd.Userid = u.Userid
-      ORDER BY 
-        nct.studentRespondedAt IS NULL,  -- Pending first (NULLs at top)
-        nct.studentRespondedAt DESC,     -- Then most recent first
-        nct.transferId DESC
-    `);
+  const rows = await NptelCreditTransfer.findAll({
+    include: [
+      {
+        model: StudentNptelEnrollment,
+        include: [{ model: NptelCourse }]
+      },
+      {
+        model: StudentDetails,
+        include: [{ model: User, as: 'userAccount', attributes: ['userName'] }]
+      }
+    ],
+    order: [
+      [sequelize.literal('studentRespondedAt IS NULL'), 'DESC'],
+      ['studentRespondedAt', 'DESC']
+    ]
+  });
 
-    res.status(200).json({
-      status: "success",
-      data: rows
-    });
-  } catch (err) {
-    console.error("Error in getPendingNptelTransfers:", err);
-    res.status(500).json({ status: "failure", message: "Server error" });
-  } finally {
-    connection.release();
-  }
+  // Flattening data for frontend compatibility
+  const formatted = rows.map(r => ({
+    transferId: r.transferId,
+    regno: r.regno,
+    studentName: r.StudentDetail?.userAccount?.userName,
+    courseTitle: r.StudentNptelEnrollment?.NptelCourse?.courseTitle,
+    courseCode: r.StudentNptelEnrollment?.NptelCourse?.courseCode,
+    type: r.StudentNptelEnrollment?.NptelCourse?.type,
+    credits: r.StudentNptelEnrollment?.NptelCourse?.credits,
+    grade: r.grade,
+    studentStatus: r.studentStatus,
+    studentRespondedAt: r.studentRespondedAt,
+    studentRemarks: r.studentRemarks
+  }));
+
+  res.status(200).json({ status: "success", data: formatted });
 });
 
 export const approveRejectTransfer = catchAsync(async (req, res) => {
   const { transferId, action, remarks } = req.body;
+  const userName = req.user?.userName || 'admin';
 
-  if (!['approved', 'rejected'].includes(action)) {
+  if (!['accepted', 'rejected'].includes(action)) {
     return res.status(400).json({ status: "failure", message: "Invalid action" });
   }
 
-  const connection = await pool.getConnection();
-  try {
-    await connection.beginTransaction();
+  const transfer = await NptelCreditTransfer.findByPk(transferId);
+  if (!transfer) return res.status(404).json({ status: "failure", message: "Request not found" });
 
-    const [result] = await connection.execute(
-      `UPDATE NptelCreditTransfer 
-       SET status = ?, reviewedAt = NOW(), reviewedBy = ?, remarks = ?
-       WHERE transferId = ?`,
-      [action, req.user.email || 'admin', remarks || null, transferId]
-    );
+  await transfer.update({
+    studentStatus: action,
+    studentRespondedAt: new Date(),
+    studentRemarks: remarks || null,
+    // Add audit fields if they exist in your schema
+  });
 
-    if (result.affectedRows === 0) {
-      throw new Error("Request not found");
-    }
-
-    await connection.commit();
-
-    res.status(200).json({
-      status: "success",
-      message: `Request ${action} successfully`
-    });
-  } catch (err) {
-    await connection.rollback();
-    res.status(400).json({ status: "failure", message: err.message });
-  } finally {
-    connection.release();
-  }
+  res.status(200).json({ status: "success", message: `Request ${action} successfully` });
 });

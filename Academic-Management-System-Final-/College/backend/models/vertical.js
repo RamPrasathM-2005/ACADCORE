@@ -1,5 +1,5 @@
 // models/vertical.js
-module.exports = (sequelize, DataTypes) => {
+export default  (sequelize, DataTypes) => {
   const Vertical = sequelize.define('Vertical', {
     verticalId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     regulationId: { type: DataTypes.INTEGER, allowNull: false },

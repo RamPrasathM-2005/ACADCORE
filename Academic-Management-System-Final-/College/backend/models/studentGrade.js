@@ -1,5 +1,5 @@
 // models/studentGrade.js
-module.exports = (sequelize, DataTypes) => {
+export default(sequelize, DataTypes) => {
   const StudentGrade = sequelize.define('StudentGrade', {
     gradeId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     regno: { type: DataTypes.STRING(50), allowNull: false },
@@ -8,7 +8,7 @@ module.exports = (sequelize, DataTypes) => {
   }, { tableName: 'StudentGrade', timestamps: true });
 
   StudentGrade.associate = (models) => {
-    StudentGrade.belongsTo(models.StudentDetails, { foreignKey: 'regno' });
+    StudentGrade.belongsTo(models.StudentDetails, { foreignKey: 'regno' , targetKey: 'registerNumber'});
   };
 
   // Triggers (use migrations to add)

@@ -1,423 +1,271 @@
-import pool from "../db.js";
+// controllers/studentNptelController.js
+import db from "../models/index.js";
 import catchAsync from "../utils/catchAsync.js";
+import { Op } from "sequelize";
+
+const {
+  sequelize,
+  NptelCourse,
+  StudentNptelEnrollment,
+  StudentDetails,
+  Semester,
+  StudentGrade,
+  NptelCreditTransfer,
+  Batch,
+  RegulationCourse,
+  StudentElectiveSelection,
+  Course,
+  User
+} = db;
+
+/**
+ * Utility: Get Student Registration Number from User Session
+ */
+const getRegNo = async (userId) => {
+  const student = await StudentDetails.findOne({
+    where: { 
+      [Op.or]: [{ registerNumber: userId }, { studentId: userId }] 
+    },
+    attributes: ['registerNumber']
+  });
+  if (!student) throw new Error("Student profile not found");
+  return student.registerNumber;
+};
 
 export const getNptelCourses = catchAsync(async (req, res) => {
   const { semesterId } = req.query;
+  const userId = req.user.id;
+
   if (!semesterId) {
     return res.status(400).json({ status: "failure", message: "semesterId is required" });
   }
 
-  if (!req.user || !req.user.Userid) {
-    return res.status(401).json({ status: "failure", message: "User not authenticated" });
-  }
+  const regno = await getRegNo(userId);
 
-  const connection = await pool.getConnection();
-  try {
-    // Get regno from Userid
-    const [studentRows] = await connection.execute(
-      `SELECT sd.regno FROM student_details sd WHERE sd.Userid = ?`,
-      [req.user.Userid]
-    );
+  // 1. Fetch available NPTEL courses
+  const courses = await NptelCourse.findAll({
+    where: { semesterId, isActive: 'YES' },
+    order: [['courseTitle', 'ASC']]
+  });
 
-    if (studentRows.length === 0) {
-      return res.status(404).json({ status: "failure", message: "Student not found" });
-    }
-    const regno = studentRows[0].regno;
+  // 2. Fetch student's current enrollments for these courses
+  const enrollments = await StudentNptelEnrollment.findAll({
+    where: {
+      regno,
+      nptelCourseId: { [Op.in]: courses.map(c => c.nptelCourseId) }
+    },
+    attributes: ['nptelCourseId']
+  });
 
-    // Fetch available NPTEL courses
-    const [courses] = await connection.execute(`
-      SELECT nc.nptelCourseId, nc.courseTitle, nc.courseCode, nc.type, nc.credits
-      FROM NptelCourse nc
-      WHERE nc.semesterId = ? AND nc.isActive = 'YES'
-      ORDER BY nc.courseTitle
-    `, [semesterId]);
+  const enrolledIds = new Set(enrollments.map(e => e.nptelCourseId));
 
-    // Fetch enrolled ones for this student
-    const enrolledIds = new Set();
-    if (courses.length > 0) {
-      const ids = courses.map(c => c.nptelCourseId);
-      const placeholders = ids.map(() => '?').join(',');
-      const [enrolled] = await connection.execute(`
-        SELECT nptelCourseId 
-        FROM StudentNptelEnrollment 
-        WHERE regno = ? AND nptelCourseId IN (${placeholders})
-      `, [regno, ...ids]);
+  // 3. Map "isEnrolled" status
+  const enriched = courses.map(c => ({
+    ...c.toJSON(),
+    isEnrolled: enrolledIds.has(c.nptelCourseId)
+  }));
 
-      enrolled.forEach(row => enrolledIds.add(row.nptelCourseId));
-    }
-
-    const enriched = courses.map(c => ({
-      ...c,
-      isEnrolled: enrolledIds.has(c.nptelCourseId)
-    }));
-
-    res.status(200).json({
-      status: "success",
-      data: enriched
-    });
-  } catch (err) {
-    console.error("Error in getNptelCourses:", err);
-    res.status(500).json({ status: "failure", message: "Server error" });
-  } finally {
-    connection.release();
-  }
+  res.status(200).json({ status: "success", data: enriched });
 });
 
 export const enrollNptel = catchAsync(async (req, res) => {
   const { semesterId, nptelCourseIds } = req.body;
+  const userId = req.user.id;
 
-  if (!semesterId || !nptelCourseIds || !Array.isArray(nptelCourseIds) || nptelCourseIds.length === 0) {
-    return res.status(400).json({ 
-      status: "failure", 
-      message: "semesterId and non-empty nptelCourseIds array are required" 
-    });
+  if (!semesterId || !Array.isArray(nptelCourseIds) || nptelCourseIds.length === 0) {
+    return res.status(400).json({ status: "failure", message: "Invalid input data" });
   }
 
-  if (!req.user || !req.user.Userid) {
-    return res.status(401).json({ status: "failure", message: "User not authenticated" });
-  }
+  const regno = await getRegNo(userId);
 
-  const connection = await pool.getConnection();
+  const transaction = await sequelize.transaction();
   try {
-    await connection.beginTransaction();
+    // Validate Semester
+    const sem = await Semester.findOne({ where: { semesterId, isActive: 'YES' }, transaction });
+    if (!sem) throw new Error("Invalid or inactive semester");
 
-    // Fetch regno
-    const [studentRows] = await connection.execute(
-      `SELECT sd.regno FROM student_details sd WHERE sd.Userid = ?`,
-      [req.user.Userid]
-    );
-
-    if (studentRows.length === 0) {
-      throw new Error("Student not found");
-    }
-    const regno = studentRows[0].regno;
-
-    // Validate semester
-    const [semCheck] = await connection.execute(
-      `SELECT semesterId FROM Semester WHERE semesterId = ? AND isActive = 'YES'`,
-      [semesterId]
-    );
-    if (semCheck.length === 0) {
-      throw new Error("Invalid or inactive semester");
-    }
-
-    // Validate courses exist in this semester
-    const placeholders = nptelCourseIds.map(() => '?').join(',');
-    const [validCourses] = await connection.execute(
-      `SELECT nptelCourseId FROM NptelCourse 
-       WHERE nptelCourseId IN (${placeholders}) 
-         AND semesterId = ? AND isActive = 'YES'`,
-      [...nptelCourseIds, semesterId]
-    );
+    // Validate Courses exist in this semester
+    const validCourses = await NptelCourse.findAll({
+      where: {
+        nptelCourseId: { [Op.in]: nptelCourseIds },
+        semesterId,
+        isActive: 'YES'
+      },
+      transaction
+    });
 
     if (validCourses.length !== nptelCourseIds.length) {
-      throw new Error("One or more courses are invalid or not available");
+      throw new Error("One or more courses are invalid for this semester");
     }
 
-    // Insert each enrollment individually with INSERT IGNORE
+    // Perform bulk enrollment
     let enrolledCount = 0;
     for (const courseId of nptelCourseIds) {
-      const [result] = await connection.execute(
-        `INSERT IGNORE INTO StudentNptelEnrollment 
-         (regno, nptelCourseId, semesterId) 
-         VALUES (?, ?, ?)`,
-        [regno, courseId, semesterId]
-      );
-      if (result.affectedRows > 0) enrolledCount++;
+      const [record, created] = await StudentNptelEnrollment.findOrCreate({
+        where: { regno, nptelCourseId: courseId, semesterId },
+        transaction
+      });
+      if (created) enrolledCount++;
     }
 
-    await connection.commit();
-
-    res.status(200).json({
-      status: "success",
-      message: `Successfully enrolled in ${enrolledCount} new NPTEL course(s)`,
-      enrolledCount
-    });
+    await transaction.commit();
+    res.status(200).json({ status: "success", message: `Enrolled in ${enrolledCount} course(s)`, enrolledCount });
   } catch (err) {
-    await connection.rollback();
-    console.error("Error in enrollNptel:", err);
-    res.status(400).json({ 
-      status: "failure", 
-      message: err.message || "Failed to enroll in NPTEL courses" 
-    });
-  } finally {
-    connection.release();
+    await transaction.rollback();
+    res.status(400).json({ status: "failure", message: err.message });
   }
 });
 
 export const getStudentNptelEnrollments = catchAsync(async (req, res) => {
-  if (!req.user || !req.user.Userid) {
-    return res.status(401).json({ status: "failure", message: "User not authenticated" });
-  }
+  const userId = req.user.id;
+  const regno = await getRegNo(userId);
 
-  const connection = await pool.getConnection();
-  try {
-    // Safely fetch regno
-    const [studentRows] = await connection.execute(
-      `SELECT sd.regno FROM student_details sd WHERE sd.Userid = ?`,
-      [req.user.Userid]
-    );
+  const enrollments = await StudentNptelEnrollment.findAll({
+    where: { regno, isActive: 'YES' },
+    include: [
+      { model: NptelCourse },
+      { model: Semester },
+      { model: NptelCreditTransfer }
+    ],
+    order: [[Semester, 'semesterNumber', 'DESC'], [NptelCourse, 'courseTitle', 'ASC']]
+  });
 
-    if (studentRows.length === 0) {
-      return res.status(200).json({ 
-        status: "success", 
-        data: [] 
-      }); // No student record → return empty list (safe)
-    }
+  // Since StudentGrade isn't directly associated with Enrollment (it's linked via courseCode),
+  // we fetch grades separately and merge
+  const courseCodes = enrollments.map(e => e.NptelCourse.courseCode);
+  const grades = await StudentGrade.findAll({ where: { regno, courseCode: { [Op.in]: courseCodes } } });
+  const gradeMap = new Map(grades.map(g => [g.courseCode, g.grade]));
 
-    const regno = studentRows[0].regno;
+  const data = enrollments.map(e => ({
+    enrollmentId: e.enrollmentId,
+    nptelCourseId: e.nptelCourseId,
+    courseTitle: e.NptelCourse.courseTitle,
+    courseCode: e.NptelCourse.courseCode,
+    type: e.NptelCourse.type,
+    credits: e.NptelCourse.credits,
+    semesterNumber: e.Semester.semesterNumber,
+    importedGrade: gradeMap.get(e.NptelCourse.courseCode) || null,
+    studentStatus: e.NptelCreditTransfer?.studentStatus || null,
+    studentRemarks: e.NptelCreditTransfer?.studentRemarks || null,
+    studentRespondedAt: e.NptelCreditTransfer?.studentRespondedAt || null
+  }));
 
-    // Fetch enrolled NPTEL courses with grade from StudentGrade
-    const [rows] = await connection.execute(`
-      SELECT 
-        sne.enrollmentId,
-        sne.nptelCourseId,
-        nc.courseTitle,
-        nc.courseCode,
-        nc.type,
-        nc.credits,
-        s.semesterNumber,
-        s.startDate,
-        s.endDate,
-        sg.grade AS importedGrade,
-        nct.studentStatus,
-        nct.studentRemarks,
-        nct.studentRespondedAt
-      FROM StudentNptelEnrollment sne
-      JOIN NptelCourse nc ON sne.nptelCourseId = nc.nptelCourseId
-      JOIN Semester s ON sne.semesterId = s.semesterId
-      LEFT JOIN StudentGrade sg ON sne.regno = sg.regno AND nc.courseCode = sg.courseCode
-      LEFT JOIN NptelCreditTransfer nct ON sne.enrollmentId = nct.enrollmentId
-      WHERE sne.regno = ? AND sne.isActive = 'YES'
-      ORDER BY s.semesterNumber DESC, nc.courseTitle
-    `, [regno]);
-
-    res.status(200).json({
-      status: "success",
-      data: rows
-    });
-  } catch (err) {
-    console.error("Error in getStudentNptelEnrollments:", err);
-    res.status(500).json({ status: "failure", message: "Server error" });
-  } finally {
-    connection.release();
-  }
+  res.status(200).json({ status: "success", data });
 });
 
 export const requestCreditTransfer = catchAsync(async (req, res) => {
   const { enrollmentId, decision, remarks } = req.body;
-
-  if (!enrollmentId) {
-    return res.status(400).json({ status: "failure", message: "enrollmentId required" });
-  }
+  const userId = req.user.id;
 
   if (!['accepted', 'rejected'].includes(decision)) {
     return res.status(400).json({ status: "failure", message: "Invalid decision" });
   }
 
-  const connection = await pool.getConnection();
-  try {
-    const [student] = await connection.execute(
-      `SELECT sd.regno FROM student_details sd WHERE sd.Userid = ?`,
-      [req.user.Userid]
-    );
-    if (student.length === 0) throw new Error("Student not found");
-    const regno = student[0].regno;
+  const regno = await getRegNo(userId);
 
-    const [enroll] = await connection.execute(
-      `SELECT sne.nptelCourseId, nc.courseCode
-       FROM StudentNptelEnrollment sne
-       JOIN NptelCourse nc ON sne.nptelCourseId = nc.nptelCourseId
-       WHERE sne.enrollmentId = ? AND sne.regno = ?`,
-      [enrollmentId, regno]
-    );
-    if (enroll.length === 0) throw new Error("Not enrolled");
+  // 1. Verify Enrollment
+  const enrollment = await StudentNptelEnrollment.findOne({
+    where: { enrollmentId, regno },
+    include: [{ model: NptelCourse }]
+  });
+  if (!enrollment) return res.status(404).json({ status: "failure", message: "Enrollment not found" });
 
-    const { nptelCourseId, courseCode } = enroll[0];
+  // 2. Get Imported Grade
+  const gradeRecord = await StudentGrade.findOne({
+    where: { regno, courseCode: enrollment.NptelCourse.courseCode }
+  });
+  if (!gradeRecord) return res.status(400).json({ status: "failure", message: "Grade not imported yet" });
 
-    const [gradeRow] = await connection.execute(
-      `SELECT grade FROM StudentGrade WHERE regno = ? AND courseCode = ?`,
-      [regno, courseCode]
-    );
-    if (gradeRow.length === 0) throw new Error("Grade not imported yet");
+  // 3. Upsert into Credit Transfer
+  await NptelCreditTransfer.upsert({
+    enrollmentId,
+    regno,
+    nptelCourseId: enrollment.nptelCourseId,
+    grade: gradeRecord.grade,
+    studentStatus: decision,
+    studentRemarks: remarks || null,
+    studentRespondedAt: new Date()
+  });
 
-    const grade = gradeRow[0].grade;
-
-    // Record student's final decision
-    await connection.execute(`
-      INSERT INTO NptelCreditTransfer 
-        (enrollmentId, regno, nptelCourseId, grade, studentStatus, studentRemarks, studentRespondedAt)
-      VALUES (?, ?, ?, ?, ?, ?, NOW())
-      ON DUPLICATE KEY UPDATE
-        studentStatus = VALUES(studentStatus),
-        studentRemarks = VALUES(studentRemarks),
-        studentRespondedAt = NOW(),
-        grade = VALUES(grade)
-    `, [enrollmentId, regno, nptelCourseId, grade, decision, remarks || null]);
-
-    res.status(200).json({
-      status: "success",
-      message: decision === 'accepted' 
-        ? "Credit transfer accepted!" 
-        : "Credit transfer rejected."
-    });
-  } catch (err) {
-    res.status(400).json({ status: "failure", message: err.message });
-  } finally {
-    connection.release();
-  }
+  res.status(200).json({
+    status: "success",
+    message: decision === 'accepted' ? "Credit transfer accepted!" : "Credit transfer rejected."
+  });
 });
 
 export const getOecPecProgress = catchAsync(async (req, res) => {
-  if (!req.user || !req.user.Userid) {
-    return res.status(401).json({ status: "failure", message: "User not authenticated" });
-  }
+  const userId = req.user.id;
 
-  const connection = await pool.getConnection();
-  try {
-    const userId = req.user.Userid;
+  // 1. Get Core Info
+  const student = await StudentDetails.findOne({
+    where: { [Op.or]: [{ registerNumber: req.user.userNumber }, { studentId: userId }] },
+    include: [{ model: DepartmentAcademic, as: 'department' }]
+  });
 
-    // Get regno and regulationId
-    const [studentRows] = await connection.execute(
-      `SELECT sd.regno, b.regulationId
-       FROM student_details sd
-       JOIN Batch b ON sd.batch = b.batch AND b.isActive = 'YES'
-       WHERE sd.Userid = ?`,
-      [userId]
-    );
+  if (!student) return res.status(404).json({ status: "failure", message: "Student not found" });
 
-    if (studentRows.length === 0) {
-      return res.status(404).json({ status: "failure", message: "Student or batch not found" });
+  // Find Batch/Regulation
+  const batch = await Batch.findOne({ 
+    where: { batch: student.batch, branch: student.department.Deptacronym, isActive: 'YES' } 
+  });
+  if (!batch || !batch.regulationId) return res.status(404).json({ status: "failure", message: "Regulation not assigned" });
+
+  // 2. Count Requirements from Regulation
+  const required = await RegulationCourse.findAll({
+    where: { regulationId: batch.regulationId, category: { [Op.in]: ['OEC', 'PEC'] }, isActive: 'YES' },
+    attributes: ['category', [sequelize.fn('COUNT', sequelize.col('category')), 'count']],
+    group: ['category']
+  });
+
+  const requiredMap = { OEC: 0, PEC: 0 };
+  required.forEach(r => requiredMap[r.category] = parseInt(r.get('count')));
+
+  // 3. Count Accepted NPTEL Credits
+  const nptel = await NptelCreditTransfer.findAll({
+    where: { regno: student.registerNumber, studentStatus: 'accepted' },
+    include: [{ model: NptelCourse, attributes: ['type'] }],
+    attributes: [[sequelize.fn('COUNT', sequelize.col('NptelCreditTransfer.transferId')), 'count']],
+    includeIgnoreAttributes: false,
+    group: ['NptelCourse.type']
+  });
+
+  const nptelMap = { OEC: 0, PEC: 0 };
+  nptel.forEach(r => {
+    const type = r.NptelCourse?.type;
+    if (type) nptelMap[type] = parseInt(r.get('count'));
+  });
+
+  // 4. Count Allocated College Electives
+  const college = await StudentElectiveSelection.findAll({
+    where: { regno: student.registerNumber, status: 'allocated' },
+    include: [{ model: Course, where: { category: { [Op.in]: ['OEC', 'PEC'] } } }],
+    group: ['Course.category'],
+    attributes: [[sequelize.fn('COUNT', sequelize.col('Course.category')), 'count']]
+  });
+
+  const collegeMap = { OEC: 0, PEC: 0 };
+  college.forEach(r => {
+    const cat = r.Course?.category;
+    if (cat) collegeMap[cat] = parseInt(r.get('count'));
+  });
+
+  const totalOec = nptelMap.OEC + collegeMap.OEC;
+  const totalPec = nptelMap.PEC + collegeMap.PEC;
+
+  res.status(200).json({
+    status: "success",
+    data: {
+      required: requiredMap,
+      completed: { OEC: totalOec, PEC: totalPec },
+      remaining: {
+        OEC: Math.max(0, requiredMap.OEC - totalOec),
+        PEC: Math.max(0, requiredMap.PEC - totalPec)
+      },
+      fromNptel: nptelMap,
+      fromCollege: collegeMap
     }
-
-    const { regno, regulationId } = studentRows[0];
-
-    if (!regno || !regulationId) {
-      return res.status(404).json({
-        status: "failure",
-        message: !regno ? "Registration number missing" : "No regulation assigned to batch"
-      });
-    }
-
-    // Required from regulation
-    const [required] = await connection.execute(
-      `SELECT category, COUNT(*) as count
-       FROM RegulationCourse
-       WHERE regulationId = ? AND category IN ('OEC', 'PEC') AND isActive = 'YES'
-       GROUP BY category`,
-      [regulationId]
-    );
-
-    const requiredMap = { OEC: 0, PEC: 0 };
-    required.forEach(r => requiredMap[r.category] = parseInt(r.count) || 0);
-
-    // Approved NPTEL
-    // Replace NPTEL query with:
-const [nptel] = await connection.execute(`
-  SELECT nc.type, COUNT(*) as count
-  FROM NptelCreditTransfer nct
-  JOIN StudentNptelEnrollment sne ON nct.enrollmentId = sne.enrollmentId
-  JOIN NptelCourse nc ON sne.nptelCourseId = nc.nptelCourseId
-  WHERE nct.regno = ? AND nct.studentStatus = 'accepted'
-  GROUP BY nc.type
-`, [regno]);
-
-    const nptelMap = { OEC: 0, PEC: 0 };
-    nptel.forEach(r => nptelMap[r.type] = parseInt(r.count) || 0);
-
-    // College electives
-    const [college] = await connection.execute(`
-      SELECT c.category, COUNT(*) as count
-      FROM StudentElectiveSelection ses
-      JOIN Course c ON ses.selectedCourseId = c.courseId
-      WHERE ses.regno = ? AND ses.status = 'allocated' AND c.category IN ('OEC', 'PEC')
-      GROUP BY c.category
-    `, [regno]);
-
-    const collegeMap = { OEC: 0, PEC: 0 };
-    college.forEach(r => collegeMap[r.category] = parseInt(r.count) || 0);
-
-    const totalOec = nptelMap.OEC + collegeMap.OEC;
-    const totalPec = nptelMap.PEC + collegeMap.PEC;
-
-    res.status(200).json({
-      status: "success",
-      data: {
-        required: requiredMap,
-        completed: { OEC: totalOec, PEC: totalPec },
-        remaining: {
-          OEC: Math.max(0, requiredMap.OEC - totalOec),
-          PEC: Math.max(0, requiredMap.PEC - totalPec)
-        },
-        fromNptel: nptelMap,
-        fromCollege: collegeMap
-      }
-    });
-  } catch (err) {
-    console.error("Error in getOecPecProgress:", err);
-    res.status(500).json({ status: "failure", message: "Server error" });
-  } finally {
-    connection.release();
-  }
+  });
 });
 
-export const studentNptelCreditDecision = catchAsync(async (req, res) => {
-  const { enrollmentId, decision, remarks } = req.body;
-
-  if (!['accepted', 'rejected'].includes(decision)) {
-    return res.status(400).json({ status: "failure", message: "Invalid decision" });
-  }
-
-  const connection = await pool.getConnection();
-  try {
-    const [student] = await connection.execute(
-      `SELECT sd.regno FROM student_details sd WHERE sd.Userid = ?`,
-      [req.user.Userid]
-    );
-    if (student.length === 0) throw new Error("Student not found");
-    const regno = student[0].regno;
-
-    const [enroll] = await connection.execute(
-      `SELECT sne.nptelCourseId, nc.courseCode
-       FROM StudentNptelEnrollment sne
-       JOIN NptelCourse nc ON sne.nptelCourseId = nc.nptelCourseId
-       WHERE sne.enrollmentId = ? AND sne.regno = ?`,
-      [enrollmentId, regno]
-    );
-    if (enroll.length === 0) throw new Error("Enrollment not found");
-
-    const { nptelCourseId, courseCode } = enroll[0];
-
-    // Verify grade exists
-    const [gradeRow] = await connection.execute(
-      `SELECT grade FROM StudentGrade WHERE regno = ? AND courseCode = ?`,
-      [regno, courseCode]
-    );
-    if (gradeRow.length === 0) throw new Error("Grade not imported yet");
-
-    const grade = gradeRow[0].grade;
-
-    // Record student's final decision
-    await connection.execute(`
-      INSERT INTO NptelCreditTransfer 
-        (enrollmentId, regno, nptelCourseId, grade, studentStatus, studentRemarks, studentRespondedAt)
-      VALUES (?, ?, ?, ?, ?, ?, NOW())
-      ON DUPLICATE KEY UPDATE
-        studentStatus = VALUES(studentStatus),
-        studentRemarks = VALUES(studentRemarks),
-        studentRespondedAt = NOW(),
-        grade = VALUES(grade)
-    `, [enrollmentId, regno, nptelCourseId, grade, decision, remarks || null]);
-
-    res.status(200).json({
-      status: "success",
-      message: decision === 'accepted' 
-        ? "Credit transfer accepted successfully!" 
-        : "Credit transfer rejected."
-    });
-  } catch (err) {
-    res.status(400).json({ status: "failure", message: err.message || "Failed to record decision" });
-  } finally {
-    connection.release();
-  }
-});
+// Alias for requestCreditTransfer per your original code
+export const studentNptelCreditDecision = requestCreditTransfer;

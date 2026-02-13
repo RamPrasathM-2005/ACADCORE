@@ -1,5 +1,5 @@
 // models/courseRequest.js
-module.exports = (sequelize, DataTypes) => {
+export default (sequelize, DataTypes) => {
   const CourseRequest = sequelize.define('CourseRequest', {
     requestId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     staffId: { type: DataTypes.INTEGER, allowNull: false },

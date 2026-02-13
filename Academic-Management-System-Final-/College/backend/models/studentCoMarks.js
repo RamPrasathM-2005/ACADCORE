@@ -1,5 +1,5 @@
 // models/studentCoMarks.js
-module.exports = (sequelize, DataTypes) => {
+export default(sequelize, DataTypes) => {
   const StudentCoMarks = sequelize.define('StudentCoMarks', {
     studentCoMarkId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     regno: { type: DataTypes.STRING(50), allowNull: false },
@@ -10,7 +10,7 @@ module.exports = (sequelize, DataTypes) => {
   }, { tableName: 'StudentCOMarks', timestamps: true, createdAt: 'createdDate', updatedAt: 'updatedDate' });
 
   StudentCoMarks.associate = (models) => {
-    StudentCoMarks.belongsTo(models.StudentDetails, { foreignKey: 'regno' });
+    StudentCoMarks.belongsTo(models.StudentDetails, { foreignKey: 'regno', targetKey: 'registerNumber'});
     StudentCoMarks.belongsTo(models.CourseOutcome, { foreignKey: 'coId' });
   };
 

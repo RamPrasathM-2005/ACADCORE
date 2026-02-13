@@ -1,924 +1,232 @@
-import pool from "../db.js";
+// controllers/staffCourseController.js
+import db from "../models/index.js";
 import catchAsync from "../utils/catchAsync.js";
+import { Op } from "sequelize";
+
+const { 
+  sequelize, User, StaffCourse, Course, Section, 
+  DepartmentAcademic, Semester, Batch 
+} = db;
 
 export const getUsers = catchAsync(async (req, res) => {
-  if (!req.user || !req.user.email) {
-    return res.status(401).json({
-      status: "failure",
-      message: "Authentication required: No user email provided",
-    });
-  }
-  const userEmail = req.user.email;
-  const connection = await pool.getConnection();
-
-  try {
-    const [userCheck] = await connection.execute(
-      "SELECT Userid FROM users WHERE email = ? AND status = 'active'",
-      [userEmail]
-    );
-    if (userCheck.length === 0) {
-      return res.status(400).json({
-        status: "failure",
-        message: `No active user found with email ${userEmail}`,
-      });
-    }
-
-    const [rows] = await connection.execute(`
-      SELECT 
-        u.Userid AS id, 
-        u.username AS name, 
-        u.email, 
-        u.Deptid AS departmentId,  
-        d.Deptname AS departmentName, 
-        sc.staffCourseId, 
-        sc.courseId, 
-        c.courseCode, 
-        c.courseTitle, 
-        sc.sectionId, 
-        s.sectionName, 
-        c.semesterId
-      FROM users u
-      INNER JOIN department d ON u.Deptid = d.Deptid
-      LEFT JOIN StaffCourse sc ON u.Userid = sc.Userid 
-      LEFT JOIN Course c ON sc.courseId = c.courseId AND c.isActive = 'YES'
-      LEFT JOIN Section s ON sc.sectionId = s.sectionId AND s.isActive = 'YES'
-      WHERE u.role = 'Staff' AND u.status = 'active'
-    `);
-
-    const staffData = rows.reduce((acc, row) => {
-      let staff = acc.find((s) => s.id === row.id);
-      if (!staff) {
-        staff = {
-          id: row.id,
-          staffId: row.id.toString(),
-          name: row.name || "Unknown",
-          email: row.email || "",
-          phone: "",
-          departmentId: row.departmentId,
-          departmentName: row.departmentName || "Unknown",
-          designation: "",
-          experience: "",
-          allocatedCourses: [],
-        };
-        acc.push(staff);
+  const staff = await User.findAll({
+    where: { roleId: 2, status: 'Active' }, // Assuming roleId 2 is Staff
+    include: [
+      { model: DepartmentAcademic, as: 'department', attributes: ['Deptname'] },
+      {
+        model: StaffCourse,
+        as: 'teachingAssignments',
+        include: [
+          { 
+            model: Course, 
+            where: { isActive: 'YES' }, 
+            required: false,
+            attributes: ['courseCode', 'courseTitle', 'semesterId'] 
+          },
+          { 
+            model: Section, 
+            where: { isActive: 'YES' }, 
+            required: false,
+            attributes: ['sectionName'] 
+          }
+        ]
       }
-      if (row.staffCourseId && row.courseId && row.sectionId) {
-        staff.allocatedCourses.push({
-          staffCourseId: row.staffCourseId,
-          courseId: row.courseId,
-          courseCode: row.courseCode,
-          courseTitle: row.courseTitle || "Unknown",
-          sectionId: row.sectionId,
-          sectionName: row.sectionName ? `Batch ${row.sectionName}` : "N/A",
-          semesterId: row.semesterId || null,
-        });
-      }
-      return acc;
-    }, []);
+    ]
+  });
 
-    res.status(200).json({
-      status: "success",
-      data: staffData,
-    });
-  } catch (err) {
-    console.error("getUsers error:", {
-      message: err.message,
-      stack: err.stack,
-      userEmail,
-    });
-    res.status(500).json({
-      status: "failure",
-      message: "Failed to fetch users: " + err.message,
-    });
-  } finally {
-    connection.release();
-  }
+  // Format data for frontend (mimics the original reduce logic)
+  const staffData = staff.map(u => ({
+    id: u.userId,
+    staffId: u.userId.toString(),
+    name: u.userName || "Unknown",
+    email: u.userMail || "",
+    departmentId: u.departmentId,
+    departmentName: u.department?.Deptname || "Unknown",
+    allocatedCourses: (u.teachingAssignments || []).map(ta => ({
+      staffCourseId: ta.staffCourseId,
+      courseId: ta.courseId,
+      courseCode: ta.Course?.courseCode,
+      courseTitle: ta.Course?.courseTitle || "Unknown",
+      sectionId: ta.sectionId,
+      sectionName: ta.Section?.sectionName ? `Batch ${ta.Section.sectionName}` : "N/A",
+      semesterId: ta.Course?.semesterId || null,
+    }))
+  }));
+
+  res.status(200).json({ status: "success", data: staffData });
 });
 
 export const allocateStaffToCourse = catchAsync(async (req, res) => {
   const { Userid, courseId, sectionId, departmentId } = req.body;
-  if (!req.user || !req.user.email) {
-    return res.status(401).json({
-      status: "failure",
-      message: "Authentication required: No user email provided",
-    });
-  }
-  const userEmail = req.user.email;
-  const connection = await pool.getConnection();
+  const userName = req.user?.userName || 'admin';
 
+  const transaction = await sequelize.transaction();
   try {
-    await connection.beginTransaction();
+    // 1. Validations
+    const staff = await User.findOne({ where: { userId: Userid, status: 'Active' }, transaction });
+    if (!staff) throw new Error("Staff member not found or inactive");
 
-    if (!Userid || !courseId || !sectionId || !departmentId) {
-      await connection.rollback();
-      return res.status(400).json({
-        status: "failure",
-        message: "Userid, courseId, sectionId, and departmentId are required",
-      });
-    }
+    const course = await Course.findOne({ where: { courseId, isActive: 'YES' }, transaction });
+    if (!course) throw new Error("Course not found");
 
-    const [userCheck] = await connection.execute(
-      "SELECT Userid FROM users WHERE email = ? AND status = 'active'",
-      [userEmail]
-    );
-    if (userCheck.length === 0) {
-      await connection.rollback();
-      return res.status(400).json({
-        status: "failure",
-        message: `No active user found with email ${userEmail}`,
-      });
-    }
+    const section = await Section.findOne({ where: { sectionId, courseId, isActive: 'YES' }, transaction });
+    if (!section) throw new Error("Section not found for this course");
 
-    const [staffRows] = await connection.execute(
-      `SELECT Userid FROM users WHERE Userid = ? AND Deptid = ? AND role = 'Staff' AND status = 'active'`,
-      [Userid, departmentId]
-    );
-    if (staffRows.length === 0) {
-      await connection.rollback();
-      console.error("Staff validation failed:", { Userid, departmentId });
-      return res.status(404).json({
-        status: "failure",
-        message: `No active staff found with Userid ${Userid} in departmentId ${departmentId}`,
-      });
-    }
-
-    const [courseRows] = await connection.execute(
-      `SELECT courseId, courseCode FROM Course WHERE courseId = ? AND isActive = 'YES'`,
-      [courseId]
-    );
-    if (courseRows.length === 0) {
-      await connection.rollback();
-      console.error("Course validation failed:", { courseId });
-      return res.status(404).json({
-        status: "failure",
-        message: `No active course found with courseId ${courseId}`,
-      });
-    }
-    const { courseCode } = courseRows[0];
-
-    const [sectionRows] = await connection.execute(
-      `SELECT sectionId FROM Section WHERE sectionId = ? AND courseId = ? AND isActive = 'YES'`,
-      [sectionId, courseId]
-    );
-    if (sectionRows.length === 0) {
-      await connection.rollback();
-      console.error("Section validation failed:", { sectionId, courseId });
-      return res.status(404).json({
-        status: "failure",
-        message: `No active section found with sectionId ${sectionId} for courseId ${courseId}`,
-      });
-    }
-
-    const [existingCourseAllocation] = await connection.execute(
-      `SELECT staffCourseId, sectionId FROM StaffCourse WHERE Userid = ? AND courseId = ?`,
-      [Userid, courseId]
-    );
-    if (existingCourseAllocation.length > 0) {
-      await connection.rollback();
-      console.error("Duplicate course allocation detected:", {
-        Userid,
-        courseId,
-        existingSectionId: existingCourseAllocation[0].sectionId,
-      });
-      return res.status(400).json({
-        status: "failure",
-        message: `Staff ${Userid} is already allocated to course ${courseCode} in section ${existingCourseAllocation[0].sectionId}`,
-      });
-    }
-
-    const [result] = await connection.execute(
-      `INSERT INTO StaffCourse (Userid, courseId, sectionId, Deptid, createdBy, updatedBy)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [Userid, courseId, sectionId, departmentId, userEmail, userEmail]
-    );
-
-    await connection.commit();
-    res.status(201).json({
-      status: "success",
-      message: "Staff allocated successfully",
-      staffCourseId: result.insertId,
-      data: {
-        Userid,
-        courseId,
-        courseCode,
-        sectionId,
-        departmentId,
-      },
+    // 2. Prevent duplicate allocation
+    const existing = await StaffCourse.findOne({
+      where: { Userid, courseId },
+      transaction
     });
+    if (existing) {
+        throw new Error(`Staff is already allocated to this course in section ${existing.sectionId}`);
+    }
+
+    // 3. Create
+    const allocation = await StaffCourse.create({
+      Userid,
+      courseId,
+      sectionId,
+      Deptid: departmentId,
+      createdBy: userName,
+      updatedBy: userName
+    }, { transaction });
+
+    await transaction.commit();
+    res.status(201).json({ status: "success", data: allocation });
   } catch (err) {
-    await connection.rollback();
-    console.error("Error allocating staff:", {
-      message: err.message,
-      stack: err.stack,
-      payload: req.body,
-    });
-    res.status(500).json({
-      status: "failure",
-      message: "Server error: " + err.message,
-    });
-  } finally {
-    connection.release();
+    await transaction.rollback();
+    res.status(400).json({ status: "failure", message: err.message });
   }
 });
 
-export const allocateCourseToStaff = catchAsync(async (req, res) => {
-  const { Userid } = req.params;
-  const { courseId, sectionId, departmentId } = req.body;
-  if (!req.user || !req.user.email) {
-    return res.status(401).json({
-      status: "failure",
-      message: "Authentication required: No user email provided",
-    });
-  }
-  const userEmail = req.user.email;
-  const connection = await pool.getConnection();
-
-  try {
-    await connection.beginTransaction();
-
-    if (!courseId || !sectionId || !departmentId) {
-      await connection.rollback();
-      return res.status(400).json({
-        status: "failure",
-        message: "courseId, sectionId, and departmentId are required",
-      });
-    }
-
-    const parsedUserid = parseInt(Userid, 10);
-    if (isNaN(parsedUserid)) {
-      await connection.rollback();
-      return res.status(400).json({
-        status: "failure",
-        message: "Invalid Userid: must be a valid integer",
-      });
-    }
-
-    const [userCheck] = await connection.execute(
-      "SELECT Userid FROM users WHERE email = ? AND status = 'active'",
-      [userEmail]
-    );
-    if (userCheck.length === 0) {
-      await connection.rollback();
-      return res.status(400).json({
-        status: "failure",
-        message: `No active user found with email ${userEmail}`,
-      });
-    }
-
-    const [staffRows] = await connection.execute(
-      `SELECT Userid FROM users WHERE Userid = ? AND Deptid = ? AND role = 'Staff' AND status = 'active'`,
-      [parsedUserid, departmentId]
-    );
-    if (staffRows.length === 0) {
-      await connection.rollback();
-      console.error("Staff validation failed:", { Userid: parsedUserid, departmentId });
-      return res.status(404).json({
-        status: "failure",
-        message: `No active staff found with Userid ${parsedUserid} in departmentId ${departmentId}`,
-      });
-    }
-
-    const [courseRows] = await connection.execute(
-      `SELECT courseId, courseCode FROM Course WHERE courseId = ? AND isActive = 'YES'`,
-      [courseId]
-    );
-    if (courseRows.length === 0) {
-      await connection.rollback();
-      console.error("Course validation failed:", { courseId });
-      return res.status(404).json({
-        status: "failure",
-        message: `No active course found with courseId ${courseId}`,
-      });
-    }
-    const { courseCode } = courseRows[0];
-
-    const [sectionRows] = await connection.execute(
-      `SELECT sectionId FROM Section WHERE sectionId = ? AND courseId = ? AND isActive = 'YES'`,
-      [sectionId, courseId]
-    );
-    if (sectionRows.length === 0) {
-      await connection.rollback();
-      console.error("Section validation failed:", { sectionId, courseId });
-      return res.status(404).json({
-        status: "failure",
-        message: `No active section found with sectionId ${sectionId} for courseId ${courseId}`,
-      });
-    }
-
-    const [existingCourseAllocation] = await connection.execute(
-      `SELECT staffCourseId, sectionId FROM StaffCourse WHERE Userid = ? AND courseId = ?`,
-      [parsedUserid, courseId]
-    );
-    if (existingCourseAllocation.length > 0) {
-      await connection.rollback();
-      console.error("Duplicate course allocation detected:", {
-        Userid: parsedUserid,
-        courseId,
-        existingSectionId: existingCourseAllocation[0].sectionId,
-      });
-      return res.status(400).json({
-        status: "failure",
-        message: `Staff ${parsedUserid} is already allocated to course ${courseCode} in section ${existingCourseAllocation[0].sectionId}`,
-      });
-    }
-
-    const [result] = await connection.execute(
-      `INSERT INTO StaffCourse (Userid, courseId, sectionId, Deptid, createdBy, updatedBy)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [parsedUserid, courseId, sectionId, departmentId, userEmail, userEmail]
-    );
-
-    await connection.commit();
-    res.status(201).json({
-      status: "success",
-      message: "Course allocated to staff successfully",
-      staffCourseId: result.insertId,
-      data: {
-        Userid: parsedUserid,
-        courseId,
-        courseCode,
-        sectionId,
-        departmentId,
-      },
-    });
-  } catch (err) {
-    await connection.rollback();
-    console.error("Error allocating course:", {
-      message: err.message,
-      stack: err.stack,
-      params: req.params,
-      body: req.body,
-    });
-    res.status(500).json({
-      status: "failure",
-      message: "Server error: " + err.message,
-    });
-  } finally {
-    connection.release();
-  }
-});
+// Alias for specific params-based route
+export const allocateCourseToStaff = allocateStaffToCourse;
 
 export const updateStaffCourseBatch = catchAsync(async (req, res) => {
   const { staffCourseId } = req.params;
   const { sectionId } = req.body;
-  if (!req.user || !req.user.email) {
-    return res.status(401).json({
-      status: "failure",
-      message: "Authentication required: No user email provided",
-    });
-  }
-  const userEmail = req.user.email;
-  const connection = await pool.getConnection();
+  const userName = req.user?.userName || 'admin';
 
-  try {
-    await connection.beginTransaction();
+  const allocation = await StaffCourse.findByPk(staffCourseId);
+  if (!allocation) return res.status(404).json({ status: "failure", message: "Allocation not found" });
 
-    if (!sectionId) {
-      await connection.rollback();
-      return res.status(400).json({
-        status: "failure",
-        message: "sectionId is required",
-      });
-    }
+  // Validate new section
+  const section = await Section.findOne({ where: { sectionId, courseId: allocation.courseId, isActive: 'YES' } });
+  if (!section) return res.status(404).json({ status: "failure", message: "Invalid section for this course" });
 
-    const [userCheck] = await connection.execute(
-      "SELECT Userid FROM users WHERE email = ? AND status = 'active'",
-      [userEmail]
-    );
-    if (userCheck.length === 0) {
-      await connection.rollback();
-      return res.status(400).json({
-        status: "failure",
-        message: `No active user found with email ${userEmail}`,
-      });
-    }
+  await allocation.update({ sectionId, updatedBy: userName });
 
-    const [allocationRows] = await connection.execute(
-      `SELECT staffCourseId, courseId, Userid, Deptid FROM StaffCourse WHERE staffCourseId = ?`,
-      [staffCourseId]
-    );
-    if (allocationRows.length === 0) {
-      await connection.rollback();
-      return res.status(404).json({
-        status: "failure",
-        message: `No allocation found with staffCourseId ${staffCourseId}`,
-      });
-    }
-
-    const { courseId, Userid, Deptid } = allocationRows[0];
-
-    const [courseRows] = await connection.execute(
-      `SELECT courseCode FROM Course WHERE courseId = ? AND isActive = 'YES'`,
-      [courseId]
-    );
-    if (courseRows.length === 0) {
-      await connection.rollback();
-      return res.status(404).json({
-        status: "failure",
-        message: `No active course found with courseId ${courseId}`,
-      });
-    }
-    const { courseCode } = courseRows[0];
-
-    const [sectionRows] = await connection.execute(
-      `SELECT sectionId FROM Section WHERE sectionId = ? AND courseId = ? AND isActive = 'YES'`,
-      [sectionId, courseId]
-    );
-    if (sectionRows.length === 0) {
-      await connection.rollback();
-      return res.status(404).json({
-        status: "failure",
-        message: `No active section found with sectionId ${sectionId} for courseId ${courseId}`,
-      });
-    }
-
-    const [result] = await connection.execute(
-      `UPDATE StaffCourse SET sectionId = ?, updatedBy = ?, updatedDate = CURRENT_TIMESTAMP WHERE staffCourseId = ?`,
-      [sectionId, userEmail, staffCourseId]
-    );
-
-    if (result.affectedRows === 0) {
-      await connection.rollback();
-      return res.status(400).json({
-        status: "failure",
-        message: "No changes made to the allocation",
-      });
-    }
-
-    await connection.commit();
-    res.status(200).json({
-      status: "success",
-      message: "Staff course batch updated successfully",
-      data: {
-        staffCourseId,
-        Userid,
-        courseId,
-        courseCode,
-        sectionId,
-        departmentId: Deptid,
-      },
-    });
-  } catch (err) {
-    await connection.rollback();
-    console.error("Error updating staff course batch:", {
-      message: err.message,
-      stack: err.stack,
-      params: req.params,
-      body: req.body,
-    });
-    res.status(500).json({
-      status: "failure",
-      message: "Server error: " + err.message,
-    });
-  } finally {
-    connection.release();
-  }
+  res.status(200).json({ status: "success", message: "Batch updated", data: allocation });
 });
 
 export const updateStaffAllocation = catchAsync(async (req, res) => {
-  const { staffCourseId } = req.params;
-  const { Userid, courseId, sectionId, departmentId } = req.body;
-  if (!req.user || !req.user.email) {
-    return res.status(401).json({
-      status: "failure",
-      message: "Authentication required: No user email provided",
-    });
-  }
-  const userEmail = req.user.email;
-  const connection = await pool.getConnection();
+    const { staffCourseId } = req.params;
+    const { Userid, courseId, sectionId, departmentId } = req.body;
+    const userName = req.user?.userName || 'admin';
 
-  try {
-    await connection.beginTransaction();
+    const transaction = await sequelize.transaction();
+    try {
+        const allocation = await StaffCourse.findByPk(staffCourseId, { transaction });
+        if (!allocation) throw new Error("Allocation not found");
 
-    if (!Userid || !courseId || !sectionId || !departmentId) {
-      await connection.rollback();
-      return res.status(400).json({
-        status: "failure",
-        message: "Userid, courseId, sectionId, and departmentId are required",
-      });
+        // Duplicate check (excluding current record)
+        const dup = await StaffCourse.findOne({
+            where: { Userid, courseId, staffCourseId: { [Op.ne]: staffCourseId } },
+            transaction
+        });
+        if (dup) throw new Error("Staff already assigned to another section of this course");
+
+        await allocation.update({ Userid, courseId, sectionId, Deptid: departmentId, updatedBy: userName }, { transaction });
+        
+        await transaction.commit();
+        res.status(200).json({ status: "success", message: "Allocation updated" });
+    } catch (err) {
+        await transaction.rollback();
+        res.status(400).json({ status: "failure", message: err.message });
     }
-
-    const [userCheck] = await connection.execute(
-      "SELECT Userid FROM users WHERE email = ? AND status = 'active'",
-      [userEmail]
-    );
-    if (userCheck.length === 0) {
-      await connection.rollback();
-      return res.status(400).json({
-        status: "failure",
-        message: `No active user found with email ${userEmail}`,
-      });
-    }
-
-    const [allocationRows] = await connection.execute(
-      `SELECT staffCourseId FROM StaffCourse WHERE staffCourseId = ?`,
-      [staffCourseId]
-    );
-    if (allocationRows.length === 0) {
-      await connection.rollback();
-      return res.status(404).json({
-        status: "failure",
-        message: `No allocation found with staffCourseId ${staffCourseId}`,
-      });
-    }
-
-    const [staffRows] = await connection.execute(
-      `SELECT Userid FROM users WHERE Userid = ? AND Deptid = ? AND role = 'Staff' AND status = 'active'`,
-      [Userid, departmentId]
-    );
-    if (staffRows.length === 0) {
-      await connection.rollback();
-      return res.status(404).json({
-        status: "failure",
-        message: `No active staff found with Userid ${Userid} in departmentId ${departmentId}`,
-      });
-    }
-
-    const [courseRows] = await connection.execute(
-      `SELECT courseId, courseCode FROM Course WHERE courseId = ? AND isActive = 'YES'`,
-      [courseId]
-    );
-    if (courseRows.length === 0) {
-      await connection.rollback();
-      return res.status(404).json({
-        status: "failure",
-        message: `No active course found with courseId ${courseId}`,
-      });
-    }
-    const { courseCode } = courseRows[0];
-
-    const [sectionRows] = await connection.execute(
-      `SELECT sectionId FROM Section WHERE sectionId = ? AND courseId = ? AND isActive = 'YES'`,
-      [sectionId, courseId]
-    );
-    if (sectionRows.length === 0) {
-      await connection.rollback();
-      return res.status(404).json({
-        status: "failure",
-        message: `No active section found with sectionId ${sectionId} for courseId ${courseId}`,
-      });
-    }
-
-    const [existingCourseAllocation] = await connection.execute(
-      `SELECT staffCourseId, sectionId FROM StaffCourse WHERE Userid = ? AND courseId = ? AND staffCourseId != ?`,
-      [Userid, courseId, staffCourseId]
-    );
-    if (existingCourseAllocation.length > 0) {
-      await connection.rollback();
-      console.error("Duplicate course allocation detected:", {
-        Userid,
-        courseId,
-        existingSectionId: existingCourseAllocation[0].sectionId,
-      });
-      return res.status(400).json({
-        status: "failure",
-        message: `Staff ${Userid} is already allocated to course ${courseCode} in section ${existingCourseAllocation[0].sectionId}`,
-      });
-    }
-
-    const [result] = await connection.execute(
-      `UPDATE StaffCourse 
-       SET Userid = ?, courseId = ?, sectionId = ?, Deptid = ?, updatedBy = ?, updatedDate = CURRENT_TIMESTAMP
-       WHERE staffCourseId = ?`,
-      [Userid, courseId, sectionId, departmentId, userEmail, staffCourseId]
-    );
-
-    if (result.affectedRows === 0) {
-      await connection.rollback();
-      return res.status(400).json({
-        status: "failure",
-        message: "No changes made to the allocation",
-      });
-    }
-
-    await connection.commit();
-    res.status(200).json({
-      status: "success",
-      message: "Staff-course allocation updated successfully",
-      data: {
-        staffCourseId,
-        Userid,
-        courseId,
-        courseCode,
-        sectionId,
-        departmentId,
-      },
-    });
-  } catch (err) {
-    await connection.rollback();
-    console.error("Error updating staff allocation:", {
-      message: err.message,
-      stack: err.stack,
-      params: req.params,
-      body: req.body,
-    });
-    res.status(500).json({
-      status: "failure",
-      message: "Server error: " + err.message,
-    });
-  } finally {
-    connection.release();
-  }
 });
 
 export const getStaffAllocationsByCourse = catchAsync(async (req, res) => {
   const { courseId } = req.params;
-  if (!req.user || !req.user.email) {
-    return res.status(401).json({
-      status: "failure",
-      message: "Authentication required: No user email provided",
-    });
-  }
-  const userEmail = req.user.email;
-  const connection = await pool.getConnection();
 
-  try {
-    const [userCheck] = await connection.execute(
-      "SELECT Userid FROM users WHERE email = ? AND status = 'active'",
-      [userEmail]
-    );
-    if (userCheck.length === 0) {
-      return res.status(400).json({
-        status: "failure",
-        message: `No active user found with email ${userEmail}`,
-      });
-    }
+  const data = await StaffCourse.findAll({
+    where: { courseId },
+    include: [
+      { model: User, attributes: [['userName', 'staffName']] },
+      { model: Course, attributes: ['courseCode'] },
+      { model: Section, attributes: ['sectionName'] },
+      { model: DepartmentAcademic, as: 'department', attributes: [['Deptname', 'departmentName']] }
+    ]
+  });
 
-    const [courseRows] = await connection.execute(
-      `SELECT courseId, courseCode FROM Course WHERE courseId = ? AND isActive = 'YES'`,
-      [courseId]
-    );
-    if (courseRows.length === 0) {
-      return res.status(404).json({
-        status: "failure",
-        message: `No active course found with courseId ${courseId}`,
-      });
-    }
-    const { courseCode } = courseRows[0];
-
-    const [rows] = await connection.execute(
-      `SELECT sc.staffCourseId, sc.Userid, u.username AS staffName, sc.courseId, c.courseCode, sc.sectionId, s.sectionName, sc.Deptid AS departmentId, d.Deptname AS departmentName
-       FROM StaffCourse sc
-       JOIN users u ON sc.Userid = u.Userid AND sc.Deptid = u.Deptid
-       JOIN Course c ON sc.courseId = c.courseId
-       JOIN Section s ON sc.sectionId = s.sectionId
-       JOIN department d ON sc.Deptid = d.Deptid
-       WHERE sc.courseId = ? AND u.status = 'active' AND s.isActive = 'YES' AND c.isActive = 'YES'`,
-      [courseId]
-    );
-
-    res.status(200).json({
-      status: "success",
-      data: rows,
-    });
-  } catch (err) {
-    console.error("Error fetching staff allocations:", {
-      message: err.message,
-      stack: err.stack,
-      params: req.params,
-    });
-    res.status(500).json({
-      status: "failure",
-      message: "Server error: " + err.message,
-    });
-  } finally {
-    connection.release();
-  }
+  res.status(200).json({ status: "success", data });
 });
 
 export const getCourseAllocationsByStaff = catchAsync(async (req, res) => {
   const { Userid } = req.params;
-  if (!req.user || !req.user.email) {
-    return res.status(401).json({
-      status: "failure",
-      message: "Authentication required: No user email provided",
-    });
-  }
-  const userEmail = req.user.email;
-  const connection = await pool.getConnection();
 
-  try {
-    const [userCheck] = await connection.execute(
-      "SELECT Userid FROM users WHERE email = ? AND status = 'active'",
-      [userEmail]
-    );
-    if (userCheck.length === 0) {
-      return res.status(400).json({
-        status: "failure",
-        message: `No active user found with email ${userEmail}`,
-      });
-    }
+  const data = await StaffCourse.findAll({
+    where: { Userid },
+    include: [
+      { 
+        model: Course, 
+        include: [{ 
+            model: Semester, 
+            include: [Batch] 
+        }] 
+      },
+      { model: Section },
+      { model: DepartmentAcademic, as: 'department' }
+    ]
+  });
 
-    const [staffRows] = await connection.execute(
-      `SELECT Userid, Deptid AS departmentId FROM users WHERE Userid = ? AND role = 'Staff' AND status = 'active'`,
-      [Userid]
-    );
-    if (staffRows.length === 0) {
-      return res.status(404).json({
-        status: "failure",
-        message: `No active staff found with Userid ${Userid}`,
-      });
-    }
-    const { departmentId } = staffRows[0];
+  // Format response to include the custom "semester" string
+  const formatted = data.map(ta => {
+    const batch = ta.Course?.Semester?.Batch;
+    const semNum = ta.Course?.Semester?.semesterNumber;
+    return {
+      ...ta.toJSON(),
+      semester: batch ? `${batch.batchYears} ${semNum % 2 === 1 ? 'ODD' : 'EVEN'} SEMESTER` : 'N/A',
+      degree: batch?.degree,
+      branch: batch?.branch,
+      batch: batch?.batch
+    };
+  });
 
-    const [rows] = await connection.execute(
-      `SELECT 
-         sc.staffCourseId, 
-         sc.Userid, 
-         sc.courseId, 
-         c.courseCode AS id, 
-         c.courseTitle AS title, 
-         sc.sectionId, 
-         s.sectionName,
-         sc.Deptid AS departmentId, 
-         d.Deptname AS departmentName,
-         CONCAT(b.batchYears, ' ', CASE WHEN sem.semesterNumber % 2 = 1 THEN 'ODD' ELSE 'EVEN' END, ' SEMESTER') AS semester,
-         b.degree,
-         b.branch,
-         b.batch
-       FROM StaffCourse sc
-       JOIN Course c ON sc.courseId = c.courseId
-       JOIN Section s ON sc.sectionId = s.sectionId
-       JOIN department d ON sc.Deptid = d.Deptid
-       JOIN Semester sem ON c.semesterId = sem.semesterId
-       JOIN Batch b ON sem.batchId = b.batchId
-       WHERE sc.Userid = ? AND sc.Deptid = ? 
-         AND c.isActive = 'YES' AND s.isActive = 'YES'`,
-      [Userid, departmentId]
-    );
-
-    res.status(200).json({
-      status: "success",
-      data: rows,
-    });
-  } catch (err) {
-    console.error("Error fetching course allocations:", {
-      message: err.message,
-      stack: err.stack,
-      params: req.params,
-    });
-    res.status(500).json({
-      status: "failure",
-      message: "Server error: " + err.message,
-    });
-  } finally {
-    connection.release();
-  }
+  res.status(200).json({ status: "success", data: formatted });
 });
 
 export const getCourseAllocationsByStaffEnhanced = catchAsync(async (req, res) => {
   const { Userid } = req.params;
-  if (!req.user || !req.user.email || !req.user.Userid || !req.user.Deptid) {
-    return res.status(401).json({
-      status: "failure",
-      message: "User authentication data missing. Please log in again.",
-    });
-  }
-  const userEmail = req.user.email;
-  const { Userid: authenticatedUserid, Deptid: departmentId } = req.user;
-  const connection = await pool.getConnection();
+  const today = new Date().toISOString().split('T')[0];
 
-  try {
-    if (Userid !== authenticatedUserid) {
-      return res.status(403).json({
-        status: "failure",
-        message: "Unauthorized to access courses for another staff",
-      });
-    }
+  const data = await StaffCourse.findAll({
+    where: { Userid },
+    include: [
+      { 
+        model: Course, 
+        include: [{ 
+            model: Semester, 
+            where: {
+                startDate: { [Op.lte]: today },
+                endDate: { [Op.gte]: today }
+            },
+            include: [Batch] 
+        }] 
+      },
+      { model: Section },
+      { model: DepartmentAcademic, as: 'department' }
+    ]
+  });
 
-    const [staffRows] = await connection.execute(
-      `SELECT Userid, Deptid AS departmentId FROM users WHERE Userid = ? AND role = 'Staff' AND status = 'active'`,
-      [Userid]
-    );
-    if (staffRows.length === 0) {
-      return res.status(404).json({
-        status: "failure",
-        message: `No active staff found with Userid ${Userid}`,
-      });
-    }
-    const { departmentId: fetchedDepartmentId } = staffRows[0];
-
-    if (departmentId !== fetchedDepartmentId) {
-      return res.status(403).json({
-        status: "failure",
-        message: "Department mismatch for the authenticated staff",
-      });
-    }
-
-    const [rows] = await connection.execute(
-      `SELECT 
-         sc.staffCourseId, 
-         sc.Userid, 
-         sc.courseId, 
-         c.courseCode AS id, 
-         c.courseTitle AS title, 
-         sc.sectionId, 
-         s.sectionName,
-         sc.Deptid AS departmentId, 
-         d.Deptname AS departmentName,
-         CONCAT(b.batchYears, ' ', CASE WHEN sem.semesterNumber % 2 = 1 THEN 'ODD' ELSE 'EVEN' END, ' SEMESTER') AS semester,
-         b.degree,
-         b.branch,
-         b.batch,
-         c.createdAt AS lastAccessed
-       FROM StaffCourse sc
-       JOIN Course c ON sc.courseId = c.courseId
-       JOIN Section s ON sc.sectionId = s.sectionId
-       JOIN department d ON sc.Deptid = d.Deptid
-       JOIN Semester sem ON c.semesterId = sem.semesterId
-       JOIN Batch b ON sem.batchId = b.batchId
-       WHERE sc.Userid = ? AND sc.Deptid = ? 
-         AND c.isActive = 'YES' AND s.isActive = 'YES'
-         AND sem.startDate <= CURDATE() AND sem.endDate >= CURDATE()`,
-      [Userid, departmentId]
-    );
-
-    res.status(200).json({
-      status: "success",
-      data: rows,
-    });
-  } catch (err) {
-    console.error("Error fetching enhanced course allocations:", {
-      message: err.message,
-      stack: err.stack,
-      params: req.params,
-    });
-    res.status(500).json({
-      status: "failure",
-      message: "Server error: " + err.message,
-    });
-  } finally {
-    connection.release();
-  }
+  res.status(200).json({ status: "success", data });
 });
 
 export const deleteStaffAllocation = catchAsync(async (req, res) => {
   const { staffCourseId } = req.params;
-  if (!req.user || !req.user.email) {
-    return res.status(401).json({
-      status: "failure",
-      message: "Authentication required: No user email provided",
-    });
-  }
-  const userEmail = req.user.email;
-  const connection = await pool.getConnection();
 
-  try {
-    await connection.beginTransaction();
+  const deleted = await StaffCourse.destroy({ where: { staffCourseId } });
+  if (!deleted) return res.status(404).json({ status: "failure", message: "Allocation not found" });
 
-    const [userCheck] = await connection.execute(
-      "SELECT Userid FROM users WHERE email = ? AND status = 'active'",
-      [userEmail]
-    );
-    if (userCheck.length === 0) {
-      await connection.rollback();
-      return res.status(400).json({
-        status: "failure",
-        message: `No active user found with email ${userEmail}`,
-      });
-    }
-
-    const [allocationRows] = await connection.execute(
-      `SELECT staffCourseId, sectionId, courseId FROM StaffCourse WHERE staffCourseId = ?`,
-      [staffCourseId]
-    );
-    if (allocationRows.length === 0) {
-      await connection.rollback();
-      return res.status(404).json({
-        status: "failure",
-        message: `No allocation found with staffCourseId ${staffCourseId}`,
-      });
-    }
-
-    const [result] = await connection.execute(
-      `DELETE FROM StaffCourse WHERE staffCourseId = ?`,
-      [staffCourseId]
-    );
-    if (result.affectedRows === 0) {
-      await connection.rollback();
-      return res.status(400).json({
-        status: "failure",
-        message: "No changes made to the allocation",
-      });
-    }
-
-    await connection.commit();
-    res.status(200).json({
-      status: "success",
-      message: "Staff-course allocation deleted successfully",
-    });
-  } catch (err) {
-    await connection.rollback();
-    console.error("Error deleting staff allocation:", {
-      message: err.message,
-      stack: err.stack,
-      params: req.params,
-    });
-    res.status(500).json({
-      status: "failure",
-      message: "Server error: " + err.message,
-    });
-  } finally {
-    connection.release();
-  }
+  res.status(200).json({ status: "success", message: "Allocation deleted successfully" });
 });

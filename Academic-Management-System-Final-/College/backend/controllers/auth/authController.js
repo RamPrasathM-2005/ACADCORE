@@ -1,346 +1,313 @@
-import pool from '../../db.js';
-import catchAsync from '../../utils/catchAsync.js';
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
-import crypto from 'crypto';
-import nodemailer from 'nodemailer';
-import dotenv from 'dotenv';
+// backend/controllers/authController.js
+import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
+import { OAuth2Client } from "google-auth-library";
+import db from "../../models/index.js"; // Explicit extension required
+import { sendMail } from "../../services/mailService.js";
+import crypto from "crypto";
 
-dotenv.config({ path: './.env' });
+const { Op } = db.Sequelize;
+const googleClientId = process.env.GOOGLE_CLIENT_ID;
+const googleClient = googleClientId ? new OAuth2Client(googleClientId) : null;
 
-const JWT_SECRET = process.env.JWT_SECRET || 'secret';
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '1h';
-const EMAIL_HOST = process.env.EMAIL_HOST;
-const EMAIL_PORT = process.env.EMAIL_PORT;
-const EMAIL_USER = process.env.EMAIL_USER;
-const EMAIL_PASS = process.env.EMAIL_PASS;
-const RESET_TOKEN_EXPIRES_IN = process.env.RESET_TOKEN_EXPIRES_IN || '10m';
-const FRONTEND_URL = process.env.FRONTEND_URL;
-
-const transporter = nodemailer.createTransport({
-  host: EMAIL_HOST,
-  port: EMAIL_PORT,
-  secure: false,
-  auth: {
-    user: EMAIL_USER,
-    pass: EMAIL_PASS,
-  },
-});
-
-const generateToken = (Userid, role, email) => {
-  if (!JWT_SECRET) {
-    throw new Error('JWT_SECRET is not defined');
-  }
-  return jwt.sign({ Userid, role, email }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+/**
+ * Utility: create JWT
+ */
+const createToken = (payload) => {
+  return jwt.sign(payload, process.env.JWT_SECRET, {
+    expiresIn: "1h", // Increased to 1h for better UX, change as needed
+  });
 };
 
-const sendResetEmail = async (email, resetToken) => {
-  const resetUrl = `${FRONTEND_URL}/reset-password/${resetToken}`;
-  const mailOptions = {
-    from: EMAIL_USER,
-    to: email,
-    subject: 'Password Reset Request',
-    html: `
-      <h2>Password Reset</h2>
-      <p>You requested a password reset. Click <a href="${resetUrl}">here</a> to reset your password.</p>
-      <p>This link expires in ${RESET_TOKEN_EXPIRES_IN}.</p>
-      <p>If you did not request this, ignore this email.</p>
-    `,
-  };
-  await transporter.sendMail(mailOptions);
+/**
+ * Utility: set HttpOnly cookie
+ */
+const setTokenCookie = (res, token) => {
+  res.cookie("access_token", token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 60 * 60 * 1000, // 1 hour
+  });
 };
 
-export const register = catchAsync(async (req, res) => {
-  const { username, email, password, role, Deptid, staffId } = req.body;
-  const connection = await pool.getConnection();
-
+/**
+ * MIDDLEWARE: protect
+ * Required by adminRoutes.js
+ */
+export const protect = async (req, res, next) => {
   try {
-    await connection.beginTransaction();
+    let token = req.cookies?.access_token;
 
-    if (!username || !email || !password || !role || !Deptid) {
-      return res.status(400).json({
-        status: 'failure',
-        message: 'Username, email, password, role, and department are required',
-      });
+    // Support for Bearer token in headers as well
+    if (!token && req.headers.authorization?.startsWith("Bearer")) {
+      token = req.headers.authorization.split(" ")[1];
     }
 
-    const normalizedRole = role.charAt(0).toUpperCase() + role.slice(1).toLowerCase();
-    if (!['Admin', 'Staff', 'Student'].includes(normalizedRole)) {
-      return res.status(400).json({ status: 'failure', message: 'Role must be Admin, Staff, or Student' });
+    if (!token) {
+      return res.status(401).json({ msg: "Not authorized, no token" });
     }
 
-    const [existingUser] = await connection.execute(
-      'SELECT Userid FROM users WHERE LOWER(email) = ? OR username = ?',
-      [email.toLowerCase(), username]
-    );
-    if (existingUser.length > 0) {
-      return res.status(400).json({ status: 'failure', message: 'Email or username already exists' });
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = decoded; // Contains id, roleId, role
+    next();
+  } catch (err) {
+    console.error("Auth Middleware Error:", err);
+    res.status(401).json({ msg: "Token is not valid or expired" });
+  }
+};
+
+/**
+ * @route   POST /api/auth/login
+ */
+export const login = async (req, res) => {
+  try {
+    const { identifier, password } = req.body;
+
+    if (!identifier || !password) {
+      return res.status(400).json({ msg: "Missing credentials" });
     }
 
-    const [dept] = await connection.execute('SELECT Deptid FROM department WHERE Deptid = ?', [Deptid]);
-    if (dept.length === 0) {
-      return res.status(400).json({ status: 'failure', message: 'Invalid department' });
-    }
-
-    if (staffId) {
-      const [existingStaff] = await connection.execute(
-        'SELECT Userid FROM users WHERE staffId = ? AND Deptid = ?',
-        [staffId, Deptid]
-      );
-      if (existingStaff.length > 0) {
-        return res.status(400).json({ status: 'failure', message: 'Staff ID already exists in this department' });
-      }
-    }
-
-    const saltRounds = 10;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
-
-    const [result] = await connection.execute(
-      `INSERT INTO users (username, email, password, role, Deptid, staffId, status, Created_by, Updated_by)
-       VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)`,
-      [username, email.toLowerCase(), hashedPassword, normalizedRole, Deptid, staffId || null, null, null]
-    );
-
-    const Userid = result.insertId;
-
-    await connection.execute(
-      `UPDATE users SET Created_by = ?, Updated_by = ? WHERE Userid = ?`,
-      [Userid, Userid, Userid]
-    );
-
-    const [userRows] = await connection.execute(
-      'SELECT Userid, username, email, role, Deptid, staffId FROM users WHERE Userid = ?',
-      [Userid]
-    );
-    const user = userRows[0];
-
-    await connection.commit();
-
-    const token = generateToken(user.Userid, user.role, user.email);
-
-    res.status(201).json({
-      status: 'success',
-      message: 'User registered successfully',
-      data: {
-        user: { ...user, role: user.role.toLowerCase() },
-        token,
+    const user = await db.User.findOne({
+      where: {
+        [Op.or]: [
+          { userMail: identifier },
+          { userNumber: identifier },
+        ],
       },
-    });
-  } catch (error) {
-    await connection.rollback();
-    console.error('Register error:', error.message);
-    res.status(500).json({ status: 'failure', message: 'Registration failed: ' + error.message });
-  } finally {
-    connection.release();
-  }
-});
-
-export const login = catchAsync(async (req, res) => {
-  const { email, password } = req.body;
-  const connection = await pool.getConnection();
-
-  try {
-    await connection.beginTransaction();
-
-    if (!email || !password) {
-      console.log('Login error: Email or password missing');
-      return res.status(400).json({ status: 'failure', message: 'Email and password are required' });
-    }
-
-    const [users] = await connection.execute(
-      `SELECT Userid, username, email, password, role, Deptid, staffId, status
-       FROM users WHERE LOWER(email) = ?`,
-      [email.toLowerCase()]
-    );
-
-    if (users.length === 0) {
-      console.log('Login error: No user found with email:', email);
-      return res.status(401).json({ status: 'failure', message: 'Invalid email or password' });
-    }
-
-    const user = users[0];
-
-    if (user.status !== 'active') {
-      console.log('Login error: User is inactive:', email);
-      return res.status(401).json({ status: 'failure', message: 'User account is inactive' });
-    }
-
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      console.log('Login error: Invalid password for email:', email);
-      return res.status(401).json({ status: 'failure', message: 'Invalid email or password' });
-    }
-
-    const token = generateToken(user.Userid, user.role, user.email);
-    console.log('Login successful, generated token for:', user.email, token);
-
-    await connection.commit();
-
-    res.status(200).json({
-      status: 'success',
-      message: 'Login successful',
-      data: {
-        user: {
-          Userid: user.Userid,
-          username: user.username,
-          email: user.email,
-          role: user.role.toLowerCase(),
-          Deptid: user.Deptid,
-          staffId: user.staffId,
+      include: [
+        {
+          model: db.Role,
+          as: "role",
+          attributes: ["roleId", "roleName"],
         },
-        token,
-      },
+      ],
     });
-  } catch (error) {
-    await connection.rollback();
-    console.error('Login error:', error.message);
-    res.status(500).json({ status: 'failure', message: `Login failed: ${error.message}` });
-  } finally {
-    connection.release();
+
+    if (!user) {
+      return res.status(401).json({ msg: "Invalid credentials" });
+    }
+
+    if (user.status && user.status !== "Active") {
+      return res.status(403).json({ msg: "User is inactive" });
+    }
+
+    const passwordOk = await bcrypt.compare(password, user.password);
+    if (!passwordOk) {
+      return res.status(401).json({ msg: "Invalid credentials" });
+    }
+
+    const roleName = user.role?.roleName || "User";
+
+    const token = createToken({
+      id: user.userId,
+      roleId: user.roleId,
+      role: roleName,
+    });
+
+    setTokenCookie(res, token);
+
+    res.json({
+      message: "Login success",
+      role: roleName,
+      token,
+      user: {
+          id: user.userId,
+          role: roleName
+      }
+    });
+  } catch (err) {
+    console.error("Login error:", err);
+    res.status(500).json({ msg: "Server error" });
   }
-});
+};
 
-export const forgotPassword = catchAsync(async (req, res) => {
-  const { email } = req.body;
-  const connection = await pool.getConnection();
-
+/**
+ * @route   POST /api/auth/google-login
+ */
+export const googleLogin = async (req, res) => {
   try {
-    await connection.beginTransaction();
+    const { token: googleToken } = req.body;
+
+    if (!googleToken) {
+      return res.status(400).json({ msg: "Google token missing" });
+    }
+
+    if (!googleClient) {
+      return res.status(500).json({ msg: "Google login not configured" });
+    }
+
+    const ticket = await googleClient.verifyIdToken({
+      idToken: googleToken,
+      audience: googleClientId,
+    });
+
+    const payload = ticket.getPayload();
+    const email = payload?.email;
 
     if (!email) {
-      return res.status(400).json({ status: 'failure', message: 'Email is required' });
+      return res.status(400).json({ msg: "Invalid Google token" });
     }
 
-    const [users] = await connection.execute(
-      'SELECT Userid, email FROM users WHERE LOWER(email) = ? AND status = "active"',
-      [email.toLowerCase()]
-    );
-
-    if (users.length === 0) {
-      return res.status(200).json({ status: 'success', message: 'If user exists, reset email sent' });
-    }
-
-    const user = users[0];
-
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    const expiresInMs = 10 * 60 * 1000;
-    const resetTokenExpiry = new Date(Date.now() + expiresInMs);
-
-    await connection.execute(
-      'UPDATE users SET resetPasswordToken = ?, resetPasswordExpires = ? WHERE Userid = ?',
-      [resetToken, resetTokenExpiry, user.Userid]
-    );
-
-    await sendResetEmail(user.email, resetToken);
-
-    await connection.commit();
-
-    res.status(200).json({
-      status: 'success',
-      message: 'Password reset email sent',
+    const user = await db.User.findOne({
+      where: { userMail: email },
+      include: [
+        {
+          model: db.Role,
+          as: "role",
+          attributes: ["roleId", "roleName"],
+        },
+      ],
     });
-  } catch (error) {
-    await connection.rollback();
-    console.error('Forgot password error:', error.message);
-    res.status(500).json({ status: 'failure', message: 'Failed to send reset email: ' + error.message });
-  } finally {
-    connection.release();
+
+    if (!user) {
+      return res.status(401).json({ msg: "No user found for this Google account" });
+    }
+
+    if (user.status && user.status !== "Active") {
+      return res.status(403).json({ msg: "User is inactive" });
+    }
+
+    const roleName = user.role?.roleName || "User";
+
+    const token = createToken({
+      id: user.userId,
+      roleId: user.roleId,
+      role: roleName,
+    });
+
+    setTokenCookie(res, token);
+
+    res.json({
+      message: "Google login success",
+      role: roleName,
+      token,
+      user: {
+          id: user.userId,
+          role: roleName
+      }
+    });
+  } catch (err) {
+    console.error("Google login error:", err);
+    res.status(500).json({ msg: "Server error" });
   }
-});
+};
 
-export const resetPassword = catchAsync(async (req, res) => {
-  const { token } = req.params;
-  const { password } = req.body;
-  const connection = await pool.getConnection();
-
+/**
+ * @route   GET /api/auth/me
+ */
+export const me = async (req, res) => {
   try {
-    await connection.beginTransaction();
-
-    if (!password || password.length < 6) {
-      return res.status(400).json({ status: 'failure', message: 'New password is required (min 6 chars)' });
-    }
-
-    const [users] = await connection.execute(
-      `SELECT Userid FROM users 
-       WHERE resetPasswordToken = ? AND resetPasswordExpires > NOW() AND status = 'active'`,
-      [token]
-    );
-
-    if (users.length === 0) {
-      return res.status(400).json({ status: 'failure', message: 'Invalid or expired reset token' });
-    }
-
-    const user = users[0];
-
-    const saltRounds = 10;
-    const hashedPassword = await bcrypt.hash(password, saltRounds);
-
-    await connection.execute(
-      'UPDATE users SET password = ?, resetPasswordToken = NULL, resetPasswordExpires = NULL, Updated_by = ? WHERE Userid = ?',
-      [hashedPassword, user.Userid, user.Userid]
-    );
-
-    await connection.commit();
-
-    res.status(200).json({
-      status: 'success',
-      message: 'Password reset successful',
+    res.json({
+      id: req.user.id,
+      role: req.user.role,
     });
-  } catch (error) {
-    await connection.rollback();
-    console.error('Reset password error:', error.message);
-    res.status(500).json({ status: 'failure', message: 'Password reset failed: ' + error.message });
-  } finally {
-    connection.release();
+  } catch (err) {
+    res.status(500).json({ msg: "Server error" });
   }
-});
+};
 
-export const logout = catchAsync(async (req, res) => {
-  res.status(200).json({
-    status: 'success',
-    message: 'Logged out successfully',
+/**
+ * @route   POST /api/auth/logout
+ */
+export const logout = (req, res) => {
+  res.clearCookie("access_token", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
   });
-});
 
-export const protect = catchAsync(async (req, res, next) => {
-  let token;
-  const authHeader = req.headers.authorization || req.headers.Authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    token = authHeader.split(' ')[1];
-  }
+  res.json({ message: "Logged out" });
+};
 
-  if (!token) {
-    return res.status(401).json({ status: 'failure', message: 'Not authorized, token required' });
-  }
-
+/**
+ * @route POST /api/auth/forgot-password
+ */
+export const forgotPassword = async (req, res) => {
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your_jwt_secret');
-    const connection = await pool.getConnection();
-    try {
-      const [users] = await connection.execute(
-        'SELECT Userid, username, role, email, staffId, Deptid, status FROM users WHERE Userid = ? AND status = ?',
-        [decoded.Userid, 'active']
-      );
+    const { email } = req.body;
 
-      if (users.length === 0) {
-        return res.status(401).json({ status: 'failure', message: 'Invalid token or user not found' });
-      }
-
-      const user = users[0];
-      if (!user.email) {
-        return res.status(401).json({
-          status: 'failure',
-          message: 'Authentication required: No user or email provided',
-        });
-      }
-
-      req.user = user;
-      next();
-    } finally {
-      connection.release();
+    if (!email) {
+      return res.status(400).json({ msg: "Email is required" });
     }
-  } catch (error) {
-    console.error('Protect: Token verification error:', error.message);
-    return res.status(401).json({ status: 'failure', message: 'Invalid token: ' + error.message });
+
+    const user = await db.User.findOne({
+      where: { userMail: email.toLowerCase() },
+    });
+
+    if (!user) {
+      return res.status(200).json({ msg: "If the email exists, a reset link has been sent" });
+    }
+
+    // Generate Token
+    const resetToken = crypto.randomBytes(32).toString("hex");
+    const hashedToken = crypto.createHash("sha256").update(resetToken).digest("hex");
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+    // Ensure your ResetToken model exists in db
+    if (db.ResetToken) {
+        await db.ResetToken.destroy({ where: { userId: user.userId } });
+        await db.ResetToken.create({
+            userId: user.userId,
+            token: hashedToken,
+            expiresAt,
+        });
+    }
+
+    const resetUrl = `${process.env.CLIENT_URL}/reset-password/${resetToken}`;
+    const emailHtml = `<h2>Password Reset Request</h2><p>Click <a href="${resetUrl}">here</a> to reset.</p>`;
+
+    await sendMail({
+      to: email,
+      subject: "Password Reset Request",
+      html: emailHtml,
+    });
+
+    res.status(200).json({ msg: "If the email exists, a reset link has been sent" });
+  } catch (err) {
+    console.error("Forgot password error:", err);
+    res.status(500).json({ msg: "Server error" });
   }
-});
+};
+
+/**
+ * @route POST /api/auth/reset-password/:token
+ */
+export const resetPassword = async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { password, confirmPassword } = req.body;
+
+    if (password !== confirmPassword) {
+      return res.status(400).json({ msg: "Passwords do not match" });
+    }
+
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+
+    const resetTokenEntry = await db.ResetToken.findOne({
+      where: {
+        token: hashedToken,
+        expiresAt: { [Op.gt]: new Date() },
+      },
+    });
+
+    if (!resetTokenEntry) {
+      return res.status(400).json({ msg: "Invalid or expired token" });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+
+    await db.User.update(
+        { password: hashedPassword },
+        { where: { userId: resetTokenEntry.userId } }
+    );
+
+    await resetTokenEntry.destroy();
+
+    res.status(200).json({ msg: "Password reset successful" });
+  } catch (err) {
+    console.error("Reset password error:", err);
+    res.status(500).json({ msg: "Server error" });
+  }
+};

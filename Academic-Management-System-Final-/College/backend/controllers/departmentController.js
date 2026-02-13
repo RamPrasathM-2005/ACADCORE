@@ -1,20 +1,24 @@
-import pool from '../db.js';
+// controllers/departmentController.js
+import db from '../models/index.js';
+
+const { DepartmentAcademic } = db;
 
 export const getDepartments = async (req, res) => {
-  let connection;
   try {
-    connection = await pool.getConnection();
-    const [rows] = await connection.execute(
-      'SELECT Deptid, Deptname, Deptacronym FROM department'
-    );
+    // .findAll is the Sequelize equivalent of SELECT *
+    const rows = await DepartmentAcademic.findAll({
+      attributes: ['Deptid', 'Deptname', 'Deptacronym'], // Specific columns to fetch
+    });
+
     res.status(200).json({
       status: 'success',
       data: rows,
     });
   } catch (error) {
     console.error('Error fetching departments:', error);
-    res.status(500).json({ status: 'failure', message: 'Failed to fetch departments' });
-  } finally {
-    if (connection) connection.release();
+    res.status(500).json({ 
+      status: 'failure', 
+      message: 'Failed to fetch departments: ' + error.message 
+    });
   }
 };

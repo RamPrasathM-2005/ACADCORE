@@ -1,5 +1,4 @@
-// models/studentDetails.js (updated from user's provided)
-module.exports = (sequelize, DataTypes) => {
+export default (sequelize, DataTypes) => {
   const StudentDetails = sequelize.define('StudentDetails', {
     studentId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     studentName: { type: DataTypes.STRING(50), allowNull: false },
@@ -45,19 +44,22 @@ module.exports = (sequelize, DataTypes) => {
     StudentDetails.belongsTo(models.User, { foreignKey: 'createdBy', as: 'creator' });
     StudentDetails.belongsTo(models.User, { foreignKey: 'updatedBy', as: 'updater' });
     StudentDetails.belongsTo(models.User, { foreignKey: 'approvedBy', as: 'approver' });
-    // HasMany for academic
-    StudentDetails.hasMany(models.StudentCourse, { foreignKey: 'regno' });
-    StudentDetails.hasMany(models.StudentCOTool, { foreignKey: 'regno' });
-    StudentDetails.hasMany(models.DayAttendance, { foreignKey: 'regno' });
-    StudentDetails.hasMany(models.PeriodAttendance, { foreignKey: 'regno' });
-    StudentDetails.hasMany(models.StudentCoMarks, { foreignKey: 'regno' });
-    StudentDetails.hasMany(models.StudentElectiveSelection, { foreignKey: 'regno' });
-    StudentDetails.hasMany(models.StudentNptelEnrollment, { foreignKey: 'regno' });
-    StudentDetails.hasMany(models.NptelCreditTransfer, { foreignKey: 'regno' });
-    StudentDetails.hasMany(models.StudentGrade, { foreignKey: 'regno' });
-    StudentDetails.hasMany(models.StudentSemesterGPA, { foreignKey: 'regno' });
-    StudentDetails.hasMany(models.studentcourseChoices, { foreignKey: 'regno' });
-    StudentDetails.hasMany(models.studentTempChoice, { foreignKey: 'regno' });
+
+    // FIXED: Added sourceKey: 'registerNumber' to all academic links to match the String type
+    const commonOptions = { foreignKey: 'regno', sourceKey: 'registerNumber' };
+
+    StudentDetails.hasMany(models.StudentCourse, commonOptions);
+    StudentDetails.hasMany(models.StudentCOTool, commonOptions);
+    StudentDetails.hasMany(models.DayAttendance, commonOptions);
+    StudentDetails.hasMany(models.PeriodAttendance, commonOptions);
+    StudentDetails.hasMany(models.StudentCoMarks, commonOptions);
+    StudentDetails.hasMany(models.StudentElectiveSelection, commonOptions);
+    StudentDetails.hasMany(models.StudentNptelEnrollment, commonOptions);
+    StudentDetails.hasMany(models.NptelCreditTransfer, commonOptions);
+    StudentDetails.hasMany(models.StudentGrade, commonOptions);
+    StudentDetails.hasMany(models.StudentSemesterGPA, commonOptions);
+    StudentDetails.hasMany(models.studentcourseChoices, commonOptions);
+    StudentDetails.hasMany(models.studentTempChoice, commonOptions);
   };
 
   return StudentDetails;
