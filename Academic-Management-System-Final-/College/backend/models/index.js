@@ -30,10 +30,10 @@ for (const file of files) {
     if (typeof modelDef === 'function') {
       const model = modelDef(sequelize, DataTypes);
       db[model.name] = model;
-      console.log(`Successfully Loaded Model: ${model.name}`); // Debug Line
+      console.log(`Successfully Loaded Model: ${model.name}`);
     }
   } catch (err) {
-    console.error(`❌ Error loading model file ${file}:`, err.message);
+    console.error(`Error loading model file ${file}:`, err.message);
   }
 }
 
@@ -48,32 +48,33 @@ db.sequelize = sequelize;
 db.Sequelize = sequelize.constructor;
 
 export const initDatabase = async () => {
-  try {
-    // 1. Check if we really need to sync
-    // Set this to false if you are NOT changing database columns right now
-    const checkStructure = true; 
+  const syncMode = (process.env.DB_SYNC_MODE || 'none').toLowerCase();
+  const shouldSync = syncMode === 'alter' || syncMode === 'force';
 
-    if (checkStructure) {
-      console.log("⏳ Checking database structure (this may take a moment)...");
+  try {
+    if (shouldSync) {
+      console.log(`Checking database structure using sync mode: ${syncMode}`);
       await sequelize.query('SET FOREIGN_KEY_CHECKS = 0');
-      
-      // Use alter: true only when developing. 
-      // If the structure is stable, remove this line to make startup instant.
-      await sequelize.sync({ alter: true }); 
-      
-      await sequelize.query('SET FOREIGN_KEY_CHECKS = 1');
-      console.log("✅ Database Structure Verified");
+      await sequelize.sync(syncMode === 'force' ? { force: true } : { alter: true });
+      console.log('Database structure verified');
     } else {
-      console.log("⏩ Skipping structure check (Fast Start)");
-      await sequelize.authenticate(); // Just check if DB is alive
-      console.log("✅ Database Connected");
+      console.log('Skipping schema sync (fast startup). Set DB_SYNC_MODE=alter when needed.');
+      await sequelize.authenticate();
+      console.log('Database connected');
     }
 
     return true;
   } catch (error) {
-    await sequelize.query('SET FOREIGN_KEY_CHECKS = 1');
-    console.error("❌ Database Init Error:", error);
+    console.error('Database init error:', error);
     throw error; 
+  } finally {
+    if (shouldSync) {
+      try {
+        await sequelize.query('SET FOREIGN_KEY_CHECKS = 1');
+      } catch (restoreError) {
+        console.error('Failed to re-enable FOREIGN_KEY_CHECKS:', restoreError);
+      }
+    }
   }
 };
 export default db;

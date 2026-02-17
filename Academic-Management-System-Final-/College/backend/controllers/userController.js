@@ -1,5 +1,5 @@
-const db = require('../models');
-const bcrypt = require('bcryptjs');
+import db from '../models/index.js';
+import bcrypt from 'bcryptjs';
 const { User, Role, StudentDetails, Employee, Company, Department } = db;
 
 const normalizeRoleName = (value = '') => value.toLowerCase().replace(/[\s-]/g, '');
@@ -15,15 +15,15 @@ const splitNameParts = (fullName = '') => {
 
 // Get all users
 // In real usage: filter by companyId, role, status, departmentId, etc.
-exports.getAllUsers = async (req, res) => {
+export const getAllUsers = async (req, res) => {
   try {
     const includeInactive = String(req.query.includeInactive || '').toLowerCase() === 'true';
     const users = await User.findAll({
       where: includeInactive ? {} : { status: 'Active' },
       include: [
-        { model: require('../models').Company, as: 'company' },
-        { model: require('../models').Department, as: 'department' },
-        { model: require('../models').Role, as: 'role' },
+        { model: db.Company, as: 'company' },
+        { model: db.Department, as: 'department' },
+        { model: db.Role, as: 'role' },
         
       ]
     });
@@ -34,13 +34,13 @@ exports.getAllUsers = async (req, res) => {
 };
 
 // Get single user by ID
-exports.getUserById = async (req, res) => {
+export const getUserById = async (req, res) => {
   try {
     const user = await User.findByPk(req.params.id, {
       include: [
-        { model: require('../models').Company, as: 'company' },
-        { model: require('../models').Department, as: 'department' },
-        { model: require('../models').Role, as: 'role' },
+        { model: db.Company, as: 'company' },
+        { model: db.Department, as: 'department' },
+        { model: db.Role, as: 'role' },
         
       ]
     });
@@ -56,7 +56,7 @@ exports.getUserById = async (req, res) => {
 };
 
 // Create new user
-exports.createUser = async (req, res) => {
+export const createUser = async (req, res) => {
   const transaction = await db.sequelize.transaction();
   try {
     if (!req.body.password) {
@@ -114,7 +114,7 @@ exports.createUser = async (req, res) => {
 };
 
 // Update user
-exports.updateUser = async (req, res) => {
+export const updateUser = async (req, res) => {
   try {
     const payload = { ...req.body };
 
@@ -143,7 +143,7 @@ exports.updateUser = async (req, res) => {
 
 // Delete user (soft delete via paranoid: true)
 // Usually rare — prefer changing status to 'inactive'
-exports.deleteUser = async (req, res) => {
+export const deleteUser = async (req, res) => {
   const transaction = await db.sequelize.transaction();
   try {
     const user = await User.findByPk(req.params.id, { transaction });
@@ -206,7 +206,7 @@ exports.deleteUser = async (req, res) => {
 
 // Get company details by userNumber
 // Used by Admin/Super Admin dashboard context setup
-exports.getCompanyByUserNumber = async (req, res) => {
+export const getCompanyByUserNumber = async (req, res) => {
   try {
     const { userNumber } = req.params;
 
@@ -238,7 +238,7 @@ exports.getCompanyByUserNumber = async (req, res) => {
 
 // Get department + company details by userNumber
 // Used by Department Admin dashboard context setup
-exports.getDepartmentByUserNumber = async (req, res) => {
+export const getDepartmentByUserNumber = async (req, res) => {
   try {
     const { userNumber } = req.params;
 

@@ -1,7 +1,10 @@
 // controllers/departmentController.js
 import db from '../models/index.js';
 
-const { DepartmentAcademic, Company } = db;
+// NOTE: If you renamed the define() name in your model to 'Department', use that.
+// If you kept it as 'DepartmentAcademic', change the variable below.
+const Department = db.Department || db.DepartmentAcademic;
+const { Company } = db;
 
 /**
  * Helper: Normalize status string
@@ -19,24 +22,20 @@ const normalizeStatus = (status) => {
 const formatSequelizeError = (error) => {
   if (!error) return 'Operation failed';
   if (error.name === 'SequelizeUniqueConstraintError') {
-    return 'Department already exists (Unique constraint violation)';
+    return 'Department already exists';
   }
   if (error.name === 'SequelizeValidationError') {
     return error.errors?.map((e) => e.message).join(', ') || 'Validation error';
-  }
-  if (error.name === 'SequelizeForeignKeyConstraintError') {
-    return 'Invalid companyId reference';
   }
   return error.message || 'Operation failed';
 };
 
 /**
  * GET /api/departments/simple
- * Fetch basic academic columns
  */
 export const getDepartments = async (req, res) => {
   try {
-    const rows = await DepartmentAcademic.findAll({
+    const rows = await Department.findAll({
       attributes: ['Deptid', 'Deptname', 'Deptacronym'],
       where: { status: 'Active' }
     });
@@ -47,23 +46,19 @@ export const getDepartments = async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching departments:', error);
-    res.status(500).json({ 
-      status: 'failure', 
-      message: 'Failed to fetch departments: ' + error.message 
-    });
+    res.status(500).json({ status: 'failure', message: error.message });
   }
 };
 
 /**
  * GET /api/departments
- * Full fetch with Corporate associations
  */
 export const getAllDepartments = async (req, res) => {
   try {
     const where = {};
     if (req.query.companyId) where.companyId = req.query.companyId;
 
-    const departments = await DepartmentAcademic.findAll({
+    const departments = await Department.findAll({
       where,
       include: [
         { 
@@ -75,11 +70,7 @@ export const getAllDepartments = async (req, res) => {
     });
     res.json(departments);
   } catch (error) {
-    console.error('[getAllDepartments] Error:', error);
-    res.status(500).json({
-      error: 'Failed to fetch departments',
-      details: error.message,
-    });
+    res.status(500).json({ error: 'Failed to fetch departments', details: error.message });
   }
 };
 
@@ -88,37 +79,36 @@ export const getAllDepartments = async (req, res) => {
  */
 export const getDepartmentById = async (req, res) => {
   try {
-    const department = await DepartmentAcademic.findByPk(req.params.id, {
-      include: [
-        { model: Company, as: 'company' }
-      ]
+    const department = await Department.findByPk(req.params.id, {
+      include: [{ model: Company, as: 'company' }]
     });
 
-    if (!department) {
-      return res.status(404).json({ error: 'Department not found' });
-    }
-
+    if (!department) return res.status(404).json({ error: 'Department not found' });
     res.status(200).json(department);
   } catch (error) {
-    console.error('[getDepartmentById] Error:', error);
-    res.status(500).json({
-      error: 'Failed to fetch department',
-      details: error.message,
-    });
+    res.status(500).json({ error: error.message });
   }
 };
 
 /**
  * POST /api/departments
+ * FIXED: Mapping incoming JSON to Database Columns
  */
 export const createDepartment = async (req, res) => {
   try {
     const payload = {
-      ...req.body,
+      // Map JSON "departmentId" to DB "Deptid"
+      Deptid: req.body.departmentId,      
+      // Map JSON "departmentName" to DB "Deptname"
+      Deptname: req.body.departmentName,  
+      // Map JSON "departmentAcr" to DB "Deptacronym"
+      Deptacronym: req.body.departmentAcr,
+      companyId: req.body.companyId,
       status: normalizeStatus(req.body?.status),
+      createdBy: req.body.createdBy,
     };
     
-    const department = await DepartmentAcademic.create(payload);
+    const department = await Department.create(payload);
     res.status(201).json(department);
   } catch (error) {
     const statusCode = error.name?.startsWith('Sequelize') ? 400 : 500;
@@ -132,19 +122,22 @@ export const createDepartment = async (req, res) => {
 export const updateDepartment = async (req, res) => {
   try {
     const payload = {
-      ...req.body,
-      ...(req.body?.status ? { status: normalizeStatus(req.body.status) } : {}),
+      ...(req.body.departmentName ? { Deptname: req.body.departmentName } : {}),
+      ...(req.body.departmentAcr ? { Deptacronym: req.body.departmentAcr } : {}),
+      ...(req.body.companyId ? { companyId: req.body.companyId } : {}),
+      ...(req.body.status ? { status: normalizeStatus(req.body.status) } : {}),
+      updatedBy: req.body.updatedBy
     };
 
-    const [affectedCount] = await DepartmentAcademic.update(payload, {
-      where: { Deptid: req.params.id } // Primary Key is Deptid
+    const [affectedCount] = await Department.update(payload, {
+      where: { Deptid: req.params.id } 
     });
 
     if (affectedCount === 0) {
-      return res.status(404).json({ error: 'Department not found or no changes' });
+      return res.status(404).json({ error: 'No changes made or department not found' });
     }
 
-    const updatedDepartment = await DepartmentAcademic.findByPk(req.params.id);
+    const updatedDepartment = await Department.findByPk(req.params.id);
     res.status(200).json(updatedDepartment);
   } catch (error) {
     const statusCode = error.name?.startsWith('Sequelize') ? 400 : 500;
@@ -154,15 +147,11 @@ export const updateDepartment = async (req, res) => {
 
 /**
  * DELETE /api/departments/:id
- * Marks department as inactive
  */
 export const deleteDepartment = async (req, res) => {
   try {
-    const department = await DepartmentAcademic.findByPk(req.params.id);
-    
-    if (!department) {
-      return res.status(404).json({ message: 'Department not found' });
-    }
+    const department = await Department.findByPk(req.params.id);
+    if (!department) return res.status(404).json({ message: 'Department not found' });
 
     await department.update({
       status: 'Inactive',
@@ -171,7 +160,6 @@ export const deleteDepartment = async (req, res) => {
 
     res.json({ message: 'Department marked as inactive successfully' });
   } catch (error) {
-    const statusCode = error.name?.startsWith('Sequelize') ? 400 : 500;
-    res.status(statusCode).json({ error: formatSequelizeError(error) });
+    res.status(500).json({ error: error.message });
   }
 };
