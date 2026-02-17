@@ -28,7 +28,7 @@ export default (sequelize, DataTypes) => {
     createdBy: { type: DataTypes.INTEGER, allowNull: true },
     updatedBy: { type: DataTypes.INTEGER, allowNull: true }
   }, { 
-    tableName: 'department', 
+    tableName: 'departments', 
     timestamps: true,
     createdAt: 'createdDate',
     updatedAt: 'updatedDate'

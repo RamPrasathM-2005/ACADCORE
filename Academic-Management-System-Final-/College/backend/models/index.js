@@ -49,14 +49,26 @@ db.Sequelize = sequelize.constructor;
 
 export const initDatabase = async () => {
   try {
-    console.log("⏳ Cleaning and rebuilding database...");
-    await sequelize.query('SET FOREIGN_KEY_CHECKS = 0');
+    // 1. Check if we really need to sync
+    // Set this to false if you are NOT changing database columns right now
+    const checkStructure = true; 
 
-    // Use force: true ONCE to delete the corrupted companies table
-    await sequelize.sync({ alter: true }); 
-    
-    await sequelize.query('SET FOREIGN_KEY_CHECKS = 1');
-    console.log("✅ Database rebuilt successfully");
+    if (checkStructure) {
+      console.log("⏳ Checking database structure (this may take a moment)...");
+      await sequelize.query('SET FOREIGN_KEY_CHECKS = 0');
+      
+      // Use alter: true only when developing. 
+      // If the structure is stable, remove this line to make startup instant.
+      await sequelize.sync({ alter: true }); 
+      
+      await sequelize.query('SET FOREIGN_KEY_CHECKS = 1');
+      console.log("✅ Database Structure Verified");
+    } else {
+      console.log("⏩ Skipping structure check (Fast Start)");
+      await sequelize.authenticate(); // Just check if DB is alive
+      console.log("✅ Database Connected");
+    }
+
     return true;
   } catch (error) {
     await sequelize.query('SET FOREIGN_KEY_CHECKS = 1');
@@ -64,7 +76,6 @@ export const initDatabase = async () => {
     throw error; 
   }
 };
-
 export default db;
 
 // Named exports for your components

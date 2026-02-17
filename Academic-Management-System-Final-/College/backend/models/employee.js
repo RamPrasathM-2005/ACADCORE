@@ -20,7 +20,7 @@ export default (sequelize) => {
     departmentId: { 
       type: DataTypes.INTEGER, 
       allowNull: false,
-      references: { model: 'department', key: 'Deptid' } 
+      references: { model: 'departments', key: 'Deptid' } 
     }, 
     dateOfJoining: { type: DataTypes.DATEONLY, allowNull: false },
     status: { type: DataTypes.ENUM('Active', 'Inactive'), defaultValue: 'Active' },
