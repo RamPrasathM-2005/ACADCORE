@@ -49,11 +49,17 @@ db.Sequelize = sequelize.constructor;
 
 export const initDatabase = async () => {
   try {
+    console.log("⏳ Cleaning and rebuilding database...");
     await sequelize.query('SET FOREIGN_KEY_CHECKS = 0');
+
+    // Use force: true ONCE to delete the corrupted companies table
     await sequelize.sync({ alter: true }); 
+    
     await sequelize.query('SET FOREIGN_KEY_CHECKS = 1');
+    console.log("✅ Database rebuilt successfully");
     return true;
   } catch (error) {
+    await sequelize.query('SET FOREIGN_KEY_CHECKS = 1');
     console.error("❌ Database Init Error:", error);
     throw error; 
   }

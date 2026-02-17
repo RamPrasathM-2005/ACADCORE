@@ -17,6 +17,8 @@ import attendanceReportRoutes from './routes/admin/attendanceReportRoutes.js'
 import studentRoutes from './routes/student/studentRoutes.js';
  import verticalRoutes from './routes/admin/verticalRoutes.js';
 import cbcsRouter from './routes/cbcsRoutes.js';
+import companyRoutes from './routes/companyRoutes.js';
+import roleRoutes from './routes/roleRoutes.js'
 
 dotenv.config({ path: './config.env' });
 
@@ -135,6 +137,8 @@ const sanitizeInput = [
 // Routes (apply limiter only where needed; remove from bulk routes if batching)
 // NOTE: Auth limiter commented out above, so removed from here
 app.use('/api/auth', /* authLimiter, */ sanitizeInput, authRoutes);
+app.use('/api/company', sanitizeInput, companyRoutes);
+app.use('/api/role', sanitizeInput, roleRoutes);
 app.use('/api/admin', sanitizeInput, adminRoutes); // No global limiter here if bulk
 app.use('/api/departments', sanitizeInput, departmentRoutes);
 app.use('/api/staff', sanitizeInput, staffRoutes);
