@@ -6,9 +6,9 @@ export default (sequelize, DataTypes) => {
     staffId: { type: DataTypes.INTEGER, allowNull: false },
     courseId: { type: DataTypes.INTEGER, allowNull: false },
     sectionId: { type: DataTypes.INTEGER, allowNull: false },
-    semesterNumber: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 1, max: 8 } },
+    semesterNumber: { type: DataTypes.INTEGER, allowNull: false },
     dayOfWeek: { type: DataTypes.ENUM('MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'), allowNull: false },
-    periodNumber: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 1, max: 8 } },
+    periodNumber: { type: DataTypes.INTEGER, allowNull: false },
     attendanceDate: { type: DataTypes.DATEONLY, allowNull: false },
     status: { type: DataTypes.ENUM('P', 'A', 'OD'), allowNull: false },
     Deptid: { type: DataTypes.INTEGER, allowNull: false },
@@ -16,11 +16,15 @@ export default (sequelize, DataTypes) => {
   }, { tableName: 'PeriodAttendance', timestamps: false });
 
   PeriodAttendance.associate = (models) => {
-    PeriodAttendance.belongsTo(models.StudentDetails, { foreignKey: 'regno',targetKey: 'registerNumber'});
-    PeriodAttendance.belongsTo(models.User, { foreignKey: 'staffId' });
-    PeriodAttendance.belongsTo(models.DepartmentAcademic, { foreignKey: 'Deptid' });
-    PeriodAttendance.belongsTo(models.Course, { foreignKey: 'courseId' });
-    PeriodAttendance.belongsTo(models.Section, { foreignKey: 'sectionId' });
+    if (models.StudentDetails) PeriodAttendance.belongsTo(models.StudentDetails, { foreignKey: 'regno', targetKey: 'registerNumber' });
+    if (models.User) PeriodAttendance.belongsTo(models.User, { foreignKey: 'staffId' });
+    if (models.Course) PeriodAttendance.belongsTo(models.Course, { foreignKey: 'courseId' });
+    if (models.Section) PeriodAttendance.belongsTo(models.Section, { foreignKey: 'sectionId' });
+    
+    // SAFE CHECK
+    if (models.DepartmentAcademic) {
+        PeriodAttendance.belongsTo(models.DepartmentAcademic, { foreignKey: 'Deptid' });
+    }
   };
 
   return PeriodAttendance;

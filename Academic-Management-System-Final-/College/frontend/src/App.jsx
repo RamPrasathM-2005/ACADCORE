@@ -14,7 +14,7 @@ const AppRoutes = () => {
 
 const App = () => {
   // Use your Client ID here
-  const GOOGLE_CLIENT_ID = "180795642065-a8vha11jug7jv8ip5b4ivggi39pqej6h.apps.googleusercontent.com";
+  const GOOGLE_CLIENT_ID = '180795642065-a8vha11jug7jv8ip5b4ivggi39pqej6h.apps.googleusercontent.com';
 
   return (
     <BrowserRouter>

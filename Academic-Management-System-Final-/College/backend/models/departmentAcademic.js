@@ -1,29 +1,45 @@
 // models/departmentAcademic.js
 export default (sequelize, DataTypes) => {
-  // The first argument 'DepartmentAcademic' is the internal Sequelize name.
-  // This MUST match the keys used in index.js and other associations.
   const DepartmentAcademic = sequelize.define('DepartmentAcademic', { 
     Deptid: { 
       type: DataTypes.INTEGER, 
       primaryKey: true, 
+      autoIncrement: true, // Changed to autoIncrement for new records
       allowNull: false 
     },
     Deptname: { 
       type: DataTypes.STRING(100), 
-      allowNull: false 
+      allowNull: false,
+      comment: 'Full name of the department'
     },
     Deptacronym: { 
       type: DataTypes.STRING(10), 
-      allowNull: false 
+      allowNull: false,
+      comment: 'Short code (e.g. CSE, IT)'
     },
+    // Added Corporate Fields
+    companyId: {
+      type: DataTypes.INTEGER,
+      allowNull: true, // Nullable initially to prevent errors with existing data
+      references: { model: 'companies', key: 'companyId' },
+      onDelete: 'CASCADE',
+    },
+    status: {
+      type: DataTypes.ENUM('Active', 'Inactive', 'Archived'),
+      allowNull: false,
+      defaultValue: 'Active',
+    },
+    createdBy: { type: DataTypes.INTEGER, allowNull: true },
+    updatedBy: { type: DataTypes.INTEGER, allowNull: true },
   }, { 
-    tableName: 'department', // Physical table name in MySQL
-    timestamps: false 
+    tableName: 'department', 
+    timestamps: true, // Enabled for audit fields
+    createdAt: 'createdDate',
+    updatedAt: 'updatedDate'
   });
 
   DepartmentAcademic.associate = (models) => {
-    // Note: These model names (Regulation, User, etc.) must match 
-    // the name inside their respective define() functions.
+    // Your Original Academic Associations
     DepartmentAcademic.hasMany(models.Regulation, { foreignKey: 'Deptid' });
     DepartmentAcademic.hasMany(models.User, { foreignKey: 'Deptid' });
     DepartmentAcademic.hasMany(models.StudentDetails, { foreignKey: 'Deptid' });
@@ -31,11 +47,13 @@ export default (sequelize, DataTypes) => {
     DepartmentAcademic.hasMany(models.Timetable, { foreignKey: 'Deptid' });
     DepartmentAcademic.hasMany(models.PeriodAttendance, { foreignKey: 'Deptid' });
     DepartmentAcademic.hasMany(models.CBCS, { foreignKey: 'Deptid' });
+    
+    // Combined Corporate Associations
+    DepartmentAcademic.belongsTo(models.Company, { foreignKey: 'companyId', as: 'company' });
+    DepartmentAcademic.hasMany(models.Employee, { foreignKey: 'departmentId', as: 'employees' });
   };
 
-  // Initial Seeding Logic
-  // This runs whenever the model is loaded. 
-  // ignoreDuplicates: true prevents errors if the IDs already exist.
+  // Your Seeding Logic
   DepartmentAcademic.afterSync(async () => {
     try {
       await DepartmentAcademic.bulkCreate([

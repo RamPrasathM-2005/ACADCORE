@@ -62,6 +62,9 @@ import BulkOD from "./pages/admin/BulkOD.jsx";
 import DayAttendance from "./pages/admin/DayAttendance.jsx";
 import StudentCourseMapping from "./pages/admin/StudentCourseMapping.jsx";
 
+
+import { useAuth } from "./pages/auth/AuthContext";
+
 // ProtectedRoute
 const ProtectedRoute = ({ children, role }) => {
   const { user, loading } = useAuth();

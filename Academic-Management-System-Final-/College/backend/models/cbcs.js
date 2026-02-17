@@ -5,20 +5,41 @@ export default (sequelize, DataTypes) => {
     batchId: { type: DataTypes.INTEGER, allowNull: false },
     Deptid: { type: DataTypes.INTEGER, allowNull: false },
     semesterId: { type: DataTypes.INTEGER, allowNull: false },
-    // ... other fields
   }, { tableName: 'CBCS', timestamps: true });
 
   CBCS.associate = (models) => {
-    // These must match the names defined in sequelize.define() in their files
-    CBCS.belongsTo(models.Batch, { foreignKey: 'batchId' });
-    CBCS.belongsTo(models.DepartmentAcademic, { foreignKey: 'Deptid' });
-    CBCS.belongsTo(models.Semester, { foreignKey: 'semesterId' });
-    CBCS.hasMany(models.CBCSSubject, { foreignKey: 'cbcs_id' });
+    // Safety check: Log if a model is missing to prevent crash
+    const requiredModels = ['Batch', 'DepartmentAcademic', 'Semester', 'CBCSSubject', 'studentcourseChoices', 'studentTempChoice'];
     
-    // Check your other files! 
-    // If studentcourseChoices.js uses .define('studentcourseChoices'), keep it lowercase:
-    CBCS.hasMany(models.studentcourseChoices, { foreignKey: 'cbcs_id' });
-    CBCS.hasMany(models.studentTempChoice, { foreignKey: 'cbcs_id' });
+    requiredModels.forEach(m => {
+      if (!models[m]) {
+        console.error(`⚠️ WARNING: Model "${m}" is missing from the models object. Check your filename and define() name.`);
+      }
+    });
+
+    if (models.Batch) {
+      CBCS.belongsTo(models.Batch, { foreignKey: 'batchId' });
+    }
+    
+    if (models.DepartmentAcademic) {
+      CBCS.belongsTo(models.DepartmentAcademic, { foreignKey: 'Deptid' });
+    }
+    
+    if (models.Semester) {
+      CBCS.belongsTo(models.Semester, { foreignKey: 'semesterId' });
+    }
+
+    if (models.CBCSSubject) {
+      CBCS.hasMany(models.CBCSSubject, { foreignKey: 'cbcs_id' });
+    }
+
+    if (models.studentcourseChoices) {
+      CBCS.hasMany(models.studentcourseChoices, { foreignKey: 'cbcs_id' });
+    }
+
+    if (models.studentTempChoice) {
+      CBCS.hasMany(models.studentTempChoice, { foreignKey: 'cbcs_id' });
+    }
   };
 
   return CBCS;
