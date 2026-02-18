@@ -7,7 +7,7 @@ const {
   Timetable, 
   Course, 
   Section, 
-  DepartmentAcademic, 
+  Department, 
   Semester, 
   Batch, 
   StudentCourse, 
@@ -75,7 +75,7 @@ export async function getTimetableAdmin(req, res, next) {
           required: false // LEFT JOIN
         },
         {
-          model: DepartmentAcademic,
+          model: Department,
           required: true,
           attributes: ['Deptacronym']
         },

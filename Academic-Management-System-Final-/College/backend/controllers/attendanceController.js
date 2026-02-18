@@ -9,7 +9,7 @@ const {
   Course, 
   StaffCourse, 
   Section, 
-  DepartmentAcademic, 
+  Department, 
   Semester, 
   StudentCourse, 
   StudentDetails, 
@@ -88,7 +88,7 @@ export async function getTimetable(req, res, next) {
         },
         { model: Course, required: true, where: { isActive: 'YES' } },
         { model: Section, required: false },
-        { model: DepartmentAcademic, attributes: ['Deptacronym'] },
+        { model: Department, attributes: ['Deptacronym'] },
         { model: Semester, required: true }
       ],
       order: [

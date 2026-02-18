@@ -3,7 +3,7 @@ import db from "../models/index.js";
 import catchAsync from "../utils/catchAsync.js";
 import { Op } from "sequelize";
 
-const { sequelize, Section, Course, User, StaffCourse, Semester, Batch, DepartmentAcademic } = db;
+const { sequelize, Section, Course, User, StaffCourse, Semester, Batch, Department } = db;
 
 export const addSectionsToCourse = catchAsync(async (req, res) => {
   const { courseId } = req.params;

@@ -102,12 +102,13 @@ const routes = [
   {
     path: "/admin",
     element: (
-      <ProtectedRoute role="admin">
+      <ProtectedRoute role={["admin","superadmin"]}>
         <AdminLayout />
       </ProtectedRoute>
     ),
     children: [
       { index: true, element: <AdminDashboard /> },
+      
       { path: 'dashboard', element: <AdminDashboard /> },
       { path: 'manage-semesters', element: <ManageSemesters /> },
       { path: 'manage-regulations', element: <ManageRegulations /> },
@@ -141,7 +142,7 @@ const routes = [
   {
     path: "/staff",
     element: (
-      <ProtectedRoute role="staff">
+      <ProtectedRoute role={["staff","teachingstaff"]}>
         <StaffLayout />
       </ProtectedRoute>
     ),

@@ -9,7 +9,7 @@ const {
   sequelize, CBCS, CBCSSubject, CBCSSectionStaff, Course, 
   Section, StaffCourse, User, ElectiveBucket, ElectiveBucketCourse,
   StudentElectiveSelection, StudentDetails, StudentCourse, studentTempChoice,
-  DepartmentAcademic, Batch, Semester
+  Department, Batch, Semester
 } = db;
 
 /**
@@ -156,7 +156,7 @@ export const getAllCbcs = async (req, res) => {
   try {
     const data = await CBCS.findAll({
       include: [
-        { model: DepartmentAcademic, attributes: ['Deptname'] },
+        { model: Department, attributes: ['Deptname'] },
         { model: Batch, attributes: ['batch'] },
         { model: Semester, attributes: ['semesterNumber'] },
         { model: User, attributes: ['userName'] }
@@ -177,7 +177,7 @@ export const getCbcsById = async (req, res) => {
     const { id } = req.params;
     const cbcs = await CBCS.findByPk(id, {
       include: [
-        { model: DepartmentAcademic },
+        { model: Department },
         { model: Batch },
         { model: Semester },
         { 
@@ -202,7 +202,7 @@ export const getStudentCbcsSelection = async (req, res) => {
 
     const cbcs = await CBCS.findOne({
       where: { batchId, Deptid: deptId, semesterId, isActive: 'YES' },
-      include: [{ model: DepartmentAcademic }, { model: Batch }, { model: Semester }]
+      include: [{ model: Department }, { model: Batch }, { model: Semester }]
     });
 
     if (!cbcs) return res.status(404).json({ success: false, error: "No active CBCS found" });

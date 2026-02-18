@@ -81,7 +81,7 @@ export default db;
 
 // Named exports for your components
 export const {
-  Company, Department, User, Employee, StudentDetails, DepartmentAcademic,
+  Company, Department, User, Employee, StudentDetails,
   Regulation, Batch, Semester, Course, RegulationCourse, Vertical,
   VerticalCourse, Section, StudentCourse, StaffCourse, CourseOutcome,
   COTool, StudentCOTool, Timetable, DayAttendance, PeriodAttendance,

@@ -5,11 +5,11 @@ import { Op } from 'sequelize';
 
 const { 
   sequelize, Timetable, Course, Section, Semester, 
-  Batch, DepartmentAcademic, ElectiveBucket, ElectiveBucketCourse, User 
+  Batch, Department, ElectiveBucket, ElectiveBucketCourse, User 
 } = db;
 
 export const getAllTimetableDepartments = catchAsync(async (req, res) => {
-  const departments = await DepartmentAcademic.findAll({
+  const departments = await Department.findAll({
     attributes: [['Deptid', 'Deptid'], ['Deptacronym', 'deptCode'], 'Deptname']
   });
 

@@ -14,7 +14,7 @@ const {
   Semester, 
   StudentDetails, 
   User, 
-  DepartmentAcademic, 
+  Department, 
   NptelCourse, 
   StudentNptelEnrollment, 
   StudentSemesterGPA, 
@@ -232,7 +232,7 @@ export const getStudentsForGrade = catchAsync(async (req, res) => {
         attributes: [['userName', 'name']]
       },
       {
-        model: DepartmentAcademic,
+        model: Department,
         as: 'department',
         where: { Deptacronym: branch },
         attributes: []

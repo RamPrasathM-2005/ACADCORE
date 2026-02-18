@@ -10,7 +10,7 @@ export default  (sequelize, DataTypes) => {
   }, { tableName: 'Regulation', timestamps: true, createdAt: 'createdDate', updatedAt: 'updatedDate' });
 
   Regulation.associate = (models) => {
-    Regulation.belongsTo(models.DepartmentAcademic, { foreignKey: 'Deptid' });
+    Regulation.belongsTo(models.Department, { foreignKey: 'Deptid' });
     Regulation.hasMany(models.Batch, { foreignKey: 'regulationId' });
     Regulation.hasMany(models.RegulationCourse, { foreignKey: 'regulationId' });
     Regulation.hasMany(models.Vertical, { foreignKey: 'regulationId' });

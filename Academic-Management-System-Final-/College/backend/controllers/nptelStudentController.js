@@ -199,7 +199,7 @@ export const getOecPecProgress = catchAsync(async (req, res) => {
   // 1. Get Core Info
   const student = await StudentDetails.findOne({
     where: { [Op.or]: [{ registerNumber: req.user.userNumber }, { studentId: userId }] },
-    include: [{ model: DepartmentAcademic, as: 'department' }]
+    include: [{ model: Department, as: 'department' }]
   });
 
   if (!student) return res.status(404).json({ status: "failure", message: "Student not found" });

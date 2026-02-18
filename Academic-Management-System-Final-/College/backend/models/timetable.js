@@ -14,7 +14,7 @@ export default  (sequelize, DataTypes) => {
   }, { tableName: 'Timetable', timestamps: true, createdAt: 'createdDate', updatedAt: 'updatedDate' });
 
   Timetable.associate = (models) => {
-    Timetable.belongsTo(models.DepartmentAcademic, { foreignKey: 'Deptid' });
+    Timetable.belongsTo(models.Department, { foreignKey: 'Deptid' });
     Timetable.belongsTo(models.Semester, { foreignKey: 'semesterId' });
     Timetable.belongsTo(models.Course, { foreignKey: 'courseId' });
     Timetable.belongsTo(models.Section, { foreignKey: 'sectionId' });

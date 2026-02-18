@@ -7,7 +7,7 @@ const {
   sequelize,
   User,
   StudentDetails,
-  DepartmentAcademic,
+  Department,
   Batch,
   StudentCourse,
   Course,
@@ -36,7 +36,7 @@ export const searchStudents = catchAsync(async (req, res) => {
         attributes: ['userId', 'userName']
       },
       {
-        model: DepartmentAcademic,
+        model: Department,
         as: 'department',
         where: branch ? { Deptacronym: branch } : {},
         attributes: ['Deptacronym']

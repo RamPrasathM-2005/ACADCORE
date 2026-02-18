@@ -10,7 +10,7 @@ const {
   Course, 
   Semester, 
   Batch, 
-  DepartmentAcademic, 
+  Department, 
   StaffCourse, 
   Section 
 } = db;
@@ -50,7 +50,7 @@ export const getStudentEnrollments = catchAsync(async (req, res) => {
             attributes: ['userName'] 
           },
           { 
-            model: DepartmentAcademic, 
+            model: Department, 
             as: 'department', 
             where: dept ? { Deptacronym: dept } : {}, 
             attributes: [] 

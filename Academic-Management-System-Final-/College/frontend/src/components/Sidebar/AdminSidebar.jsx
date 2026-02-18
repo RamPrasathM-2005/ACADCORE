@@ -36,6 +36,7 @@ const AdminSidebar = () => {
   const navigate = useNavigate();
 
   const sidebarItems = [
+    { to: "/admin/adduser", icon: UserCheck, label: "Add User" },
     { to: "/admin/dashboard", icon: LayoutDashboard, label: "Dashboard" },
     { to: "/admin/manage-semesters", icon: CalendarDays, label: "Manage Semesters" },
     { to: "/admin/manage-regulations", icon: ShieldCheck, label: "Manage Regulations" },
