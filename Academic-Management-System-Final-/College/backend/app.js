@@ -139,8 +139,8 @@ const sanitizeInput = [
 // NOTE: Auth limiter commented out above, so removed from here
 app.use('/api/auth', /* authLimiter, */ sanitizeInput, authRoutes);
 app.use('/api/companies', sanitizeInput, companyRoutes);
-app.use('/api/role', sanitizeInput, roleRoutes);
-app.use('/api/user', sanitizeInput, userRoutes);
+app.use('/api/roles', sanitizeInput, roleRoutes);
+app.use('/api/users', sanitizeInput, userRoutes);
 app.use('/api/admin', sanitizeInput, adminRoutes); // No global limiter here if bulk
 app.use('/api/departments', sanitizeInput, departmentRoutes);
 app.use('/api/staff', sanitizeInput, staffRoutes);
