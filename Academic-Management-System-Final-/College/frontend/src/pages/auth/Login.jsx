@@ -53,21 +53,21 @@ const Login = () => {
     e.preventDefault();
     setIsLoading(true);
     try {
-      // Match this payload to your backend. 
-      // If your backend expects 'email', change 'identifier' to 'email'.
+      // FIXED: Key changed from 'email' to 'identifier' to match backend
       const { data } = await API.post("/auth/login", { 
-        email: identifier, 
+        identifier, // This sends the value of 'identifier' state as the key 'identifier'
         password 
       });
 
-      if (data.token || (data.data && data.data.token)) {
-        const token = data.token || data.data.token;
-        localStorage.setItem("token", token);
+      // Backend returns data.token directly based on your controller
+      if (data.token) {
+        localStorage.setItem("token", data.token);
         await refresh();
         toast.success("Login Successful");
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || "Login failed");
+      // FIXED: Backend uses 'msg', not 'message'
+      toast.error(err.response?.data?.msg || "Login failed");
     } finally {
       setIsLoading(false);
     }
@@ -80,7 +80,7 @@ const Login = () => {
       await refresh();
       toast.success("Google Login Successful");
     } catch (err) {
-      toast.error("Google Login Failed");
+      toast.error(err.response?.data?.msg || "Google Login Failed");
     }
   };
 
@@ -103,7 +103,7 @@ const Login = () => {
                 icon={Mail} 
                 value={identifier} 
                 onChange={(e) => setIdentifier(e.target.value)} 
-                placeholder="Enter your ID" 
+                placeholder="Enter your Email or Student ID" 
             />
             <InputField 
                 label="Password" 
@@ -120,7 +120,7 @@ const Login = () => {
               {isLoading ? "Signing in..." : "Sign In"}
             </button>
 
-            <div className="flex justify-center">
+            <div className="flex justify-center mt-4">
               <GoogleLogin onSuccess={handleGoogleSuccess} />
             </div>
           </form>
