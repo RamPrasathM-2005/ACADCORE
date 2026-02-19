@@ -3,9 +3,19 @@ import db from '../models/index.js';
 import catchAsync from '../utils/catchAsync.js';
 import { Op } from 'sequelize';
 
+// Destructure models from db object
 const { 
-  sequelize, Timetable, Course, Section, Semester, 
-  Batch, Department, ElectiveBucket, ElectiveBucketCourse, User 
+  sequelize, 
+  Timetable, 
+  Course, 
+  Section, 
+  Semester, 
+  Batch, 
+  Department, 
+  ElectiveBucket, 
+  ElectiveBucketCourse, 
+  StaffCourse, 
+  User 
 } = db;
 
 export const getAllTimetableDepartments = catchAsync(async (req, res) => {
@@ -34,7 +44,12 @@ export const getAllTimetableBatches = catchAsync(async (req, res) => {
 export const getTimetable = catchAsync(async (req, res) => {
   const { semesterId } = req.params;
 
-  const timetableEntries = await Timetable.findAll({
+  // Validate semesterId
+  if (!semesterId || isNaN(semesterId)) {
+    return res.status(400).json({ status: 'failure', message: 'Invalid semesterId' });
+  }
+
+  const entries = await Timetable.findAll({
     where: { 
       semesterId, 
       isActive: 'YES' 
@@ -42,25 +57,25 @@ export const getTimetable = catchAsync(async (req, res) => {
     include: [
       { 
         model: Course, 
-        attributes: ['courseId', 'courseTitle'],
-        required: false // LEFT JOIN
+        attributes: ['courseId', 'courseTitle', 'courseCode'],
+        required: false 
       },
       { 
         model: Section, 
         attributes: ['sectionId', 'sectionName'],
-        required: false // LEFT JOIN
+        required: false 
       }
     ]
   });
 
-  // Flatten the data structure to match frontend expectations
-  const formattedData = timetableEntries.map(t => ({
+  // Flatten/Format data to match frontend requirements
+  const formattedData = entries.map(t => ({
     timetableId: t.timetableId,
     courseId: t.courseId,
     sectionId: t.sectionId || 0,
     dayOfWeek: t.dayOfWeek?.toUpperCase(),
     periodNumber: t.periodNumber,
-    courseTitle: t.Course?.courseTitle || t.courseId,
+    courseTitle: t.Course?.courseTitle || t.courseId, // Fallback if course join fails
     sectionName: t.Section?.sectionName || 'No Section'
   }));
 
@@ -74,7 +89,7 @@ export const getTimetableByFilters = catchAsync(async (req, res) => {
   const { degree, Deptid, semesterNumber } = req.query;
 
   if (!degree || !Deptid || !semesterNumber) {
-    return res.status(400).json({ status: 'failure', message: 'Missing required filters' });
+    return res.status(400).json({ status: 'failure', message: 'Missing degree, Deptid, or semesterNumber' });
   }
 
   const entries = await Timetable.findAll({
@@ -86,15 +101,23 @@ export const getTimetableByFilters = catchAsync(async (req, res) => {
       {
         model: Semester,
         where: { semesterNumber },
-        required: true, // INNER JOIN
+        required: true,
         include: [{ 
-            model: Batch, 
-            where: { degree, isActive: 'YES' },
-            required: true 
+          model: Batch, 
+          where: { degree, isActive: 'YES' },
+          required: true 
         }]
       },
-      { model: Course, attributes: ['courseTitle'], required: false },
-      { model: Section, attributes: ['sectionName'], required: false }
+      { 
+        model: Course, 
+        attributes: ['courseId', 'courseTitle'], 
+        required: false 
+      },
+      { 
+        model: Section, 
+        attributes: ['sectionId', 'sectionName'], 
+        required: false 
+      }
     ]
   });
 
@@ -112,45 +135,127 @@ export const getTimetableByFilters = catchAsync(async (req, res) => {
 });
 
 export const createTimetableEntry = catchAsync(async (req, res) => {
-  const { courseId, sectionId, dayOfWeek, periodNumber, Deptid, semesterId } = req.body;
-  const userName = req.user?.userName || 'admin';
+  const { courseId, bucketId, sectionId, dayOfWeek, periodNumber, Deptid, semesterId } = req.body;
+  const userEmail = req.user?.email || 'admin'; // Using email as per your new controller logic
 
   const transaction = await sequelize.transaction();
   try {
-    // 1. Validations
-    const semester = await Semester.findOne({ where: { semesterId, isActive: 'YES' }, transaction });
-    if (!semester) throw new Error('Active semester not found');
-
-    const course = await Course.findOne({ where: { courseId, isActive: 'YES' }, transaction });
-    if (!course) throw new Error('Active course not found');
-
-    if (sectionId) {
-      const section = await Section.findOne({ where: { sectionId, courseId, isActive: 'YES' }, transaction });
-      if (!section) throw new Error('Active section not found for this course');
+    // 1. COLLECT ALL COURSE IDs TO ALLOCATE
+    let coursesToAllocate = [];
+    
+    if (bucketId) {
+      const bucketCourses = await ElectiveBucketCourse.findAll({
+        where: { bucketId },
+        attributes: ['courseId'],
+        transaction
+      });
+      coursesToAllocate = bucketCourses.map(bc => bc.courseId);
+    } else if (courseId) {
+      coursesToAllocate = [courseId];
     }
 
-    // 2. Conflict Check
-    const conflict = await Timetable.findOne({
-      where: { semesterId, dayOfWeek, periodNumber, isActive: 'YES' },
+    if (coursesToAllocate.length === 0) {
+      throw new Error('No courses found to allocate.');
+    }
+
+    // 2. IDENTIFY STAFF INVOLVED (to check conflicts)
+    // Find all users teaching the courses we want to allocate
+    const staffCourses = await StaffCourse.findAll({
+      where: { 
+        courseId: { [Op.in]: coursesToAllocate } 
+        // Note: You might want to add isActive check here if StaffCourse has it
+      },
+      attributes: ['Userid'],
       transaction
     });
-    if (conflict) throw new Error('Time slot already assigned for this semester/section');
 
-    // 3. Create
-    const entry = await Timetable.create({
-      courseId,
-      sectionId: sectionId || null,
-      dayOfWeek,
-      periodNumber,
-      Deptid,
-      semesterId,
-      isActive: 'YES',
-      createdBy: userName,
-      updatedBy: userName
-    }, { transaction });
+    const staffIds = [...new Set(staffCourses.map(sc => sc.Userid))]; // Unique staff IDs
+
+    // 3. GLOBAL STAFF CONFLICT CHECK
+    if (staffIds.length > 0) {
+      // Logic: Find if any Timetable entry exists at this time...
+      // ...where the course in that timetable entry is taught by one of our staffIds.
+      
+      // First, find all courses that these staff members teach (anywhere)
+      const allCoursesTaughtByStaff = await StaffCourse.findAll({
+        where: { Userid: { [Op.in]: staffIds } },
+        attributes: ['courseId'],
+        transaction
+      });
+      
+      const potentialConflictCourseIds = allCoursesTaughtByStaff.map(x => x.courseId);
+
+      // Now query Timetable for collision
+      const staffConflict = await Timetable.findOne({
+        where: {
+          dayOfWeek,
+          periodNumber,
+          isActive: 'YES',
+          courseId: { [Op.in]: potentialConflictCourseIds }
+        },
+        include: [
+          { 
+            model: Course, 
+            attributes: ['courseTitle'],
+            include: [{
+              model: StaffCourse,
+              where: { Userid: { [Op.in]: staffIds } }, // Filter to find specifically who caused it
+              include: [{ model: User, attributes: ['username'] }]
+            }]
+          },
+          {
+            model: Semester,
+            include: [{ model: Batch, attributes: ['batch', 'branch'] }]
+          }
+        ],
+        transaction
+      });
+
+      if (staffConflict) {
+        const conflictStaffName = staffConflict.Course?.StaffCourses?.[0]?.User?.username || 'Unknown Staff';
+        const conflictCourse = staffConflict.Course?.courseTitle;
+        const conflictBatch = staffConflict.Semester?.Batch?.batch;
+        const conflictBranch = staffConflict.Semester?.Batch?.branch;
+
+        throw new Error(`STAFF CONFLICT: ${conflictStaffName} is already teaching "${conflictCourse}" for ${conflictBranch} (${conflictBatch}) in this slot.`);
+      }
+    }
+
+    // 4. BATCH SLOT CHECK (Prevent two subjects in the SAME batch's slot)
+    const batchConflict = await Timetable.findOne({
+      where: {
+        semesterId,
+        dayOfWeek,
+        periodNumber,
+        isActive: 'YES'
+      },
+      transaction
+    });
+
+    if (batchConflict) {
+      throw new Error('This Batch already has a course assigned to this slot.');
+    }
+
+    // 5. PERFORM ALLOCATION (Loop through courses)
+    const createdEntries = [];
+    for (const id of coursesToAllocate) {
+      const entry = await Timetable.create({
+        courseId: id,
+        sectionId: sectionId || null, // sectionId might be null for electives
+        dayOfWeek,
+        periodNumber,
+        Deptid,
+        semesterId,
+        isActive: 'YES',
+        createdBy: userEmail,
+        updatedBy: userEmail
+      }, { transaction });
+      createdEntries.push(entry);
+    }
 
     await transaction.commit();
-    res.status(201).json({ status: 'success', message: 'Timetable entry created', data: entry });
+    res.status(201).json({ status: 'success', message: 'Allocation successful', data: createdEntries });
+
   } catch (error) {
     await transaction.rollback();
     res.status(400).json({ status: 'failure', message: error.message });
@@ -160,38 +265,84 @@ export const createTimetableEntry = catchAsync(async (req, res) => {
 export const updateTimetableEntry = catchAsync(async (req, res) => {
   const { timetableId } = req.params;
   const { courseId, sectionId, dayOfWeek, periodNumber, Deptid, semesterId } = req.body;
-  const userName = req.user?.userName || 'admin';
+  const userEmail = req.user?.email || 'admin';
 
   const transaction = await sequelize.transaction();
   try {
     const entry = await Timetable.findByPk(timetableId, { transaction });
     if (!entry) throw new Error('Timetable entry not found');
 
-    // Conflict Check (exclude current ID)
-    const conflict = await Timetable.findOne({
-      where: { 
-        semesterId, 
-        dayOfWeek, 
-        periodNumber, 
-        timetableId: { [Op.ne]: timetableId },
-        isActive: 'YES' 
-      },
-      transaction
-    });
-    if (conflict) throw new Error('Time slot already assigned');
+    // 1. Staff Conflict Check (Excluding current timetableId)
+    if (courseId) {
+      // Get staff for the NEW course
+      const staffForNewCourse = await StaffCourse.findAll({
+        where: { 
+          courseId: courseId,
+          // Handle Section specific staff check if sectionId provided, else check all for course
+          ...(sectionId ? { [Op.or]: [{ sectionId: sectionId }, { sectionId: null }] } : {})
+        },
+        attributes: ['Userid'],
+        transaction
+      });
+      
+      const staffIds = staffForNewCourse.map(s => s.Userid);
 
+      if (staffIds.length > 0) {
+        // Find courses taught by these staff
+        const allCoursesTaughtByStaff = await StaffCourse.findAll({
+          where: { Userid: { [Op.in]: staffIds } },
+          attributes: ['courseId'],
+          transaction
+        });
+        const potentialConflictCourseIds = allCoursesTaughtByStaff.map(x => x.courseId);
+
+        const conflict = await Timetable.findOne({
+          where: {
+            dayOfWeek,
+            periodNumber,
+            isActive: 'YES',
+            timetableId: { [Op.ne]: timetableId }, // Exclude current record
+            courseId: { [Op.in]: potentialConflictCourseIds }
+          },
+          include: [
+            { 
+              model: Course,
+              include: [{
+                model: StaffCourse,
+                where: { Userid: { [Op.in]: staffIds } },
+                include: [{ model: User, attributes: ['username'] }]
+              }]
+            },
+            {
+              model: Semester,
+              include: [{ model: Batch, attributes: ['batch'] }]
+            }
+          ],
+          transaction
+        });
+
+        if (conflict) {
+          const conflictStaffName = conflict.Course?.StaffCourses?.[0]?.User?.username || 'Staff';
+          const conflictBatch = conflict.Semester?.Batch?.batch;
+          throw new Error(`Staff Conflict: ${conflictStaffName} is already busy with Batch ${conflictBatch}.`);
+        }
+      }
+    }
+
+    // 2. Perform Update
     await entry.update({
       courseId,
       sectionId: sectionId || null,
       dayOfWeek,
       periodNumber,
-      Deptid,
+      Deptid, // Optional: Usually Dept doesn't change on edit, but included if needed
       semesterId,
-      updatedBy: userName
+      updatedBy: userEmail
     }, { transaction });
 
     await transaction.commit();
-    res.status(200).json({ status: 'success', message: 'Timetable entry updated' });
+    res.status(200).json({ status: 'success', message: 'Updated successfully' });
+
   } catch (error) {
     await transaction.rollback();
     res.status(400).json({ status: 'failure', message: error.message });
@@ -200,15 +351,21 @@ export const updateTimetableEntry = catchAsync(async (req, res) => {
 
 export const deleteTimetableEntry = catchAsync(async (req, res) => {
   const { timetableId } = req.params;
-  const userName = req.user?.userName || 'admin';
+  const userEmail = req.user?.email || 'admin';
 
   const entry = await Timetable.findByPk(timetableId);
-  if (!entry) return res.status(404).json({ status: 'failure', message: 'Not found' });
+  
+  if (!entry || entry.isActive === 'NO') {
+    return res.status(404).json({ status: 'failure', message: 'Timetable entry not found' });
+  }
 
   // Soft Delete
-  await entry.update({ isActive: 'NO', updatedBy: userName });
+  await entry.update({ 
+    isActive: 'NO', 
+    updatedBy: userEmail 
+  });
 
-  res.status(200).json({ status: 'success', message: 'Entry deleted successfully' });
+  res.status(200).json({ status: 'success', message: 'Timetable entry deleted' });
 });
 
 /* =========================
@@ -220,25 +377,27 @@ export const getElectiveBucketsBySemester = catchAsync(async (req, res) => {
 
   const buckets = await ElectiveBucket.findAll({
     where: { semesterId },
+    attributes: ['bucketId', 'bucketNumber', 'bucketName', 'semesterId'],
     order: [['bucketNumber', 'ASC']]
   });
 
-  res.json({ status: "success", data: buckets });
+  res.status(200).json({ status: "success", data: buckets });
 });
 
 export const getCoursesInBucket = catchAsync(async (req, res) => {
   const { bucketId } = req.params;
 
+  // Find courses linked to this bucket
   const courses = await Course.findAll({
     include: [{
       model: ElectiveBucketCourse,
       where: { bucketId },
       required: true,
-      attributes: [] // Don't need bucket fields
+      attributes: [] // Don't return the join table data in top level
     }],
     attributes: ['courseId', 'courseCode', 'courseTitle', 'credits'],
     order: [['courseCode', 'ASC']]
   });
 
-  res.json({ status: "success", data: courses });
+  res.status(200).json({ status: "success", data: courses });
 });
