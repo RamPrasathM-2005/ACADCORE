@@ -6,16 +6,22 @@ const {
 import { Op } from 'sequelize';
 import catchAsync from '../utils/catchAsync.js';
 
-// 1. Get Available Courses (Not already assigned to this staff)
+// Helper to ensure we get the ID correctly
+const getUserId = (req) => req.user.userId; 
+const getDeptId = (req) => req.user.departmentId;
+
+// 1. Get Available Courses
 export const getAvailableCoursesForStaff = catchAsync(async (req, res) => {
   const { semester, branch, batch, type } = req.query;
-  const userId = req.user.Userid;
-  const staffDeptId = req.user.Deptid;
+  
+  // CHANGE 1: Use correct casing from User table data
+  const userId = getUserId(req); 
+  const staffDeptId = getDeptId(req);
 
   const courses = await Course.findAll({
     where: {
       isActive: 'YES',
-      // Exclusion logic: courseId NOT IN (assigned courses)
+      // CHANGE 2: 'Userid' is the column in StaffCourse model, 'userId' is the value
       courseId: {
         [Op.notIn]: sequelize.literal(`(SELECT courseId FROM StaffCourse WHERE Userid = ${userId})`)
       },
@@ -35,7 +41,8 @@ export const getAvailableCoursesForStaff = catchAsync(async (req, res) => {
         include: [{
           model: Regulation,
           required: true,
-          where: { Deptid: staffDeptId } // Dept filter
+          // CHANGE 3: Regulation model uses 'Deptid', User uses 'departmentId'
+          where: { Deptid: staffDeptId } 
         }]
       }]
     }],
@@ -45,16 +52,17 @@ export const getAvailableCoursesForStaff = catchAsync(async (req, res) => {
   res.json({ status: 'success', data: courses });
 });
 
-// 2. Get All Courses with Status Labels (Allocated, Pending, Rejected, Available)
+// 2. Get All Courses with Status Labels
 export const getAllCoursesForStaff = catchAsync(async (req, res) => {
   const { semester, branch, batch, type } = req.query;
-  const userId = req.user.Userid;
-  const staffDeptId = req.user.Deptid;
+  const userId = getUserId(req);
+  const staffDeptId = getDeptId(req);
 
   const courses = await Course.findAll({
     attributes: {
       include: [
         [
+          // CHANGE 4: Updated SQL literals to use proper camelCase 'userId' value
           sequelize.literal(`(
             CASE 
               WHEN EXISTS (SELECT 1 FROM StaffCourse sc WHERE sc.courseId = Course.courseId AND sc.Userid = ${userId}) THEN 'ALLOCATED'
@@ -110,8 +118,8 @@ export const getAllCoursesForStaff = catchAsync(async (req, res) => {
 // 3. Send Course Request
 export const sendCourseRequest = catchAsync(async (req, res) => {
   const { courseId } = req.params;
-  const userId = req.user.Userid;
-  const staffDeptId = req.user.Deptid;
+  const userId = getUserId(req);
+  const staffDeptId = getDeptId(req);
 
   const course = await Course.findByPk(courseId, {
     include: [{
@@ -120,6 +128,7 @@ export const sendCourseRequest = catchAsync(async (req, res) => {
     }]
   });
 
+  // CHANGE 5: Verify Regulation.Deptid matches User.departmentId
   if (!course || course.Semester.Batch.Regulation.Deptid !== staffDeptId) {
     return res.status(403).json({ status: 'error', message: 'Cannot request course outside your department' });
   }
@@ -128,14 +137,13 @@ export const sendCourseRequest = catchAsync(async (req, res) => {
   if (existing) {
     if (existing.status === 'PENDING') return res.status(400).json({ status: 'error', message: 'Request already pending' });
     if (existing.status === 'ACCEPTED') return res.status(400).json({ status: 'error', message: 'Already assigned to this course' });
-    // If Rejected, we delete the old one to create a fresh one
     await existing.destroy();
   }
 
   await CourseRequest.create({
     staffId: userId,
     courseId,
-    createdBy: req.user.username
+    createdBy: req.user.userNumber // Using userNumber (cset01) for audit
   });
 
   res.json({ status: 'success', message: 'Request sent successfully' });
@@ -144,7 +152,7 @@ export const sendCourseRequest = catchAsync(async (req, res) => {
 // 4. Cancel Pending Request
 export const cancelCourseRequest = catchAsync(async (req, res) => {
   const { requestId } = req.params;
-  const userId = req.user.Userid;
+  const userId = getUserId(req);
 
   const deleted = await CourseRequest.destroy({
     where: { requestId, staffId: userId, status: 'PENDING' }
@@ -156,8 +164,9 @@ export const cancelCourseRequest = catchAsync(async (req, res) => {
 
 // 5. Recent Request History
 export const getRecentRequestHistory = catchAsync(async (req, res) => {
+  const userId = getUserId(req);
   const history = await CourseRequest.findAll({
-    where: { staffId: req.user.Userid },
+    where: { staffId: userId },
     include: [{
       model: Course,
       include: [{ model: Semester, include: [Batch] }]
@@ -171,9 +180,10 @@ export const getRecentRequestHistory = catchAsync(async (req, res) => {
 // 6. Resend Rejected Request
 export const resendRejectedRequest = catchAsync(async (req, res) => {
   const { requestId } = req.params;
+  const userId = getUserId(req);
 
   const request = await CourseRequest.findOne({
-    where: { requestId, staffId: req.user.Userid, status: 'REJECTED' }
+    where: { requestId, staffId: userId, status: 'REJECTED' }
   });
 
   if (!request) return res.status(404).json({ status: 'error', message: 'Rejected request not found' });
@@ -181,20 +191,20 @@ export const resendRejectedRequest = catchAsync(async (req, res) => {
   await request.update({
     status: 'PENDING',
     rejectedAt: null,
-    updatedBy: req.user.username
+    updatedBy: req.user.userNumber
   });
 
   res.json({ status: 'success', message: 'Request resent successfully' });
 });
 
-// 7. Get Pending Requests (Admin View)
+// 7. Get Pending Requests (For Admin)
 export const getPendingRequestsForAdmin = catchAsync(async (req, res) => {
   const { semester, branch, dept, batch, type } = req.query;
 
   const requests = await CourseRequest.findAll({
     where: { status: 'PENDING' },
     include: [
-      { model: User, attributes: ['userId', 'userName', 'userMail'] },
+      { model: User, attributes: ['userId', 'userName', 'userMail', 'userNumber'] },
       { 
         model: Course, 
         where: type ? { type } : {},
@@ -209,6 +219,7 @@ export const getPendingRequestsForAdmin = catchAsync(async (req, res) => {
             },
             include: [{ 
               model: Regulation, 
+              // Filter by Department ID if provided
               where: dept ? { Deptid: dept } : {},
               include: [Department] 
             }]
@@ -228,11 +239,11 @@ export const getPendingRequestsForAdmin = catchAsync(async (req, res) => {
   res.json({ status: 'success', data: requests });
 });
 
-// 8. Accept Course Request (Transactional logic)
+// 8. Accept Course Request
 export const acceptCourseRequest = catchAsync(async (req, res) => {
   const { requestId } = req.params;
 
-  const result = await sequelize.transaction(async (t) => {
+  await sequelize.transaction(async (t) => {
     const request = await CourseRequest.findOne({
       where: { requestId, status: 'PENDING' },
       transaction: t
@@ -241,7 +252,7 @@ export const acceptCourseRequest = catchAsync(async (req, res) => {
     if (!request) throw new Error('Pending request not found');
 
     const courseId = request.courseId;
-    const staffId = request.staffId;
+    const staffId = request.staffId; // This is actually the userId
 
     // Find available sections (not yet in StaffCourse for this course)
     const availableSection = await Section.findOne({
@@ -255,23 +266,25 @@ export const acceptCourseRequest = catchAsync(async (req, res) => {
       transaction: t
     });
 
-    if (!availableSection) throw new Error('Slot or batch not available. All sections are filled.');
+    if (!availableSection) throw new Error('No available sections left for this course.');
 
     // 1. Accept this request
     await request.update({
       status: 'ACCEPTED',
       approvedAt: new Date(),
-      updatedBy: req.user.username
+      updatedBy: req.user.userNumber
     }, { transaction: t });
 
     // 2. Insert into StaffCourse
+    // Get staff's department ID from User table to fill Deptid
     const staffUser = await User.findByPk(staffId, { transaction: t });
+    
     await StaffCourse.create({
-      Userid: staffId,
+      Userid: staffId, // Mapping userId to Userid
       courseId,
       sectionId: availableSection.sectionId,
-      Deptid: staffUser.departmentId,
-      createdBy: req.user.username
+      Deptid: staffUser.departmentId, // Mapping departmentId to Deptid
+      createdBy: req.user.userNumber
     }, { transaction: t });
 
     // 3. Auto-reject others if course is now full
@@ -288,14 +301,12 @@ export const acceptCourseRequest = catchAsync(async (req, res) => {
       await CourseRequest.update({
         status: 'REJECTED',
         rejectedAt: new Date(),
-        updatedBy: req.user.username
+        updatedBy: req.user.userNumber
       }, {
         where: { courseId, status: 'PENDING', requestId: { [Op.ne]: requestId } },
         transaction: t
       });
     }
-
-    return true;
   });
 
   res.json({ status: 'success', message: 'Request accepted and staff assigned to section' });
@@ -308,7 +319,7 @@ export const rejectCourseRequest = catchAsync(async (req, res) => {
   const updated = await CourseRequest.update({
     status: 'REJECTED',
     rejectedAt: new Date(),
-    updatedBy: req.user.username
+    updatedBy: req.user.userNumber
   }, {
     where: { requestId, status: 'PENDING' }
   });
@@ -320,9 +331,10 @@ export const rejectCourseRequest = catchAsync(async (req, res) => {
 // 10. Leave Course
 export const leaveCourse = catchAsync(async (req, res) => {
   const { staffCourseId } = req.params;
-  const userId = req.user.Userid;
+  const userId = getUserId(req);
 
   await sequelize.transaction(async (t) => {
+    // CHANGE 6: Matching 'Userid' column with 'userId' value
     const assignment = await StaffCourse.findOne({
       where: { staffCourseId, Userid: userId },
       transaction: t
@@ -334,7 +346,7 @@ export const leaveCourse = catchAsync(async (req, res) => {
     await CourseRequest.update({
       status: 'WITHDRAWN',
       withdrawnAt: new Date(),
-      updatedBy: req.user.username
+      updatedBy: req.user.userNumber
     }, {
       where: { staffId: userId, courseId: assignment.courseId, status: 'ACCEPTED' },
       transaction: t
@@ -347,9 +359,9 @@ export const leaveCourse = catchAsync(async (req, res) => {
   res.json({ status: 'success', message: 'Left course successfully' });
 });
 
-// 11. My Requests (Staff Dashboard)
+// 11. My Requests
 export const getMyRequests = catchAsync(async (req, res) => {
-  const userId = req.user.Userid;
+  const userId = getUserId(req);
 
   const requests = await CourseRequest.findAll({
     where: { staffId: userId, status: { [Op.in]: ['PENDING', 'ACCEPTED', 'REJECTED'] } },
@@ -375,11 +387,12 @@ export const getMyRequests = catchAsync(async (req, res) => {
   res.json({ status: 'success', data: requests });
 });
 
-// 12. Notifications (Status Changes)
+// 12. Notifications
 export const getNotifications = catchAsync(async (req, res) => {
+  const userId = getUserId(req);
   const notifications = await CourseRequest.findAll({
     where: {
-      staffId: req.user.Userid,
+      staffId: userId,
       status: { [Op.in]: ['ACCEPTED', 'REJECTED'] }
     },
     include: [{ model: Course, attributes: ['courseTitle', 'courseCode'] }],

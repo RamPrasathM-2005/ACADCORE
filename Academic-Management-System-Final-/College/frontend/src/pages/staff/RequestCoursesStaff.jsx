@@ -64,8 +64,13 @@ const RequestCoursesStaff = () => {
   const fetchAvailableCourses = async () => {
     try {
       const params = new URLSearchParams();
-      // Logic fix: Ensure department filter is always applied
-      params.append('dept', filters.dept || user?.Deptid || '');
+      
+      // FIX: Ensure department filter is always applied using the correct user field
+      // Logic: Checks filters.dept -> user.departmentId (new DB) -> user.Deptid (old DB fallback)
+      const userDeptId = filters.dept || user?.departmentId || user?.Deptid || ''; 
+      
+      params.append('dept', userDeptId);
+
       if (filters.branch) params.append('branch', filters.branch);
       if (filters.semester) params.append('semester', filters.semester);
       if (filters.batch) params.append('batch', filters.batch);
@@ -79,8 +84,12 @@ const RequestCoursesStaff = () => {
   };
 
   const fetchMyRequests = async () => {
-    const res = await api.get('/staff/my-requests');
-    setMyRequests(res.data.data || []);
+    try {
+      const res = await api.get('/staff/my-requests');
+      setMyRequests(res.data.data || []);
+    } catch (err) {
+      console.error("Failed to fetch requests", err);
+    }
   };
 
   const handleToggleSelect = (course) => {
@@ -120,15 +129,18 @@ const RequestCoursesStaff = () => {
   const handleSubmitRequests = async () => {
     setSubmitting(true);
     try {
-      for (const course of selectedCourses) {
-        await api.post(`/staff/request/${course.courseId}`);
-      }
+      // Using Promise.all for parallel requests is faster than a for-loop
+      await Promise.all(selectedCourses.map(course => 
+        api.post(`/staff/request/${course.courseId}`)
+      ));
+      
       toast.success(`Sent ${selectedCourses.length} requests successfully!`);
       setSelectedCourses([]); 
       await fetchMyRequests();
       await fetchAvailableCourses();
     } catch (err) {
       toast.error("Failed to submit requests.");
+      console.error(err);
     } finally {
       setSubmitting(false);
     }

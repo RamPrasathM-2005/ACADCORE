@@ -1,14 +1,25 @@
 import React from 'react';
 import { BookOpen, Calendar, Users, Settings, Trash2, Edit3 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { api } from '../../../services/authService'; // Adjust path if needed
+import { api } from '../../../services/authService';
 
 const API_BASE = 'http://localhost:4000/api/admin';
 
-const CourseCard = ({ course, sections, getCourseTypeColor, handleCourseClick, handleDeleteCourse, openEditModal }) => {
+const CourseCard = ({ 
+  course, 
+  sections, 
+  getCourseTypeColor, 
+  handleCourseClick, 
+  handleDeleteCourse, 
+  openEditModal 
+}) => {
+  // course.semesterDetails contains the Semester object
   const sem = course.semesterDetails;
-  const numBatches = sections[String(course.courseId)] ? Object.keys(sections[String(course.courseId)]).length : 0;
-  console.log(`CourseCard: Sections for course ${course.courseId}:`, sections[String(course.courseId)]); // Debug log
+  
+  // Calculate batch count based on the sections state provided by parent
+  const numBatches = sections[String(course.courseId)] 
+    ? Object.keys(sections[String(course.courseId)]).length 
+    : 0;
 
   const handleDelete = async (e) => {
     e.stopPropagation();
@@ -20,9 +31,6 @@ const CourseCard = ({ course, sections, getCourseTypeColor, handleCourseClick, h
     } catch (err) {
       const message = err.response?.data?.message || 'Error deleting course';
       toast.error(message);
-      if (message.includes('Unknown column')) {
-        toast.warn('Database configuration issue detected. Please check server settings.');
-      }
     }
   };
 
@@ -32,6 +40,7 @@ const CourseCard = ({ course, sections, getCourseTypeColor, handleCourseClick, h
       onClick={() => handleCourseClick(course)}
     >
       <div className="p-6">
+        {/* Course Code & Type Badge */}
         <div className="flex justify-between items-start mb-4">
           <div className="flex-1">
             <h3 className="text-xl font-semibold text-gray-900 mb-1">{course.courseCode}</h3>
@@ -41,25 +50,35 @@ const CourseCard = ({ course, sections, getCourseTypeColor, handleCourseClick, h
             {course.type}
           </span>
         </div>
+
+        {/* Course Details Info */}
         <div className="space-y-2 mb-4">
           <div className="flex items-center text-sm text-gray-500">
             <BookOpen size={16} className="mr-2" />
             <span>Credits: {course.credits}</span>
           </div>
+          
           <div className="flex items-center text-sm text-gray-500">
             <Calendar size={16} className="mr-2" />
-            <span>Semester: {sem ? ` ${sem.semesterNumber} (${sem.branch})` : 'N/A'}</span>
+            {/* FIXED: Accessed branch via sem.Batch.branch */}
+            <span>
+              Semester: {sem ? `${sem.semesterNumber} (${sem.Batch?.branch || 'N/A'})` : 'N/A'}
+            </span>
           </div>
+
           <div className="flex items-center text-sm text-gray-500">
             <Users size={16} className="mr-2" />
-            <span>{numBatches} Batches</span>
+            <span>{numBatches} {numBatches === 1 ? 'Batch' : 'Batches'}</span>
           </div>
+
           <div className="flex items-center text-sm text-gray-500">
             <Settings size={16} className="mr-2" />
             <span>Category: {course.category}</span>
           </div>
         </div>
-        <div className="flex justify-between">
+
+        {/* Action Buttons */}
+        <div className="flex justify-between pt-2 border-t border-gray-50 mt-4">
           <button
             onClick={handleDelete}
             className="bg-red-50 hover:bg-red-100 text-red-600 px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
@@ -68,7 +87,10 @@ const CourseCard = ({ course, sections, getCourseTypeColor, handleCourseClick, h
             Delete
           </button>
           <button
-            onClick={(e) => { e.stopPropagation(); openEditModal(course); }}
+            onClick={(e) => { 
+              e.stopPropagation(); 
+              openEditModal(course); 
+            }}
             className="bg-blue-50 hover:bg-blue-100 text-blue-600 px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center gap-1"
           >
             <Edit3 size={16} />

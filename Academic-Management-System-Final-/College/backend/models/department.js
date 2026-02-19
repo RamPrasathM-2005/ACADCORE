@@ -39,7 +39,7 @@ export default (sequelize, DataTypes) => {
     Department.hasMany(models.Regulation, { foreignKey: 'Deptid' });
     Department.hasMany(models.User, { foreignKey: 'Deptid' });
     Department.hasMany(models.StudentDetails, { foreignKey: 'Deptid' });
-    Department.hasMany(models.StaffCourse, { foreignKey: 'Deptid' });
+    Department.hasMany(models.StaffCourse, { foreignKey: 'Deptid', as: 'staffCourses' });
     Department.hasMany(models.Timetable, { foreignKey: 'Deptid' });
     Department.hasMany(models.PeriodAttendance, { foreignKey: 'Deptid' });
     Department.hasMany(models.CBCS, { foreignKey: 'Deptid' });

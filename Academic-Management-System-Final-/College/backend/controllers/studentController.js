@@ -12,139 +12,134 @@ const {
   StudentCourse, 
   StaffCourse, 
   User, 
-  Department 
+  Department,
+  sequelize 
 } = db;
 
+/**
+ * Adds a new student - Creates both User and StudentDetails records
+ */
 export const addStudent = catchAsync(async (req, res) => {
-  const { rollnumber, name, degree, branch, batch, semesterNumber } = req.body;
-  const userName = req.user?.userName || req.user?.userMail || 'admin';
-
+  const { rollnumber, name, degree, branch, batch, semesterNumber, email, password } = req.body;
+  
   if (!rollnumber || !name || !degree || !branch || !batch || !semesterNumber) {
     return res.status(400).json({ status: "failure", message: "All fields are required" });
   }
 
-  // 1. Check if student already exists
-  const existing = await StudentDetails.findOne({ where: { registerNumber: rollnumber } });
-  if (existing) {
-    return res.status(400).json({ status: "failure", message: "Student with this roll number already exists" });
+  // Start Transaction
+  const t = await sequelize.transaction();
+
+  try {
+    // 1. Check if student already exists
+    const existing = await User.findOne({ where: { userNumber: rollnumber } });
+    if (existing) {
+      throw new Error("Student with this roll number already exists");
+    }
+
+    // 2. Find Batch and Dept
+    const batchRecord = await Batch.findOne({
+      where: { degree, branch, batch, isActive: 'YES' }
+    });
+    if (!batchRecord) throw new Error(`Batch ${batch} for ${branch} not found`);
+
+    // 3. Create User Account (for login)
+    const newUser = await User.create({
+      companyId: 1,
+      userNumber: rollnumber,
+      userName: name,
+      userMail: email || `${rollnumber}@nec.edu.in`, // Fallback if email not provided
+      password: password || "$2b$10$fCgaFOA0WC5ak9q7H9fMlO2mP9EbFXaH7JzHZNmYgT43I.pWxhSoG", // Default hashed password
+      roleId: 1, // Assuming 1 is Student role
+      departmentId: batchRecord.regulationId ? 2 : batchRecord.Deptid, // Use logical mapping
+      status: 'Active',
+      createdBy: req.user?.userId
+    }, { transaction: t });
+
+    // 4. Create Student Profile
+    await StudentDetails.create({
+      companyId: 1,
+      studentName: name,
+      registerNumber: rollnumber,
+      departmentId: batchRecord.Deptid,
+      batch: batch,
+      semester: semesterNumber,
+      pending: true,
+      createdBy: req.user?.userId
+    }, { transaction: t });
+
+    await t.commit();
+    res.status(201).json({ status: "success", message: "Student added successfully", rollnumber });
+  } catch (error) {
+    await t.rollback();
+    res.status(400).json({ status: "failure", message: error.message });
   }
-
-  // 2. Find Batch
-  const batchRecord = await Batch.findOne({
-    where: { degree, branch, batch, isActive: 'YES' }
-  });
-
-  if (!batchRecord) {
-    return res.status(404).json({ status: "failure", message: `Batch ${batch} - ${branch} not found` });
-  }
-
-  // 3. Create Student Detail
-  // Note: We map rollnumber to registerNumber and name to studentName based on our Model
-  await StudentDetails.create({
-    registerNumber: rollnumber,
-    studentName: name,
-    batch: batch,
-    semester: semesterNumber,
-    departmentId: batchRecord.Deptid, // Assuming Batch has Deptid or linked to it
-    createdBy: req.user?.id,
-    updatedBy: req.user?.id
-  });
-
-  res.status(201).json({
-    status: "success",
-    message: "Student added successfully",
-    rollnumber: rollnumber,
-  });
 });
 
+/**
+ * Gets all students with their batch info
+ */
 export const getAllStudents = catchAsync(async (req, res) => {
   const students = await StudentDetails.findAll({
     include: [{
-      model: Batch,
-      as: 'batchInfo', // Ensure this matches your association alias
-      where: { isActive: 'YES' },
-      required: true
+      model: Department,
+      as: 'department',
+      attributes: ['Deptname', 'Deptacronym']
     }],
     order: [['registerNumber', 'ASC']]
   });
 
-  // Map fields to match original response format
-  const data = students.map(s => ({
-    ...s.toJSON(),
-    rollnumber: s.registerNumber,
-    name: s.studentName
-  }));
-
-  res.status(200).json({ status: "success", data });
+  res.status(200).json({ status: "success", data: students });
 });
 
-export const getStudentByRollNumber = catchAsync(async (req, res) => {
-  const { rollnumber } = req.params;
-  const student = await StudentDetails.findOne({
-    where: { registerNumber: rollnumber },
-    include: [{ model: Batch }]
-  });
-
-  if (!student) {
-    return res.status(404).json({ status: "failure", message: "Student not found" });
-  }
-
-  res.status(200).json({ 
-    status: "success", 
-    data: { ...student.toJSON(), rollnumber: student.registerNumber, name: student.studentName } 
-  });
-});
-
+/**
+ * Updates student profile
+ */
 export const updateStudent = catchAsync(async (req, res) => {
   const { rollnumber } = req.params;
-  const { name, degree, branch, batch, semesterNumber } = req.body;
-  const userName = req.user?.userName || 'admin';
+  const { name, semesterNumber, batch, status } = req.body;
 
   const student = await StudentDetails.findOne({ where: { registerNumber: rollnumber } });
-  if (!student) {
-    return res.status(404).json({ status: "failure", message: "Student not found" });
-  }
+  if (!student) return res.status(404).json({ status: "failure", message: "Student not found" });
 
-  const updateData = {};
-  if (name) updateData.studentName = name;
-  if (semesterNumber) updateData.semester = semesterNumber;
-  if (batch) updateData.batch = batch;
+  await sequelize.transaction(async (t) => {
+    // Update Profile
+    await student.update({
+      studentName: name || student.studentName,
+      semester: semesterNumber || student.semester,
+      batch: batch || student.batch,
+      updatedBy: req.user?.userId
+    }, { transaction: t });
 
-  await student.update(updateData);
-
-  res.status(200).json({
-    status: "success",
-    message: "Student updated successfully",
-    rollnumber: rollnumber,
+    // Update User table name if changed
+    if (name) {
+      await User.update({ userName: name }, { where: { userNumber: rollnumber }, transaction: t });
+    }
   });
+
+  res.status(200).json({ status: "success", message: "Student updated successfully" });
 });
 
-export const deleteStudent = catchAsync(async (req, res) => {
-  const { rollnumber } = req.params;
-  const deleted = await StudentDetails.destroy({ where: { registerNumber: rollnumber } });
-
-  if (!deleted) {
-    return res.status(404).json({ status: "failure", message: "Student not found" });
-  }
-
-  res.status(200).json({
-    status: "success",
-    message: `Student with roll number ${rollnumber} deleted successfully`,
-  });
-});
-
+/**
+ * Gets courses a student is enrolled in, including staff names
+ */
 export const getStudentEnrolledCourses = catchAsync(async (req, res) => {
   const { rollnumber } = req.params;
 
   const enrollments = await StudentCourse.findAll({
     where: { regno: rollnumber },
     include: [
-      { model: Course, where: { isActive: 'YES' }, attributes: ['courseCode', 'courseTitle'] },
-      { model: Section, where: { isActive: 'YES' }, attributes: ['sectionName'] },
+      { 
+        model: Course, 
+        attributes: ['courseCode', 'courseTitle', 'credits'] 
+      },
+      { 
+        model: Section, 
+        attributes: ['sectionName'] 
+      }
     ]
   });
 
-  // Note: Finding staff name requires a look into StaffCourse for each enrollment
+  // Fetch staff names for these courses/sections
   const data = await Promise.all(enrollments.map(async (e) => {
     const staffAlloc = await StaffCourse.findOne({
       where: { courseId: e.courseId, sectionId: e.sectionId },
@@ -155,7 +150,7 @@ export const getStudentEnrolledCourses = catchAsync(async (req, res) => {
       courseId: e.courseId,
       courseCode: e.Course?.courseCode,
       courseName: e.Course?.courseTitle,
-      batch: e.Section?.sectionName,
+      section: e.Section?.sectionName,
       staff: staffAlloc?.User?.userName || "Not Assigned"
     };
   }));
@@ -163,53 +158,150 @@ export const getStudentEnrolledCourses = catchAsync(async (req, res) => {
   res.status(200).json({ status: "success", data });
 });
 
-export const getStudentsByCourseAndSection = catchAsync(async (req, res) => {
-  const { courseCode, sectionId } = req.query;
-
-  const course = await Course.findOne({ where: { courseCode, isActive: 'YES' } });
-  if (!course) return res.status(404).json({ status: 'failure', message: 'Course not found' });
-
-  const enrollments = await StudentCourse.findAll({
-    where: { courseId: course.courseId, sectionId },
-    include: [
-      { 
-        model: StudentDetails, 
-        include: [{ model: User, as: 'userAccount', attributes: ['userName'] }] 
-      },
-      { model: Section, attributes: ['sectionName'] }
-    ]
-  });
-
-  const data = enrollments.map(e => ({
-    rollnumber: e.regno,
-    name: e.StudentDetail?.userAccount?.userName,
-    batch: e.Section?.sectionName
-  }));
-
-  res.status(200).json({ status: 'success', data });
-});
-
+/**
+ * Distinct list of branches from Batch table
+ */
 export const getBranches = catchAsync(async (req, res) => {
   const branches = await Batch.findAll({
     attributes: [[sequelize.fn('DISTINCT', sequelize.col('branch')), 'branch']],
-    where: { isActive: 'YES' }
+    where: { isActive: 'YES' },
+    raw: true
   });
   res.status(200).json({ status: "success", data: branches.map(b => b.branch) });
 });
 
+/**
+ * Distinct list of semesters
+ */
 export const getSemesters = catchAsync(async (req, res) => {
   const semesters = await Semester.findAll({
     attributes: [[sequelize.fn('DISTINCT', sequelize.col('semesterNumber')), 'semesterNumber']],
-    where: { isActive: 'YES' }
+    where: { isActive: 'YES' },
+    order: [['semesterNumber', 'ASC']],
+    raw: true
   });
   res.status(200).json({ status: "success", data: semesters.map(s => `Semester ${s.semesterNumber}`) });
 });
 
+/**
+ * Delete student and their user account
+ */
+export const deleteStudent = catchAsync(async (req, res) => {
+  const { rollnumber } = req.params;
+
+  const result = await sequelize.transaction(async (t) => {
+    const sDeleted = await StudentDetails.destroy({ where: { registerNumber: rollnumber }, transaction: t });
+    const uDeleted = await User.destroy({ where: { userNumber: rollnumber }, transaction: t });
+    return sDeleted || uDeleted;
+  });
+
+  if (!result) return res.status(404).json({ status: "failure", message: "Student not found" });
+
+  res.status(200).json({ status: "success", message: `Student ${rollnumber} deleted successfully` });
+});
+
+/**
+ * Gets list of batches filtered by branch
+ */
 export const getBatches = catchAsync(async (req, res) => {
   const { branch } = req.query;
-  const where = { isActive: 'YES' };
-  if (branch) where.branch = branch;
+  const filter = { isActive: 'YES' };
+  if (branch) filter.branch = branch;
 
-  const batches = await Batch.findAll({ where });
+  const batches = await Batch.findAll({ where: filter });
   res.status(200).json({ status: "success", data: batches });
+});
+
+
+/**
+ * Gets a single student's full profile by roll number
+ */
+export const getStudentByRollNumber = catchAsync(async (req, res) => {
+  const { rollnumber } = req.params;
+
+  const student = await StudentDetails.findOne({
+    where: { registerNumber: rollnumber },
+    include: [
+      { 
+        model: Department, 
+        as: 'department', 
+        attributes: ['Deptname', 'Deptacronym'] 
+      },
+      {
+        model: User,
+        as: 'creator', // Matches association in StudentDetails model
+        attributes: ['userName']
+      }
+    ]
+  });
+
+  if (!student) {
+    return res.status(404).json({ 
+      status: "failure", 
+      message: "Student profile not found" 
+    });
+  }
+
+  // To maintain compatibility with your frontend naming conventions
+  const responseData = {
+    ...student.toJSON(),
+    rollnumber: student.registerNumber,
+    name: student.studentName
+  };
+
+  res.status(200).json({ 
+    status: "success", 
+    data: responseData 
+  });
+});
+
+/**
+ * Gets a list of students enrolled in a specific course and section
+ */
+export const getStudentsByCourseAndSection = catchAsync(async (req, res) => {
+  const { courseCode, sectionId } = req.query;
+
+  if (!courseCode || !sectionId) {
+    return res.status(400).json({ 
+        status: "failure", 
+        message: "courseCode and sectionId are required" 
+    });
+  }
+
+  // 1. Find the course ID from the code
+  const course = await Course.findOne({ 
+    where: { courseCode, isActive: 'YES' } 
+  });
+
+  if (!course) {
+    return res.status(404).json({ status: 'failure', message: 'Course not found' });
+  }
+
+  // 2. Find all student enrollments
+  const enrollments = await StudentCourse.findAll({
+    where: { 
+      courseId: course.courseId, 
+      sectionId: sectionId 
+    },
+    include: [
+      { 
+        model: StudentDetails,
+        attributes: ['registerNumber', 'studentName', 'batch']
+      },
+      { 
+        model: Section, 
+        attributes: ['sectionName'] 
+      }
+    ]
+  });
+
+  // 3. Format data for frontend
+  const data = enrollments.map(e => ({
+    rollnumber: e.regno,
+    name: e.StudentDetail?.studentName,
+    batch: e.StudentDetail?.batch,
+    sectionName: e.Section?.sectionName
+  }));
+
+  res.status(200).json({ status: 'success', data });
 });

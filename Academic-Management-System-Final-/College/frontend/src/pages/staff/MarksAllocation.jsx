@@ -131,18 +131,28 @@ const MarksAllocation = () => {
     return tools.reduce((sum, tool) => sum + (tool.weightage || 0), 0);
   };
 
-  const calculateConsolidated = useCallback((student, co) => {
-    if (!co || !co.tools || co.tools.length === 0) return 0;
-    let consolidated = 0;
-    let totalWeight = 0;
-    co.tools.forEach(tool => {
-      const marksObtained = student.marks?.[tool.toolId] ?? 0;
-      const weight = tool.weightage / 100;
-      consolidated += (marksObtained / tool.maxMarks) * weight;
-      totalWeight += weight;
-    });
-    return totalWeight > 0 ? Math.round((consolidated / totalWeight) * 100 * 100) / 100 : 0;
-  }, []);
+const calculateConsolidated = useCallback((student, co) => {
+  if (!co || !co.tools || co.tools.length === 0) return 0;
+  
+  let consolidated = 0;
+  let totalWeight = 0;
+
+  co.tools.forEach(tool => {
+    const marksObtained = student.marks?.[tool.toolId] ?? 0;
+    // Safety check: Ensure maxMarks is a valid number greater than 0
+    const maxMarks = Number(tool.maxMarks) > 0 ? Number(tool.maxMarks) : 100;
+    const weight = (Number(tool.weightage) || 0) / 100;
+
+    consolidated += (marksObtained / maxMarks) * weight;
+    totalWeight += weight;
+  });
+
+  // Prevent NaN if totalWeight is 0
+  if (totalWeight === 0) return 0;
+
+  const finalResult = (consolidated / totalWeight) * 100;
+  return isNaN(finalResult) ? 0 : Math.round(finalResult * 100) / 100;
+}, []);
 
   // --- Handlers ---
   const handleSavePartitionsClick = async () => {
@@ -767,24 +777,33 @@ const MarksAllocation = () => {
                             <td key={tool.toolId} className="p-4">
                               <input
                                 type="number"
-                                value={student.marks?.[tool.toolId] ?? ''}
+                                // Use empty string fallback so the input isn't stuck at 0
+                                value={student.marks?.[tool.toolId] ?? ''} 
                                 onChange={(e) => {
                                   const rawValue = e.target.value;
-                                  let value = null;
-                                  if (rawValue !== '') {
-                                    const num = parseInt(rawValue);
-                                    if (!isNaN(num) && num >= 0 && num <= tool.maxMarks) {
-                                      value = num;
-                                    } else {
-                                      return;
+                                  
+                                  // 1. Allow empty input so user can backspace
+                                  if (rawValue === '') {
+                                    updateStudentMark(tool.toolId, student.regno, null);
+                                    return;
+                                  }
+
+                                  const num = parseInt(rawValue);
+                                  const max = Number(tool.maxMarks) || 100;
+
+                                  // 2. Only update if it's a valid number and within range
+                                  if (!isNaN(num)) {
+                                    if (num >= 0 && num <= max) {
+                                      updateStudentMark(tool.toolId, student.regno, num);
+                                    } else if (num > max) {
+                                      // Optional: Auto-set to max if user types more
+                                      updateStudentMark(tool.toolId, student.regno, max);
                                     }
                                   }
-                                  updateStudentMark(tool.toolId, student.regno, value);
                                 }}
                                 className="w-full sm:w-24 mx-auto block p-2 border border-slate-200 rounded-lg focus:border-blue-500 focus:ring-2 focus:ring-blue-100 transition-all text-center font-medium text-slate-900"
                                 min="0"
-                                max={tool.maxMarks}
-                                placeholder="-"
+                                placeholder="0"
                               />
                             </td>
                           ))}

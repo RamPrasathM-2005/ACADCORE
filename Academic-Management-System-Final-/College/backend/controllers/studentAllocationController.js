@@ -1,4 +1,3 @@
-// controllers/studentAllocationController.js
 import db from "../models/index.js";
 import catchAsync from "../utils/catchAsync.js";
 import { Op } from "sequelize";
@@ -14,72 +13,60 @@ const {
   Section,
   StaffCourse,
   StudentElectiveSelection,
-  Semester,
-  ElectiveBucket
+  Semester
 } = db;
 
 export const searchStudents = catchAsync(async (req, res) => {
-  const { degree, branch, batch, semesterNumber } = req.query;
+  const { branch, batch, semesterNumber } = req.query;
 
-  // 1. Fetch Students with deep associations
-  const students = await StudentDetails.findAll({
-    where: {
-      pending: true, // Matches "pending = 1" from original
-      ...(batch && { batch }),
-      ...(semesterNumber && { semester: semesterNumber })
-    },
-    include: [
-      {
-        model: User,
-        as: 'userAccount',
-        where: { status: 'Active' },
-        attributes: ['userId', 'userName']
+  // 1. Fetch Students
+  const users = await User.findAll({
+    where: { status: 'Active', roleId: 1 },
+    attributes: ['userId', 'userName', 'userNumber'],
+    include: [{
+      model: StudentDetails,
+      as: 'studentProfile',
+      required: true,
+      where: {
+        pending: true,
+        ...(batch && { batch }),
+        ...(semesterNumber && { semester: semesterNumber })
       },
-      {
-        model: Department,
-        as: 'department',
-        where: branch ? { Deptacronym: branch } : {},
-        attributes: ['Deptacronym']
-      },
-      {
-        model: StudentCourse,
-        include: [
-          { model: Course, attributes: ['courseCode'] },
-          { model: Section, attributes: ['sectionName'] }
-        ]
-      },
-      {
-        model: StudentElectiveSelection,
-        where: { status: 'allocated' },
-        required: false,
-        attributes: ['selectedCourseId']
-      }
-    ]
+      include: [
+        {
+          model: Department,
+          as: 'department',
+          where: branch ? { Deptacronym: branch } : {},
+          attributes: ['Deptacronym']
+        },
+        {
+          model: StudentCourse,
+          include: [
+            { model: Course, attributes: ['courseCode'] },
+            { model: Section, attributes: ['sectionName'] }
+          ]
+        },
+        {
+          model: StudentElectiveSelection,
+          where: { status: 'allocated' },
+          required: false
+        }
+      ]
+    }]
   });
 
-  // 2. Fetch Available Courses for the batch/semester to provide context to the UI
-  const availableCourses = await Course.findAll({
+  // 2. Fetch Courses and Flatten Sections into "batches"
+  const rawCourses = await Course.findAll({
     where: { isActive: 'YES' },
     include: [
       {
         model: Semester,
-        where: { 
-            isActive: 'YES',
-            ...(semesterNumber && { semesterNumber })
-        },
-        include: [{ 
-            model: Batch, 
-            where: { 
-                isActive: 'YES',
-                ...(degree && { degree }),
-                ...(branch && { branch }),
-                ...(batch && { batch })
-            } 
-        }]
+        where: { isActive: 'YES', ...(semesterNumber && { semesterNumber }) },
+        include: [{ model: Batch, where: { isActive: 'YES', ...(batch && { batch }) } }]
       },
       {
         model: Section,
-        where: { isActive: 'YES' },
+        where: { isActive: 'YES' }, // Only show active sections
         include: [{
           model: StaffCourse,
           include: [{ model: User, attributes: ['userName'] }]
@@ -88,129 +75,133 @@ export const searchStudents = catchAsync(async (req, res) => {
     ]
   });
 
-  // 3. Format the data for the frontend
-  const formattedStudents = students.map(s => ({
-    rollnumber: s.registerNumber,
-    name: s.userAccount?.userName,
-    batch: s.batch,
-    semester: `Semester ${s.semester}`,
-    enrolledCourses: s.StudentCourses.map(sc => ({
-      courseId: sc.courseId,
-      courseCode: sc.Course?.courseCode,
-      sectionId: sc.sectionId,
-      sectionName: sc.Section?.sectionName,
-    })),
-    selectedElectiveIds: s.StudentElectiveSelections.map(ses => String(ses.selectedCourseId))
+  // TRANSFORM DATA FOR FRONTEND
+  
+  // 3. Format Students: Include staffId in enrolledCourses so dropdown selects correctly
+  const formattedStudents = await Promise.all(users.map(async (u) => {
+    const s = u.studentProfile;
+    
+    const enrolledCourses = await Promise.all((s.StudentCourses || []).map(async (sc) => {
+      // Find the staff assigned to this specific student's section
+      const staffAlloc = await StaffCourse.findOne({
+        where: { courseId: sc.courseId, sectionId: sc.sectionId },
+        attributes: ['Userid']
+      });
+
+      return {
+        courseId: sc.courseId,
+        courseCode: sc.Course?.courseCode,
+        sectionId: sc.sectionId,
+        sectionName: sc.Section?.sectionName,
+        staffId: staffAlloc ? staffAlloc.Userid : null // This allows dropdown to show selected staff
+      };
+    }));
+
+    return {
+      rollnumber: u.userNumber,
+      name: u.userName,
+      batch: s.batch,
+      semester: `Semester ${s.semester}`,
+      enrolledCourses,
+      selectedElectiveIds: (s.StudentElectiveSelections || []).map(ses => String(ses.selectedCourseId))
+    };
   }));
+
+  // 4. Format Courses: Flatten "Sections" into "batches" for the React Map
+  const formattedCourses = rawCourses.map(course => {
+    const courseJson = course.toJSON();
+    return {
+      ...courseJson,
+      // Map "Sections" to "batches" as expected by ManageStudents.js
+      batches: (courseJson.Sections || []).map(section => {
+        const staffItem = section.StaffCourses?.[0]; // Get first assigned staff
+        return {
+          sectionId: section.sectionId,
+          sectionName: section.sectionName,
+          staffId: staffItem ? staffItem.Userid : null,
+          staffName: staffItem?.User?.userName || "Not Assigned",
+          capacity: section.capacity
+        };
+      })
+    };
+  });
 
   res.status(200).json({
     status: 'success',
     studentsData: formattedStudents,
-    coursesData: availableCourses
+    coursesData: formattedCourses
   });
-});
-
-export const getAvailableCourses = catchAsync(async (req, res) => {
-  const { semesterNumber } = req.params;
-  const user = req.user; // From auth middleware
-
-  const whereCondition = { isActive: 'YES' };
-  
-  // Logic for students: Filter by their Elective Selections
-  if (user.role === 'student') {
-    const student = await StudentDetails.findOne({ where: { [Op.or]: [{ registerNumber: user.userNumber }, { studentId: user.id }] } });
-    const selections = await StudentElectiveSelection.findAll({
-      where: { regno: student.registerNumber, status: 'allocated' },
-      attributes: ['selectedCourseId']
-    });
-    const selectedIds = selections.map(s => s.selectedCourseId);
-
-    whereCondition[Op.and] = [
-      {
-        [Op.or]: [
-          { category: { [Op.notIn]: ['PEC', 'OEC'] } },
-          { courseId: { [Op.in]: selectedIds } }
-        ]
-      }
-    ];
-  }
-
-  const courses = await Course.findAll({
-    where: whereCondition,
-    include: [
-      { model: Semester, where: { semesterNumber } },
-      { model: Section, where: { isActive: 'YES' } }
-    ]
-  });
-
-  res.status(200).json({ status: "success", data: courses });
 });
 
 export const enrollStudentInCourse = catchAsync(async (req, res) => {
   const { rollnumber, courseId, sectionName, Userid } = req.body;
-  const userName = req.user?.userName || 'admin';
+  const adminName = req.user?.userName || 'admin';
 
   const transaction = await sequelize.transaction();
 
   try {
-    // 1. Fetch Section
     const section = await Section.findOne({
       where: { courseId, sectionName, isActive: 'YES' },
       transaction
     });
-    if (!section) throw new Error("Section not found");
+    if (!section) throw new Error("Section not found for this course");
 
-    // 2. Handle Enrollment (Upsert)
+    // Upsert Enrollment
     const [enrollment, created] = await StudentCourse.findOrCreate({
       where: { regno: rollnumber, courseId },
       defaults: {
         sectionId: section.sectionId,
-        createdBy: userName,
-        updatedBy: userName
+        createdBy: adminName,
+        updatedBy: adminName
       },
       transaction
     });
 
-    if (!created && enrollment.sectionId !== section.sectionId) {
-      await enrollment.update({ sectionId: section.sectionId, updatedBy: userName }, { transaction });
+    if (!created) {
+      await enrollment.update({ sectionId: section.sectionId, updatedBy: adminName }, { transaction });
     }
 
-    // 3. Optional: Map Staff if provided
+    // Optional Staff Mapping
     if (Userid) {
-      const staff = await User.findByPk(Userid, { transaction });
-      if (staff) {
-        await StaffCourse.findOrCreate({
-          where: { Userid, courseId, sectionId: section.sectionId },
-          defaults: { Deptid: staff.departmentId, createdBy: userName },
-          transaction
-        });
-      }
+      await StaffCourse.findOrCreate({
+        where: { Userid, courseId, sectionId: section.sectionId },
+        defaults: { Deptid: req.user.departmentId || 1, createdBy: adminName },
+        transaction
+      });
     }
 
     await transaction.commit();
-    res.status(201).json({ status: "success", message: "Enrollment processed" });
+    res.status(201).json({ status: "success", message: "Enrollment updated" });
   } catch (err) {
     await transaction.rollback();
     res.status(400).json({ status: "failure", message: err.message });
   }
 });
 
+export const unenrollStudentFromCourse = catchAsync(async (req, res) => {
+  const { rollnumber, courseId } = req.body;
+  const deleted = await StudentCourse.destroy({
+    where: { regno: rollnumber, courseId }
+  });
+  if (!deleted) return res.status(404).json({ status: "failure", message: "Enrollment record not found" });
+  res.status(200).json({ status: "success", message: "Student unenrolled" });
+});
+
 export const updateStudentBatch = catchAsync(async (req, res) => {
   const { rollnumber } = req.params;
   const { batch, semesterNumber } = req.body;
-  const userName = req.user?.userName || 'admin';
 
   const [updated] = await StudentDetails.update(
-    { batch, semester: semesterNumber, updatedBy: userName },
+    { batch, semester: semesterNumber },
     { where: { registerNumber: rollnumber } }
   );
 
   if (updated === 0) return res.status(404).json({ status: "failure", message: "Student not found" });
-  res.status(200).json({ status: "success", message: "Batch updated" });
+  res.status(200).json({ status: "success", message: "Batch and Semester updated" });
 });
 
 export const getAvailableCoursesForBatch = catchAsync(async (req, res) => {
-  const { batchId, semesterNumber } = req.params;
+  const { batch, semesterNumber } = req.params;
 
   const courses = await Course.findAll({
     where: { isActive: 'YES' },
@@ -229,15 +220,12 @@ export const getAvailableCoursesForBatch = catchAsync(async (req, res) => {
     include: [
       { 
         model: Semester, 
-        where: { batchId, semesterNumber, isActive: 'YES' } 
+        where: { semesterNumber, isActive: 'YES' },
+        include: [{ model: Batch, where: { batch: batch } }]
       },
       { 
         model: Section, 
-        where: { isActive: 'YES' },
-        include: [{
-            model: StaffCourse,
-            include: [{ model: User, attributes: ['userName'] }]
-        }]
+        include: [{ model: StaffCourse, include: [{ model: User, attributes: ['userName'] }] }] 
       }
     ]
   });
@@ -245,13 +233,11 @@ export const getAvailableCoursesForBatch = catchAsync(async (req, res) => {
   res.status(200).json({ status: "success", data: courses });
 });
 
-export const unenrollStudentFromCourse = catchAsync(async (req, res) => {
-  const { rollnumber, courseId } = req.body;
-
-  const deleted = await StudentCourse.destroy({
-    where: { regno: rollnumber, courseId }
-  });
-
-  if (!deleted) return res.status(404).json({ status: "failure", message: "Enrollment not found" });
-  res.status(200).json({ status: "success", message: "Student unenrolled" });
+export const getAvailableCourses = catchAsync(async (req, res) => {
+    const { semesterNumber } = req.params;
+    const courses = await Course.findAll({
+        include: [{ model: Semester, where: { semesterNumber, isActive: 'YES' } }],
+        where: { isActive: 'YES' }
+    });
+    res.status(200).json({ status: "success", data: courses });
 });

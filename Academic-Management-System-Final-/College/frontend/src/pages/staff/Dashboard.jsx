@@ -84,35 +84,53 @@ const Dashboard = () => {
 
   useEffect(() => {
     const fetchCourses = async () => {
+      // 1. CLEAR LOGIC: Check for userId (2), not staffId
+      if (!user?.userId) { 
+        console.warn("Dashboard: No userId found in user object", user);
+        setLoading(false); 
+        return; 
+      }
+
+      setLoading(true);
       try {
-        if (!user?.staffId) { setLoading(false); return; }
+        console.log("Dashboard: Fetching courses for User ID:", user.userId);
         
-        const courseList = await getMyCourses(user.staffId);
+        // 2. CALL API: The ID is usually handled by the JWT token on the backend,
+        // so we don't necessarily need to pass it here, but calling it as is.
+        const courseList = await getMyCourses();
         
+        console.log("Dashboard: Received data:", courseList);
+
+        // 3. MAP DATA: Ensure fields match your Controller's "groupedMap" output
         const validCourses = Array.isArray(courseList)
-          ? courseList.filter(c => c && typeof c === 'object').map((course, index) => ({
+          ? courseList.map((course, index) => ({
               ...course,
+              // The controller sends 'id' as the courseCode or joined codes
               id: course.id || `course-${index}`,
+              // The controller sends 'displayCode'
               displayId: course.displayCode || course.id,
               title: course.title || 'Untitled Course',
               semester: course.semester || 'N/A',
               degree: course.degree || '',
-              branch: course.branch || (course.departments ? course.departments.join(' / ') : 'General'),
+              branch: course.branch || 'General',
               batch: course.batch || 'N/A',
               sectionName: course.sectionName || '',
-              theme: getCourseTheme(index), // Assign theme
+              theme: getCourseTheme(index), 
             }))
           : [];
 
         setCourses(validCourses);
       } catch (err) {
+        console.error("Dashboard Error:", err);
         setError(err.message || 'Failed to load courses');
       } finally {
         setLoading(false);
       }
     };
+
     fetchCourses();
-  }, [user?.staffId]);
+    // 4. DEPENDENCY: Listen for changes in userId
+  }, [user?.userId]);
 
   const filteredCourses = courses.filter((course) => {
     const query = searchQuery.toLowerCase();
