@@ -74,15 +74,16 @@ export const resetPassword = async (token, password) => {
 };
 
 export const logout = async () => {
-  console.log('Logout called, clearing localStorage');
   try {
-    await api.post('/auth/logout');
+    // 1. Tell the backend to clear the cookie
+    await api.post("/auth/logout");
   } catch (err) {
-    console.error('Logout API error:', err);
+    console.error("Logout API error:", err);
   } finally {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    localStorage.removeItem('email');
+    localStorage.clear(); 
+
+    
+    window.location.href = "/login";
   }
 };
 

@@ -211,14 +211,14 @@ export const me = async (req, res) => {
  */
 export const logout = (req, res) => {
   res.clearCookie("access_token", {
+    path: "/", // Ensure path matches where the cookie was set
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    sameSite: "lax", // Must match the original setting
   });
 
-  res.json({ message: "Logged out" });
+  return res.status(200).json({ message: "Logged out successfully" });
 };
-
 /**
  * @route POST /api/auth/forgot-password
  */
