@@ -1,6 +1,11 @@
 export default (sequelize, DataTypes) => {
   const StudentDetails = sequelize.define('StudentDetails', {
     studentId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+    companyId: { 
+          type: DataTypes.INTEGER, 
+          allowNull: true, 
+          references: { model: 'companies', key: 'companyId' } 
+        },
     studentName: { type: DataTypes.STRING(50), allowNull: false },
     registerNumber: { type: DataTypes.STRING(50), unique: true, allowNull: false },
     departmentId: { type: DataTypes.INTEGER, allowNull: true },
@@ -40,6 +45,7 @@ export default (sequelize, DataTypes) => {
 
   StudentDetails.associate = (models) => {
     StudentDetails.belongsTo(models.Department, { foreignKey: 'departmentId', as: 'department' });
+    StudentDetails.belongsTo(models.Company, { foreignKey: 'companyId', as: 'company' });
     StudentDetails.belongsTo(models.Employee, { foreignKey: 'staffId', as: 'staff' });
     StudentDetails.belongsTo(models.User, { foreignKey: 'createdBy', as: 'creator' });
     StudentDetails.belongsTo(models.User, { foreignKey: 'updatedBy', as: 'updater' });

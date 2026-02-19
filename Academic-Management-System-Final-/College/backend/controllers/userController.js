@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 const { User, Role, StudentDetails, Employee, Company, Department } = db;
 
 const normalizeRoleName = (value = '') => value.toLowerCase().replace(/[\s-]/g, '');
-const STAFF_ROLE_KEYS = new Set(['teachingstaff', 'nonteachingstaff']);
+const STAFF_ROLE_KEYS = new Set(['staff','teachingstaff', 'nonteachingstaff']);
 
 const splitNameParts = (fullName = '') => {
   const parts = fullName.trim().split(/\s+/).filter(Boolean);
@@ -82,6 +82,7 @@ export const createUser = async (req, res) => {
     if (normalizedRole === 'student') {
       await StudentDetails.create({
         studentName: user.userName || user.userNumber,
+        companyId: user.companyId,
         registerNumber: user.userNumber,
         departmentId: user.departmentId || null,
         createdBy: user.createdBy || null,
@@ -95,6 +96,7 @@ export const createUser = async (req, res) => {
       await Employee.create({
         staffNumber: user.userNumber,
         departmentId: user.departmentId || 1,
+        companyId: user.companyId,
         firstName: firstName || user.userNumber,
         lastName: lastName || null,
         personalEmail: user.userMail,

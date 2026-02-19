@@ -5,7 +5,9 @@ import { toast } from "react-toastify";
 import API from "../../api";
 import { useAuth } from "../auth/AuthContext";
 
-// 🔹 Modal Component
+// ────────────────────────────────────────────────
+// Modal: Add / Edit User
+// ────────────────────────────────────────────────
 function AddOrEditUser({
   formData,
   setFormData,
@@ -16,17 +18,20 @@ function AddOrEditUser({
   isEdit,
   roles,
   currentUserCompanyId,
+  departmentsForCompany,      // ← now passed from parent
+  isDepartmentsLoading,
 }) {
   const visibleRoles = roles.filter(
     (role) => role.status === "Active" && (userRole !== "Admin" || role.roleName !== "Super Admin")
   );
+
   const shouldShowCompanyField = true;
   const isCompanyFixed = userRole !== "Super Admin" && Boolean(currentUserCompanyId);
   const fixedCompany = companies.find((c) => Number(c.companyId) === Number(currentUserCompanyId));
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   useEffect(() => {
@@ -63,9 +68,9 @@ function AddOrEditUser({
               type="text"
               name="userName"
               placeholder="User Name"
-              value={formData.userName}
+              value={formData.userName || ""}
               onChange={handleChange}
-              className="w-full border border-gray-300 rounded-md p-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+              className="w-full border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
               required
             />
           </div>
@@ -77,9 +82,9 @@ function AddOrEditUser({
               type="email"
               name="userMail"
               placeholder="Email"
-              value={formData.userMail}
+              value={formData.userMail || ""}
               onChange={handleChange}
-              className="w-full border border-gray-300 rounded-md p-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+              className="w-full border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
               required
             />
           </div>
@@ -91,9 +96,9 @@ function AddOrEditUser({
               type="password"
               name="password"
               placeholder="Password"
-              value={formData.password}
+              value={formData.password || ""}
               onChange={handleChange}
-              className="w-full border border-gray-300 rounded-md p-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+              className="w-full border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
               required={!isEdit}
             />
           </div>
@@ -103,9 +108,9 @@ function AddOrEditUser({
             <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
             <select
               name="roleId"
-              value={formData.roleId}
+              value={formData.roleId || ""}
               onChange={handleChange}
-              className="w-full border border-gray-300 rounded-md p-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+              className="w-full border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
               required
             >
               <option value="">Select Role</option>
@@ -125,8 +130,8 @@ function AddOrEditUser({
                 name="companyId"
                 value={formData.companyId || ""}
                 onChange={handleChange}
-                className="w-full border border-gray-300 rounded-md p-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                 disabled={isCompanyFixed}
+                className="w-full border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                 required
               >
                 {!isCompanyFixed && <option value="">Select Company</option>}
@@ -145,16 +150,45 @@ function AddOrEditUser({
             </div>
           )}
 
+          {/* Department – dynamic */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Department {isDepartmentsLoading && "(loading...)"}
+            </label>
+            <select
+              name="departmentId"
+              value={formData.departmentId || ""}
+              onChange={handleChange}
+              className="w-full border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+              required
+              disabled={isDepartmentsLoading || departmentsForCompany.length === 0}
+            >
+              <option value="">Select Department</option>
+              {departmentsForCompany.map((dept) => (
+                <option key={dept.departmentId || dept.Deptid} value={dept.departmentId || dept.Deptid}>
+                  {dept.departmentName || dept.Deptname || `Dept ${dept.Deptid || dept.departmentId}`}
+                  {(dept.departmentAcr || dept.Deptacronym) && ` (${dept.departmentAcr || dept.Deptacronym})`}
+                </option>
+              ))}
+            </select>
+
+            {formData.companyId && departmentsForCompany.length === 0 && !isDepartmentsLoading && (
+              <p className="text-xs text-amber-700 mt-1">
+                No departments found for this company
+              </p>
+            )}
+          </div>
+
           {/* User Number */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">User Number</label>
             <input
               type="text"
               name="userNumber"
-              placeholder="User Number"
-              value={formData.userNumber}
+              placeholder="Register No / Staff ID"
+              value={formData.userNumber || ""}
               onChange={handleChange}
-              className="w-full border border-gray-300 rounded-md p-2 py-1 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+              className="w-full border border-gray-300 rounded-md p-2 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
               disabled={isEdit}
               required
             />
@@ -182,72 +216,98 @@ function AddOrEditUser({
   );
 }
 
-// 🔹 Main Component
+// ────────────────────────────────────────────────
+// Main Component
+// ────────────────────────────────────────────────
 export default function AddUser({ selectedCompanyId, selectedCompanyName }) {
   const { user } = useAuth();
-  const [allDepartments, setAllDepartments] = useState([]);
+
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
+  const [companies, setCompanies] = useState([]);
+  const [departmentsForCompany, setDepartmentsForCompany] = useState([]);
+  const [isDepartmentsLoading, setIsDepartmentsLoading] = useState(false);
+
   const [refreshFlag, setRefreshFlag] = useState(false);
   const [formData, setFormData] = useState({
     userName: "",
     userNumber: "",
     userMail: "",
     roleId: "",
-    companyId: selectedCompanyId || "",
+    companyId: "",
+    departmentId: "",
     password: "",
   });
+
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState("");
   const [isEdit, setIsEdit] = useState(false);
-  const [companies, setCompanies] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const fileInputRef = useRef(null);
 
   const currentUserRole = user?.role || "";
   const currentUserId = user?.userId ?? user?.id ?? "system";
   const currentUserCompanyId =
-    user?.companyId ||
-    user?.company?.companyId ||
-    selectedCompanyId ||
-    "";
+    user?.companyId || user?.company?.companyId || selectedCompanyId || "";
   const isSuperAdmin = String(currentUserRole).trim().toLowerCase() === "super admin";
 
-  const getCompanyAcronym = (id) => {
-    const company = companies.find((c) => c.companyId === id);
-    return company ? company.companyAcr : "";
-  };
-
-  const getDepartmentAcronym = (id) => {
-    const dept = allDepartments.find((d) => d.departmentId === id);
-    return dept ? dept.departmentAcr || dept.departmentAckr || "" : "";
-  };
-
+  // Fetch companies, roles, users
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchBaseData = async () => {
       setIsLoading(true);
       try {
-        const companyRes = await API.get("/companies");
-        setCompanies(companyRes.data);
-        const roleRes = await API.get("/roles");
+        const [companyRes, roleRes, userRes] = await Promise.all([
+          API.get("/companies"),
+          API.get("/roles"),
+          API.get("/users", {
+            params: selectedCompanyId ? { companyId: selectedCompanyId } : {},
+          }),
+        ]);
+
+        setCompanies(companyRes.data || []);
         setRoles(roleRes.data || []);
-
-        const res = await API.get("/users", {
-          params: selectedCompanyId ? { companyId: selectedCompanyId } : {},
-        });
-        setUsers(res.data);
-
-        const allDept = await API.get("/departments");
-        setAllDepartments(allDept.data.data);
+        setUsers(userRes.data || []);
       } catch (err) {
-        console.error("Error fetching data:", err.response?.data || err.message);
-        toast.error("Error fetching data");
+        console.error("Base data fetch error:", err);
+        toast.error("Failed to load initial data");
       } finally {
         setIsLoading(false);
       }
     };
-    fetchData();
+
+    fetchBaseData();
   }, [selectedCompanyId, refreshFlag]);
+
+  // Fetch departments when company changes (in form or fixed)
+  useEffect(() => {
+    const selectedCompany = formData.companyId || currentUserCompanyId;
+    if (!selectedCompany) {
+      setDepartmentsForCompany([]);
+      return;
+    }
+
+    const fetchDepartments = async () => {
+      setIsDepartmentsLoading(true);
+      try {
+        const res = await API.get("/departments", {
+          params: { companyId: selectedCompany },
+        });
+        const data = res.data.data || res.data || [];
+        setDepartmentsForCompany(data);
+      } catch (err) {
+        console.error("Departments fetch error:", err);
+        toast.error("Failed to load departments");
+        setDepartmentsForCompany([]);
+      } finally {
+        setIsDepartmentsLoading(false);
+      }
+    };
+
+    fetchDepartments();
+
+    // Reset department when company changes
+    setFormData((prev) => ({ ...prev, departmentId: "" }));
+  }, [formData.companyId, currentUserCompanyId, refreshFlag]);
 
   const openAddUserForm = () => {
     setFormData({
@@ -256,6 +316,7 @@ export default function AddUser({ selectedCompanyId, selectedCompanyName }) {
       userMail: "",
       roleId: "",
       companyId: currentUserRole !== "Super Admin" ? currentUserCompanyId : (selectedCompanyId || ""),
+      departmentId: "",
       password: "",
     });
     setIsEdit(false);
@@ -265,39 +326,44 @@ export default function AddUser({ selectedCompanyId, selectedCompanyName }) {
   const handleSave = async (e) => {
     e.preventDefault();
 
+    if (!formData.departmentId) {
+      toast.error("Please select a department");
+      return;
+    }
+
     const payload = {
       ...formData,
       createdBy: currentUserId,
       updatedBy: currentUserId,
-      companyId: currentUserRole !== "Super Admin"
-        ? (currentUserCompanyId || formData.companyId)
-        : (formData.companyId || selectedCompanyId || 1),
-      departmentId: 1,
+      companyId:
+        currentUserRole !== "Super Admin"
+          ? currentUserCompanyId || formData.companyId
+          : formData.companyId || selectedCompanyId || "",
     };
 
     try {
       if (isEdit) {
         await API.put(`/users/${formData.userId}`, payload);
+        Swal.fire("Success", "User updated successfully", "success");
       } else {
         await API.post("/users", payload);
+        Swal.fire("Success", "User added successfully", "success");
       }
-      Swal.fire({
-        icon: "success",
-        title: isEdit ? "Updated" : "Added",
-        text: `User ${isEdit ? "Updated" : "Added"} Successfully`,
-      });
       setShowForm(false);
       setRefreshFlag((prev) => !prev);
     } catch (err) {
-      console.error("Error saving user:", err.response?.data || err.message);
-      Swal.fire({
-        icon: "error",
-        title: isEdit ? "Update Failed" : "Add Failed",
-        text: `User ${isEdit ? "Update" : "Add"} Failed`,
-      });
-      setShowForm(false);
+      console.error("Save error:", err.response?.data || err);
+      Swal.fire(
+        "Error",
+        err.response?.data?.error || "Failed to save user",
+        "error"
+      );
     }
   };
+
+  // ────────────────────────────────────────────────
+  // CSV / Bulk upload logic (kept as-is from your original)
+  // ────────────────────────────────────────────────
 
   const parseCsvLine = (line) => {
     const values = [];
@@ -342,7 +408,6 @@ export default function AddUser({ selectedCompanyId, selectedCompanyName }) {
     if (!isSuperAdmin) {
       return String(currentUserCompanyId || selectedCompanyId || "").trim();
     }
-
     if (selectedCompanyId) return String(selectedCompanyId);
 
     const companyIdRaw = String(row.companyId || "").trim();
@@ -384,16 +449,21 @@ export default function AddUser({ selectedCompanyId, selectedCompanyName }) {
       const companyIdByAcr = new Map(
         companies.map((c) => [String(c.companyAcr || "").trim().toLowerCase(), String(c.companyId)])
       );
+
+      // For bulk → we still need all departments (fallback)
+      const allDeptsRes = await API.get("/departments");
+      const allDepartments = allDeptsRes.data.data || allDeptsRes.data || [];
+
       const departmentIdByName = new Map(
         allDepartments.map((d) => [
-          `${String(d.companyId)}::${String(d.departmentName || "").trim().toLowerCase()}`,
-          String(d.departmentId),
+          `${String(d.companyId)}::${String(d.departmentName || d.Deptname || "").trim().toLowerCase()}`,
+          String(d.departmentId || d.Deptid),
         ])
       );
       const departmentIdByAcr = new Map(
         allDepartments.map((d) => [
-          `${String(d.companyId)}::${String(d.departmentAcr || d.departmentAckr || "").trim().toLowerCase()}`,
-          String(d.departmentId),
+          `${String(d.companyId)}::${String(d.departmentAcr || d.Deptacronym || "").trim().toLowerCase()}`,
+          String(d.departmentId || d.Deptid),
         ])
       );
 
@@ -405,6 +475,7 @@ export default function AddUser({ selectedCompanyId, selectedCompanyName }) {
             String(row.roleId || "").trim() ||
             roleIdByName.get(String(row.roleName || "").trim().toLowerCase()) ||
             "";
+
           const departmentId = resolveDepartmentId(
             row,
             companyId,
@@ -419,7 +490,7 @@ export default function AddUser({ selectedCompanyId, selectedCompanyName }) {
             password: String(row.password || "").trim(),
             roleId,
             companyId,
-            departmentId: departmentId || "1",
+            departmentId: departmentId || "",
             status: "Active",
             createdBy: currentUserId,
             updatedBy: currentUserId,
@@ -443,7 +514,7 @@ export default function AddUser({ selectedCompanyId, selectedCompanyName }) {
 
       if (payloads.length === 0) {
         toast.error(
-          "CSV must include valid userNumber, userMail, password, roleId/roleName, company mapping and department mapping"
+          "CSV must include valid userNumber, userMail, password, roleId/roleName, company and department mapping"
         );
         return;
       }
@@ -451,6 +522,7 @@ export default function AddUser({ selectedCompanyId, selectedCompanyName }) {
       const results = await Promise.allSettled(
         payloads.map((payload) => API.post("/users", payload))
       );
+
       const successCount = results.filter((r) => r.status === "fulfilled").length;
       const failCount = results.length - successCount;
 
@@ -458,23 +530,25 @@ export default function AddUser({ selectedCompanyId, selectedCompanyName }) {
         setRefreshFlag((prev) => !prev);
       }
 
-      const suffix = skippedRows > 0 ? `, ${skippedRows} skipped (invalid rows)` : "";
+      const suffix = skippedRows > 0 ? `, ${skippedRows} skipped (invalid)` : "";
       if (failCount === 0) {
-        Swal.fire("Uploaded!", `${successCount} users uploaded successfully${suffix}`, "success");
+        Swal.fire("Uploaded!", `${successCount} users added${suffix}`, "success");
       } else {
-        Swal.fire("Completed with errors", `${successCount} uploaded, ${failCount} failed${suffix}`, "warning");
+        Swal.fire(
+          "Partial success",
+          `${successCount} added, ${failCount} failed${suffix}`,
+          "warning"
+        );
       }
     } catch (err) {
-      console.error("User bulk upload failed:", err);
+      console.error("Bulk upload failed:", err);
       toast.error("Bulk upload failed");
     }
   };
 
   const csvValue = (value) => {
     const text = String(value ?? "");
-    if (/[",\n]/.test(text)) {
-      return `"${text.replace(/"/g, '""')}"`;
-    }
+    if (/[",\n]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
     return text;
   };
 
@@ -489,7 +563,7 @@ export default function AddUser({ selectedCompanyId, selectedCompanyName }) {
       "departmentAcr",
     ];
     const headers = isSuperAdmin
-      ? ["userNumber", "userName", "userMail", "password", "roleName", "companyName", "companyAcr", "departmentName", "departmentAcr"]
+      ? [...baseHeaders.slice(0, 5), "companyName", "companyAcr", ...baseHeaders.slice(5)]
       : baseHeaders;
 
     const sampleCompanyName = selectedCompanyName || "Acme Private Limited";
@@ -520,10 +594,14 @@ export default function AddUser({ selectedCompanyId, selectedCompanyName }) {
     URL.revokeObjectURL(url);
   };
 
+  // ────────────────────────────────────────────────
+  // Render
+  // ────────────────────────────────────────────────
   return (
     <div className="h-full flex flex-col px-6">
-      {isLoading && <div>Loading...</div>}
-      <div className="flex justify-between items-center gap-3 mb-4">
+      {isLoading && <div className="text-center py-4">Loading...</div>}
+
+      <div className="flex justify-between items-center gap-3 mb-4 flex-wrap">
         <input
           type="text"
           placeholder="Search user..."
@@ -564,11 +642,11 @@ export default function AddUser({ selectedCompanyId, selectedCompanyName }) {
 
       <div
         className="overflow-y-auto border border-gray-200 rounded-lg shadow-sm flex-1"
-        style={{ maxHeight: "320px" }}
+        style={{ maxHeight: "400px" }}
       >
         <table className="w-full text-left text-sm">
-          <thead className="sticky top-0">
-            <tr className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
+          <thead className="sticky top-0 bg-gradient-to-r from-blue-600 to-indigo-600 text-white">
+            <tr>
               <th className="py-3 px-4">User Number</th>
               <th className="py-3 px-4">Email</th>
               <th className="py-3 px-4">Role</th>
@@ -581,18 +659,24 @@ export default function AddUser({ selectedCompanyId, selectedCompanyName }) {
             {users
               .filter(
                 (u) =>
-                  u.userNumber.toLowerCase().includes(search.toLowerCase()) ||
-                  u.userMail.toLowerCase().includes(search.toLowerCase())
+                  (u.userNumber || "").toLowerCase().includes(search.toLowerCase()) ||
+                  (u.userMail || "").toLowerCase().includes(search.toLowerCase())
               )
               .map((u) => (
                 <tr key={u.userNumber} className="border-t hover:bg-gray-50">
                   <td className="py-2 px-4">{u.userNumber}</td>
                   <td className="py-2 px-4">{u.userMail}</td>
-                  <td className="py-2 px-4">{u.role?.roleName || u.roleId}</td>
+                  <td className="py-2 px-4">{u.role?.roleName || u.roleId || "-"}</td>
                   {!selectedCompanyId && (
-                    <td className="py-2 px-4">{getCompanyAcronym(u.companyId)}</td>
+                    <td className="py-2 px-4">
+                      {companies.find((c) => c.companyId === u.companyId)?.companyAcr || "-"}
+                    </td>
                   )}
-                  <td className="py-2 px-4">{getDepartmentAcronym(u.departmentId)}</td>
+                  <td className="py-2 px-4">
+                    {departmentsForCompany.find((d) => d.departmentId === u.departmentId || d.Deptid === u.departmentId)?.departmentAcr ||
+                     departmentsForCompany.find((d) => d.departmentId === u.departmentId || d.Deptid === u.departmentId)?.Deptacronym ||
+                     "-"}
+                  </td>
                   <td className="py-2 px-4 flex gap-2">
                     <button
                       className="bg-blue-500 hover:bg-blue-600 text-white p-2 rounded-md"
@@ -604,6 +688,7 @@ export default function AddUser({ selectedCompanyId, selectedCompanyName }) {
                           userMail: u.userMail,
                           roleId: u.roleId,
                           companyId: u.companyId,
+                          departmentId: u.departmentId || "",
                           password: "",
                         });
                         setShowForm(true);
@@ -629,19 +714,10 @@ export default function AddUser({ selectedCompanyId, selectedCompanyName }) {
                               await API.delete(`/users/${u.userId}`, {
                                 data: { updatedBy: currentUserId },
                               });
-                              Swal.fire({
-                                title: "Deleted!",
-                                text: "User has been deleted.",
-                                icon: "success",
-                              });
+                              Swal.fire("Deleted!", "User deleted.", "success");
                               setRefreshFlag((prev) => !prev);
                             } catch (err) {
-                              console.error("Delete error:", err.response?.data || err.message);
-                              Swal.fire({
-                                title: "Error!",
-                                text: "Failed to delete user.",
-                                icon: "error",
-                              });
+                              Swal.fire("Error!", "Failed to delete user.", "error");
                             }
                           }
                         });
@@ -652,16 +728,10 @@ export default function AddUser({ selectedCompanyId, selectedCompanyName }) {
                   </td>
                 </tr>
               ))}
-            {users.filter(
-              (u) =>
-                u.userNumber.toLowerCase().includes(search.toLowerCase()) ||
-                u.userMail.toLowerCase().includes(search.toLowerCase())
-            ).length === 0 && (
+
+            {users.length === 0 && (
               <tr>
-                <td
-                  colSpan={selectedCompanyId ? 5 : 6}
-                  className="text-center py-4 text-gray-500"
-                >
+                <td colSpan={selectedCompanyId ? 5 : 6} className="text-center py-8 text-gray-500">
                   No users found
                 </td>
               </tr>
@@ -681,6 +751,8 @@ export default function AddUser({ selectedCompanyId, selectedCompanyName }) {
           isEdit={isEdit}
           roles={roles}
           currentUserCompanyId={currentUserCompanyId}
+          departmentsForCompany={departmentsForCompany}
+          isDepartmentsLoading={isDepartmentsLoading}
         />
       )}
     </div>

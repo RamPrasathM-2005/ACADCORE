@@ -60,6 +60,7 @@ export const getAllDepartments = async (req, res) => {
 
     const departments = await Department.findAll({
       where,
+      attributes: ['Deptid', 'companyId', 'Deptname', 'Deptacronym'],
       include: [
         { 
           model: Company, 
