@@ -9,7 +9,7 @@ export default (sequelize, DataTypes) => {
 
   CBCS.associate = (models) => {
     // Safety check: Log if a model is missing to prevent crash
-    const requiredModels = ['Batch', 'DepartmentAcademic', 'Semester', 'CBCSSubject', 'studentcourseChoices', 'studentTempChoice'];
+    const requiredModels = ['Batch', 'Department', 'Semester', 'CBCSSubject', 'studentcourseChoices', 'studentTempChoice'];
     
     requiredModels.forEach(m => {
       if (!models[m]) {
@@ -21,8 +21,8 @@ export default (sequelize, DataTypes) => {
       CBCS.belongsTo(models.Batch, { foreignKey: 'batchId' });
     }
     
-    if (models.DepartmentAcademic) {
-      CBCS.belongsTo(models.DepartmentAcademic, { foreignKey: 'Deptid' });
+    if (models.Department) {
+      CBCS.belongsTo(models.Department, { foreignKey: 'Deptid' });
     }
     
     if (models.Semester) {

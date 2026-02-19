@@ -33,7 +33,7 @@ export default (sequelize) => {
 
   Company.associate = (models) => {
     Company.hasMany(models.Employee, { foreignKey: 'companyId', as: 'employees' });
-    Company.hasMany(models.DepartmentAcademic, { foreignKey: 'companyId', as: 'departments' });
+    Company.hasMany(models.Department, { foreignKey: 'companyId', as: 'departments' });
   };
 
   return Company;

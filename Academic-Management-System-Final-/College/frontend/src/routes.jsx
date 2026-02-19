@@ -1,6 +1,6 @@
 import React from "react";
 import { Navigate } from "react-router-dom";
-import { isAuthenticated, getUserRole } from "./utils/auth.js";
+import { isAuthenticated, getUserRole } from "./utils/auth.js"; // ← you can remove if not used anymore
 
 // Layouts
 import AdminLayout from "./layouts/AdminLayout";
@@ -31,14 +31,13 @@ import StudentEnrollmentsView from './pages/admin/StudentEnrollmentsView';
 import CgpaAllocation from './pages/admin/CgpaAllocation.jsx'
 import NptelCourses from './pages/admin/ManageCourses/ManageNptelCourses.jsx';
 import RequestCoursesAdmin from './pages/admin/RequestCoursesAdmin.jsx';
-// import UpdateStudentSem from './pages/admin/ManageStudents/UpdateStudentSem.jsx'; 
 import CreateCBCS from './pages/admin/CBCS/CreateCBCS.jsx';
 import CBCSList from './pages/admin/CBCS/CBCSList.jsx';
 import CBCSDetail from './pages/admin/CBCS/CBCSDetail.jsx';
 import NptelCreditTransferApproval from './pages/admin/NptelCreditTransferApproval.jsx';
+import AddUser from "./pages/superadmin/AddUser.jsx";
 
 // Staff Pages
-
 import StaffDashboard from "./pages/staff/Dashboard";
 import Attendance from "./pages/staff/Attendance";
 import MarksAllocation from "./pages/staff/MarksAllocation";
@@ -50,26 +49,23 @@ import RequestCoursesStaff from './pages/staff/RequestCoursesStaff.jsx'
 import StudentDashboard from './pages/student/StudentDashboard';
 import ChooseCourse from './pages/student/ChooseCourse';
 import NptelSelection from './pages/student/NptelSelection.jsx';
-
 import StudentCBCS from './pages/student/StudentCBCS.jsx';
-// NotFound
-import NotFound from "./pages/NotFound";
-// import StudentStaffMapping from "./pages/admin/StudentEnrollmentsView";
-//  import StudentEnrollmentsView from "./pages/admin/StudentEnrollmentsView";
 
+// NotFound + others
+import NotFound from "./pages/NotFound";
 import AttendanceReport from "./pages/admin/AttendanceReports";
 import BulkOD from "./pages/admin/BulkOD.jsx";
 import DayAttendance from "./pages/admin/DayAttendance.jsx";
 import StudentCourseMapping from "./pages/admin/StudentCourseMapping.jsx";
 
-
 import { useAuth } from "./pages/auth/AuthContext";
 
-// ProtectedRoute
+// ────────────────────────────────────────────────
+//  Improved ProtectedRoute – accepts one or more allowed roles
+// ────────────────────────────────────────────────
 const ProtectedRoute = ({ children, role }) => {
   const { user, loading } = useAuth();
 
-  // Show nothing or a spinner while the refresh() function is checking the token
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -78,31 +74,73 @@ const ProtectedRoute = ({ children, role }) => {
     );
   }
 
-  // If no user is found in context, go to login
   if (!user) {
     return <Navigate to="/login" replace />;
   }
 
-  // Check roles (Context stores roles as lowercase usually)
-  const userRole = user.role?.toLowerCase();
-  const requiredRole = role?.toLowerCase();
+  const userRole = (user.role || "").toLowerCase().trim();
 
-  if (requiredRole && userRole !== requiredRole) {
+  let allowed = false;
+
+  // Normalize incoming role prop (string or array)
+  const requiredRoles = Array.isArray(role) ? role : [role];
+
+  for (const r of requiredRoles) {
+    const req = (r || "").toLowerCase().trim();
+
+    if (req === "admin") {
+      if (userRole === "admin" || userRole === "superadmin" || userRole === "super admin" || userRole === "super-admin") {
+        allowed = true;
+        break;
+      }
+    }
+    else if (req === "staff") {
+      if (
+        userRole === "staff" ||
+        userRole === "teachingstaff" ||
+        userRole === "teaching staff" ||
+        userRole.includes("faculty") ||
+        userRole === "teacher"
+      ) {
+        allowed = true;
+        break;
+      }
+    }
+    else if (req === "student") {
+      if (userRole === "student") {
+        allowed = true;
+        break;
+      }
+    }
+    // fallback – exact match
+    else if (userRole === req) {
+      allowed = true;
+      break;
+    }
+  }
+
+  if (!allowed) {
     return <Navigate to="/login" replace />;
+    // or: return <Navigate to="/unauthorized" replace />;  ← if you have such page
   }
 
   return children;
 };
+
+// ────────────────────────────────────────────────
+// Routes (your original structure + only role logic improved)
+// ────────────────────────────────────────────────
 const routes = [
   { path: "/", element: <Navigate to="/login" replace /> },
   { path: "/login", element: <Login /> },
   { path: "/register", element: <Register /> },
   { path: "/forgot-password", element: <ForgotPassword /> },
   { path: "/reset-password/:token", element: <ResetPassword /> },
+
   {
     path: "/admin",
     element: (
-      <ProtectedRoute role="admin">
+      <ProtectedRoute role={["admin", "superadmin"]}>
         <AdminLayout />
       </ProtectedRoute>
     ),
@@ -120,28 +158,29 @@ const routes = [
       { path: 'subjectWise-marks', element: <SubjectWiseMarks /> },
       { path: 'course-recommendation', element: <CourseRecommendation /> },
       { path: 'adminattendance', element: <AdminAttendance /> },
-      {path: 'bulk-od', element: <BulkOD />},
-      {path: 'periodattendance', element: <DayAttendance></DayAttendance>},
-      { path: "/admin/attendance-report", element: <AttendanceReport />} ,
+      { path: 'bulk-od', element: <BulkOD /> },
+      { path: 'periodattendance', element: <DayAttendance /> },
+      { path: "/admin/attendance-report", element: <AttendanceReport /> },
       { path: 'report', element: <Report /> },
       { path: 'student-staff-mapping', element: <StudentEnrollmentsView /> },
-      {path : 'student-course-mapping', element: <StudentCourseMapping />},
+      { path: 'student-course-mapping', element: <StudentCourseMapping /> },
+      { path: 'cgpa-allocation', element: <CgpaAllocation /> },
+      { path: 'request-courses', element: <RequestCoursesAdmin /> },
+      { path: 'cbcs-creation', element: <CreateCBCS /> },
+      { path: 'cbcs-list', element: <CBCSList /> },
+      { path: 'cbcs-detail/:id', element: <CBCSDetail /> },
+      { path: 'nptel-courses', element: <NptelCourses /> },
+      { path: 'nptel-approvals', element: <NptelCreditTransferApproval /> },
+      { path: 'adduser', element: <AddUser /> },
 
-      {path : 'cgpa-allocation', element: <CgpaAllocation/>},
-      {path: 'request-courses', element: <RequestCoursesAdmin/>},
-      {path:'cbcs-creation',element:<CreateCBCS />},
-      {path:'cbcs-list',element:<CBCSList />},
-      {path:'cbcs-detail/:id',element:<CBCSDetail />},
-      {path: 'nptel-courses', element: <NptelCourses/>},
-      {path: 'nptel-approvals', element: <NptelCreditTransferApproval />},
-      // { path: 'student-sem-update', element: <UpdateStudentSem/ > },
       { path: "*", element: <NotFound /> },
     ],
   },
+
   {
     path: "/staff",
     element: (
-      <ProtectedRoute role="staff">
+      <ProtectedRoute role={["staff", "teachingstaff"]}>
         <StaffLayout />
       </ProtectedRoute>
     ),
@@ -150,22 +189,14 @@ const routes = [
       { path: "dashboard", element: <StaffDashboard /> },
       { path: "marks-allocation", element: <MarksAllocation /> },
       { path: "options/:courseId", element: <Options /> },
-      {
-        path: "marks-allocation/:courseId/:sectionId",
-        element: <MarksAllocation />,
-      },
+      { path: "marks-allocation/:courseId/:sectionId", element: <MarksAllocation /> },
       { path: "attendance", element: <Attendance /> },
       { path: "internal-marks/:courseId", element: <InternalMarks /> },
-      { path: 'dashboard', element: <StaffDashboard /> },
-      { path: 'marks-allocation', element: <MarksAllocation /> },
-      { path: 'options/:courseId', element: <Options /> },
-      { path: 'marks-allocation/:courseId/:sectionId', element: <MarksAllocation /> },
-      { path: 'attendance', element: <Attendance /> },
-      { path: 'internal-marks/:courseId', element: <InternalMarks /> },
-      { path: 'request-courses', element: <RequestCoursesStaff/>},
+      { path: 'request-courses', element: <RequestCoursesStaff /> },
       { path: '*', element: <NotFound /> },
     ],
   },
+
   {
     path: "/student",
     element: (
@@ -175,14 +206,14 @@ const routes = [
     ),
     children: [
       { index: true, element: <StudentDashboard /> },
-
       { path: 'nptel-selection', element: <NptelSelection /> },
       { path: "dashboard", element: <StudentDashboard /> },
       { path: "choose-course", element: <ChooseCourse /> },
-      { path: 'stu/:regno/:batchId/:deptId/:semesterId',element:<StudentCBCS />},
+      { path: 'stu/:regno/:batchId/:deptId/:semesterId', element: <StudentCBCS /> },
       { path: "*", element: <NotFound /> },
     ],
   },
+
   { path: "*", element: <NotFound /> },
 ];
 

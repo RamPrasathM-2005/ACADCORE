@@ -3,7 +3,7 @@ import db from '../models/index.js'; // Assuming your index.js exports the db ob
 const { 
   sequelize, 
   Regulation, 
-  DepartmentAcademic, 
+  Department, 
   Vertical, 
   RegulationCourse, 
   VerticalCourse, 
@@ -36,7 +36,7 @@ export const getAllRegulations = async (req, res) => {
     const rows = await Regulation.findAll({
       where: { isActive: 'YES' },
       include: [{
-        model: DepartmentAcademic,
+        model: Department,
         attributes: ['Deptacronym']
       }]
     });

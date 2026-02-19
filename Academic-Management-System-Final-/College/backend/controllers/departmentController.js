@@ -2,8 +2,8 @@
 import db from '../models/index.js';
 
 // NOTE: If you renamed the define() name in your model to 'Department', use that.
-// If you kept it as 'DepartmentAcademic', change the variable below.
-const Department = db.Department || db.DepartmentAcademic;
+// If you kept it as 'Department', change the variable below.
+const Department = db.Department || db.Department;
 const { Company } = db;
 
 /**

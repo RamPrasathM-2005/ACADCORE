@@ -5,7 +5,7 @@ import db from '../models/index.js';
 const { 
   sequelize, 
   Batch, 
-  DepartmentAcademic, 
+  Department, 
   Semester, 
   Course, 
   Timetable, 
@@ -61,7 +61,7 @@ export const getDepartments = async (req, res) => {
     const batch = await Batch.findByPk(batchId);
     if (!batch) return res.json({ success: true, departments: [] });
 
-    const departments = await DepartmentAcademic.findAll({
+    const departments = await Department.findAll({
       where: {
         Deptacronym: batch.branch
       },

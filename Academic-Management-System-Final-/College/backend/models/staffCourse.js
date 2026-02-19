@@ -14,7 +14,7 @@ export default  (sequelize, DataTypes) => {
     StaffCourse.belongsTo(models.User, { foreignKey: 'Userid' });
     StaffCourse.belongsTo(models.Course, { foreignKey: 'courseId' });
     StaffCourse.belongsTo(models.Section, { foreignKey: 'sectionId' });
-    StaffCourse.belongsTo(models.DepartmentAcademic, { foreignKey: 'Deptid' });
+    StaffCourse.belongsTo(models.Department, { foreignKey: 'Deptid' });
   };
 
   return StaffCourse;

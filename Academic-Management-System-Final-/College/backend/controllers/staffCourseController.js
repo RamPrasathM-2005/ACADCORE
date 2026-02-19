@@ -5,14 +5,14 @@ import { Op } from "sequelize";
 
 const { 
   sequelize, User, StaffCourse, Course, Section, 
-  DepartmentAcademic, Semester, Batch 
+  Department, Semester, Batch 
 } = db;
 
 export const getUsers = catchAsync(async (req, res) => {
   const staff = await User.findAll({
     where: { roleId: 2, status: 'Active' }, // Assuming roleId 2 is Staff
     include: [
-      { model: DepartmentAcademic, as: 'department', attributes: ['Deptname'] },
+      { model: Department, as: 'department', attributes: ['Deptname'] },
       {
         model: StaffCourse,
         as: 'teachingAssignments',
@@ -155,7 +155,7 @@ export const getStaffAllocationsByCourse = catchAsync(async (req, res) => {
       { model: User, attributes: [['userName', 'staffName']] },
       { model: Course, attributes: ['courseCode'] },
       { model: Section, attributes: ['sectionName'] },
-      { model: DepartmentAcademic, as: 'department', attributes: [['Deptname', 'departmentName']] }
+      { model: Department, as: 'department', attributes: [['Deptname', 'departmentName']] }
     ]
   });
 
@@ -176,7 +176,7 @@ export const getCourseAllocationsByStaff = catchAsync(async (req, res) => {
         }] 
       },
       { model: Section },
-      { model: DepartmentAcademic, as: 'department' }
+      { model: Department, as: 'department' }
     ]
   });
 
@@ -215,7 +215,7 @@ export const getCourseAllocationsByStaffEnhanced = catchAsync(async (req, res) =
         }] 
       },
       { model: Section },
-      { model: DepartmentAcademic, as: 'department' }
+      { model: Department, as: 'department' }
     ]
   });
 

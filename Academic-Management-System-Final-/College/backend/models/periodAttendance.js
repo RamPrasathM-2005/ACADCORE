@@ -22,8 +22,8 @@ export default (sequelize, DataTypes) => {
     if (models.Section) PeriodAttendance.belongsTo(models.Section, { foreignKey: 'sectionId' });
     
     // SAFE CHECK
-    if (models.DepartmentAcademic) {
-        PeriodAttendance.belongsTo(models.DepartmentAcademic, { foreignKey: 'Deptid' });
+    if (models.Department) {
+        PeriodAttendance.belongsTo(models.Department, { foreignKey: 'Deptid' });
     }
   };
 

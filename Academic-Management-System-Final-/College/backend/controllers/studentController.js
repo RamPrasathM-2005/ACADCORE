@@ -12,7 +12,7 @@ const {
   StudentCourse, 
   StaffCourse, 
   User, 
-  DepartmentAcademic 
+  Department 
 } = db;
 
 export const addStudent = catchAsync(async (req, res) => {

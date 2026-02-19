@@ -12,7 +12,7 @@ const {
   User, 
   StudentCOMarks, 
   Section, 
-  DepartmentAcademic, 
+  Department, 
   Semester, 
   Batch,
   sequelize 
@@ -286,7 +286,7 @@ export const exportCoWiseCsv = catchAsync(async (req, res) => {
 // 9. STAFF LOGIC
 export const getMyCourses = catchAsync(async (req, res) => {
   const userId = getStaffId(req);
-  const rows = await StaffCourse.findAll({ where: { Userid: userId }, include: [{ model: Course, include: [{ model: Semester, include: [Batch] }] }, { model: Section }, { model: DepartmentAcademic }] });
+  const rows = await StaffCourse.findAll({ where: { Userid: userId }, include: [{ model: Course, include: [{ model: Semester, include: [Batch] }] }, { model: Section }, { model: Department }] });
   const groupedMap = new Map();
   rows.forEach(row => {
     const key = `${row.Course.courseTitle}-${row.Course.Semester.Batch.batchYears}`;
@@ -304,7 +304,7 @@ export const getMyCourses = catchAsync(async (req, res) => {
 // 10. CONSOLIDATED
 export const getConsolidatedMarks = catchAsync(async (req, res) => {
   const { batch, dept, sem } = req.query;
-  const d = await DepartmentAcademic.findOne({ where: { Deptacronym: dept } });
+  const d = await Department.findOne({ where: { Deptacronym: dept } });
   const b = await Batch.findOne({ where: { batch, branch: dept } });
   const s = await Semester.findOne({ where: { batchId: b.batchId, semesterNumber: sem } });
   const students = await StudentDetails.findAll({ where: { departmentId: d.Deptid, batch, semester: sem } });

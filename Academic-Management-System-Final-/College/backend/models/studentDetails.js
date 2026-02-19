@@ -39,7 +39,7 @@ export default (sequelize, DataTypes) => {
   }, { tableName: 'student_details', timestamps: true });
 
   StudentDetails.associate = (models) => {
-    StudentDetails.belongsTo(models.DepartmentAcademic, { foreignKey: 'departmentId', as: 'department' });
+    StudentDetails.belongsTo(models.Department, { foreignKey: 'departmentId', as: 'department' });
     StudentDetails.belongsTo(models.Employee, { foreignKey: 'staffId', as: 'staff' });
     StudentDetails.belongsTo(models.User, { foreignKey: 'createdBy', as: 'creator' });
     StudentDetails.belongsTo(models.User, { foreignKey: 'updatedBy', as: 'updater' });

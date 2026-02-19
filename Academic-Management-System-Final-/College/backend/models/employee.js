@@ -33,7 +33,7 @@ export default (sequelize) => {
   Employee.associate = (models) => {
     Employee.belongsTo(models.User, { foreignKey: 'staffNumber', targetKey: 'userNumber' });
     Employee.belongsTo(models.Company, { foreignKey: 'companyId', as: 'company' });
-    Employee.belongsTo(models.DepartmentAcademic, { foreignKey: 'departmentId', as: 'department' });
+    Employee.belongsTo(models.Department, { foreignKey: 'departmentId', as: 'department' });
   };
 
   return Employee;

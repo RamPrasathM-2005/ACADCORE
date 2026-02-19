@@ -1,7 +1,7 @@
 import models from '../models/index.js';
 const { 
   sequelize, Course, Semester, Batch, Regulation, 
-  CourseRequest, StaffCourse, User, Section, DepartmentAcademic 
+  CourseRequest, StaffCourse, User, Section, Department 
 } = models;
 import { Op } from 'sequelize';
 import catchAsync from '../utils/catchAsync.js';
@@ -210,7 +210,7 @@ export const getPendingRequestsForAdmin = catchAsync(async (req, res) => {
             include: [{ 
               model: Regulation, 
               where: dept ? { Deptid: dept } : {},
-              include: [DepartmentAcademic] 
+              include: [Department] 
             }]
           }]
         }]

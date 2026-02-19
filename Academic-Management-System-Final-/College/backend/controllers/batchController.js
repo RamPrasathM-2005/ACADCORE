@@ -2,7 +2,7 @@
 import db from "../models/index.js";
 import catchAsync from "../utils/catchAsync.js";
 
-const { Batch, DepartmentAcademic, sequelize } = db;
+const { Batch, Department, sequelize } = db;
 
 /**
  * GET ALL ACTIVE BATCHES
@@ -161,7 +161,7 @@ export const getOrCreateBatch = async (Deptid, regulationYear, createdBy, update
     // Note: The original query used Deptid which wasn't in your Batch model snippet, 
     // but the branch name subquery suggests it matches the department acronym.
     
-    const dept = await DepartmentAcademic.findByPk(Deptid, { transaction: t });
+    const dept = await Department.findByPk(Deptid, { transaction: t });
     if (!dept) throw new Error("Department not found");
 
     const batchName = regulationYear.toString();
