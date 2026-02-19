@@ -238,7 +238,7 @@ export default function AddUser({ selectedCompanyId, selectedCompanyName }) {
         setUsers(res.data);
 
         const allDept = await API.get("/departments");
-        setAllDepartments(allDept.data);
+        setAllDepartments(allDept.data.data);
       } catch (err) {
         console.error("Error fetching data:", err.response?.data || err.message);
         toast.error("Error fetching data");

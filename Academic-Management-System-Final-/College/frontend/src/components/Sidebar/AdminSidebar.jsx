@@ -45,7 +45,7 @@ const AdminSidebar = () => {
     { to: "/admin/manage-staff", icon: UserCheck, label: "Allocate Staff to Course" },
     { to: "/admin/manage-students", icon: Users, label: "Allocate Students to Staff" },
     { to: "/admin/student-staff-mapping", icon: Network, label: "Staff Course Mapping" },
-    {to : "/admin/student-course-mapping", icon : Network, label: "Student Course Mapping"},
+    { to: "/admin/student-course-mapping", icon : Network, label: "Student Course Mapping"},
     { to: "/admin/timetable", icon: CalendarClock, label: "Timetable" },
     { to: "/admin/adminattendance", icon: ClipboardCheck, label: "Subjectwise Day Attendance"},
     { to: "/admin/bulk-od", icon: Info, label: "Bulk OD"},
