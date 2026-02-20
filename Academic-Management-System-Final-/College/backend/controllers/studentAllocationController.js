@@ -56,24 +56,42 @@ export const searchStudents = catchAsync(async (req, res) => {
   });
 
   // 2. Fetch Courses and Flatten Sections into "batches"
+
   const rawCourses = await Course.findAll({
-    where: { isActive: 'YES' },
-    include: [
-      {
-        model: Semester,
-        where: { isActive: 'YES', ...(semesterNumber && { semesterNumber }) },
-        include: [{ model: Batch, where: { isActive: 'YES', ...(batch && { batch }) } }]
+  where: { isActive: 'YES' },
+  include: [
+    {
+      model: Semester,
+      required: true,                             // force match
+      where: {
+        isActive: 'YES',
+        ...(semesterNumber && { semesterNumber })
       },
-      {
-        model: Section,
-        where: { isActive: 'YES' }, // Only show active sections
+      include: [{
+        model: Batch,
+        required: true,                           // force match
+        where: {
+          isActive: 'YES',
+          ...(batch && { batch }),                // e.g. "2023"
+          ...(branch && { branch })               // ← key change: filter Batch.branch = "IT" / "CSE"
+        }
+      }]
+    },
+    {
+      model: Section,
+      where: { isActive: 'YES' },
+      required: false,
+      include: [{
+        model: StaffCourse,
+        required: false,
         include: [{
-          model: StaffCourse,
-          include: [{ model: User, attributes: ['userName'] }]
+          model: User,
+          attributes: ['userName']
         }]
-      }
-    ]
-  });
+      }]
+    }
+  ]
+});
 
   // TRANSFORM DATA FOR FRONTEND
   

@@ -315,66 +315,86 @@ export const exportCoWiseCsv = catchAsync(async (req, res) => {
 
 // 9. STAFF DASHBOARD (My Courses - Grouped Logic)
 export const getMyCourses = catchAsync(async (req, res) => {
-  const userId = req.user?.userId || req.user?.id; 
+  const userId = req.user?.userId || req.user?.id;
   if (!userId) return res.status(401).json({ status: 'error', message: 'Authentication failed' });
 
-  const rows = await StaffCourse.findAll({ 
-    where: { Userid: userId }, 
+  const rows = await StaffCourse.findAll({
+    where: { Userid: userId },
     include: [
-      { 
-        model: Course, 
-        include: [{ model: Semester, include: [{ model: Batch }] }] 
-      }, 
-      { model: Section }, 
-      { model: Department, as: 'department' }
-    ] 
+      {
+        model: Course,
+        include: [{ model: Semester, include: [{ model: Batch }] }],
+      },
+      { model: Section },
+      { model: Department, as: 'department' },
+    ],
+    order: [[Course, 'courseTitle', 'ASC']], // nicer ordering
   });
 
-  const groupedMap = new Map();
+  const groupedMap = new Map(); // key = courseTitle (or courseId if you prefer uniqueness by ID)
 
-  rows.forEach(row => {
+  for (const row of rows) {
     const data = row.get({ plain: true });
-    if (!data.Course) return;
+    if (!data.Course) continue;
 
     const course = data.Course;
     const sem = course.Semester;
     const batch = sem?.Batch;
-    const key = `${course.courseTitle}-${batch?.batchYears || 'NoBatch'}`;
+
+    // Use courseTitle as main grouping key (most user-friendly)
+    const key = course.courseTitle;
 
     if (!groupedMap.has(key)) {
-      groupedMap.set(key, { 
-        id: course.courseCode, 
-        displayCode: course.courseCode, 
-        title: course.courseTitle, 
-        semester: sem ? `Sem ${sem.semesterNumber}` : 'N/A', 
-        batch: batch?.batch || 'N/A', 
-        degree: batch?.degree || '', 
-        branch: batch?.branch || 'General',
-        courseCodes: [course.courseCode], 
-        sectionName: data.Section?.sectionName || 'N/A',
-        // ADDED THIS LINE: Store the first sectionId
-        compositeSectionId: String(data.sectionId) 
+      groupedMap.set(key, {
+        title: course.courseTitle,
+        // Use the most common / first course code as representative
+        mainCourseCode: course.courseCode,
+        courseCodes: new Set([course.courseCode]),
+        semester: sem ? `Sem ${sem.semesterNumber}` : 'N/A',
+        sections: [],
+        branches: new Set(),
+        compositeSectionIds: [],
       });
-    } else {
-      const existing = groupedMap.get(key);
-      
-      if (!existing.courseCodes.includes(course.courseCode)) {
-        existing.courseCodes.push(course.courseCode);
-        existing.id = existing.courseCodes.join('_'); 
-        existing.displayCode = existing.courseCodes.join(' / ');
-        
-        // ADDED THIS LINE: Append subsequent sectionIds with an underscore
-        existing.compositeSectionId += `_${data.sectionId}`;
-      }
-      
-      const curSec = data.Section?.sectionName || 'N/A';
-      if (!existing.sectionName.includes(curSec)) {
-        existing.sectionName += ` / ${curSec}`;
-      }
     }
-  });
 
-  res.status(200).json({ status: 'success', data: Array.from(groupedMap.values()) });
+    const entry = groupedMap.get(key);
+
+    // Collect unique course codes
+    entry.courseCodes.add(course.courseCode);
+
+    // Collect branches taught for this course
+    if (batch?.branch) entry.branches.add(batch.branch);
+
+    // Collect sections with useful info
+    entry.sections.push({
+      sectionId: data.sectionId,
+      sectionName: data.Section?.sectionName || 'Unnamed',
+      batch: batch?.batch || 'N/A',
+      branch: batch?.branch || 'General',
+      degree: batch?.degree || 'BE',
+      // You can add more if needed: classroom, timing, etc.
+    });
+
+    // For composite ID if frontend still needs it (e.g. for some bulk action)
+    if (!entry.compositeSectionIds.includes(String(data.sectionId))) {
+      entry.compositeSectionIds.push(String(data.sectionId));
+    }
+  }
+
+  // Final formatting
+  const result = Array.from(groupedMap.values()).map(entry => ({
+    ...entry,
+    courseCodes: Array.from(entry.courseCodes),
+    branches: Array.from(entry.branches),
+    compositeSectionIds: entry.compositeSectionIds.join('_'),
+    sectionCount: entry.sections.length,
+    // Optional: sort sections by branch/batch/sectionName
+    sections: entry.sections.sort((a, b) => 
+      a.branch.localeCompare(b.branch) || a.sectionName.localeCompare(b.sectionName)
+    ),
+  }));
+
+  res.status(200).json({ status: 'success', data: result });
 });
 // 10. ADMIN FUNCTIONS
 export const getConsolidatedMarks = catchAsync(async (req, res) => {
@@ -536,88 +556,160 @@ export const exportCourseWiseCsv = catchAsync(async (req, res) => {
 });
 
 export const getStudentCOMarks = catchAsync(async (req, res) => {
-  const { courseCode } = req.params;
-  
-  // Logic to get staff ID from req.user (standard in your app)
-  const staffId = req.user?.userId || req.user?.id;
+  const { courseCode: rawCourseCode } = req.params;
+  const normalizedCode = rawCourseCode.toUpperCase().trim();
 
-  // 1. Find the Course
-  const course = await Course.findOne({ 
-    where: { courseCode: courseCode.toUpperCase() } 
-  });
-  
-  if (!course) return res.status(404).json({ status: 'error', message: 'Course not found' });
-
-  // 2. Find Section IDs assigned to this staff for this course
-  const staffAssignments = await StaffCourse.findAll({ 
-    where: { Userid: staffId, courseId: course.courseId } 
-  });
-  const sectionIds = staffAssignments.map(x => x.sectionId);
-
-  // 3. Find Students in those sections
-  const students = await StudentDetails.findAll({ 
-    include: [{ 
-      model: StudentCourse, 
-      as: 'StudentCourses', // Ensure alias matches StudentDetails.js
-      required: true, 
-      where: { courseId: course.courseId, sectionId: { [Op.in]: sectionIds } } 
-    }] 
-  });
-
-  // 4. Find all COs for this course
-  const cos = await CourseOutcome.findAll({ 
-    where: { courseId: course.courseId }, 
-    include: [{ model: COType, required: false }], 
-    order: [['coNumber', 'ASC']] 
-  });
-
-  // 5. Optimization: Fetch ALL marks for these students and these COs in ONE query
-  const studentRegNos = students.map(s => s.registerNumber);
-  const coIds = cos.map(c => c.coId);
-  
-  const allMarks = await StudentCoMarks.findAll({
-    where: {
-      regno: { [Op.in]: studentRegNos },
-      coId: { [Op.in]: coIds }
-    }
-  });
-
-  // 6. Map the data for the frontend
-  const resData = students.map(s => {
-    const studentData = { 
-      regno: s.registerNumber, 
-      name: s.studentName, 
-      marks: {}, 
-      averages: { finalAvg: 0 } 
-    };
-    
-    let sum = 0;
-    
-    cos.forEach(co => {
-      // Find mark from the pre-fetched list
-      const markRecord = allMarks.find(m => m.regno === s.registerNumber && m.coId === co.coId);
-      const val = parseFloat(markRecord?.consolidatedMark || 0);
-      
-      studentData.marks[co.coNumber] = { 
-        coId: co.coId, 
-        coType: co.COType?.coType || 'N/A', 
-        consolidatedMark: val.toFixed(2) 
-      };
-      sum += val;
+  try {
+    // Find ALL courses with this courseCode (across departments)
+    const courses = await Course.findAll({
+      where: { courseCode: normalizedCode },
     });
 
-    studentData.averages.finalAvg = cos.length ? (sum / cos.length).toFixed(2) : '0.00';
-    return studentData;
-  });
+    if (courses.length === 0) {
+      return res.status(404).json({ status: 'error', message: 'No course found with this code' });
+    }
 
-  res.json({ 
-    status: 'success', 
-    data: { 
-      students: resData, 
-      partitions: { theoryCount: cos.length } // Adjust based on your theoryCount logic
-    } 
-  });
+    // Use first course as reference for CO numbers & types
+    const primaryCourse = courses[0];
+    const primaryCOs = await CourseOutcome.findAll({
+      where: { courseId: primaryCourse.courseId },
+      include: [{ model: COType, required: false, attributes: ['coType'] }],
+      order: [['coNumber', 'ASC']],
+    });
+
+    if (primaryCOs.length === 0) {
+      return res.json({
+        status: 'success',
+        data: { students: [], partitions: { theoryCount: 0 } },
+      });
+    }
+
+    // ────────────────────────────────────────────────
+    // Collect unique students from all versions of this course
+    // ────────────────────────────────────────────────
+    const studentsMap = new Map(); // regno → student
+
+    for (const course of courses) {
+      const sections = await Section.findAll({
+        where: { courseId: course.courseId, isActive: 'YES' },
+      });
+
+      const sectionIds = sections.map(s => s.sectionId);
+
+      const enrollments = await StudentCourse.findAll({
+        where: {
+          courseId: course.courseId,
+          sectionId: { [Op.in]: sectionIds },
+        },
+        include: [{
+          model: StudentDetails,
+          as: 'StudentDetail',
+          attributes: ['registerNumber', 'studentName'],
+          required: true,
+        }],
+      });
+
+      enrollments.forEach(en => {
+        const regno = en.StudentDetail.registerNumber;
+        if (regno && !studentsMap.has(regno)) {
+          studentsMap.set(regno, {
+            regno,
+            name: en.StudentDetail.studentName || 'Unknown',
+          });
+        }
+      });
+    }
+
+    const allStudents = Array.from(studentsMap.values());
+
+    // ────────────────────────────────────────────────
+    // Collect marks keyed by coNumber from ALL courses
+    // ────────────────────────────────────────────────
+    const marksByRegNoAndCoNum = new Map(); // regno → coNumber → value
+
+    for (const course of courses) {
+      const cos = await CourseOutcome.findAll({
+        where: { courseId: course.courseId },
+        include: [{ model: COType }],
+      });
+
+      if (cos.length === 0) continue;
+
+      const marks = await StudentCoMarks.findAll({
+        where: {
+          coId: cos.map(c => c.coId),
+          regno: { [Op.in]: allStudents.map(s => s.regno) },
+        },
+      });
+
+      marks.forEach(m => {
+        const co = cos.find(c => c.coId === m.coId);
+        if (!co) return;
+
+        const coNum = co.coNumber;
+        if (!marksByRegNoAndCoNum.has(m.regno)) {
+          marksByRegNoAndCoNum.set(m.regno, {});
+        }
+
+        const current = parseFloat(m.consolidatedMark || 0);
+        const existing = parseFloat(marksByRegNoAndCoNum.get(m.regno)[coNum] || 0);
+
+        // Prefer non-zero / higher value
+        if (current > existing) {
+          marksByRegNoAndCoNum.get(m.regno)[coNum] = current;
+        }
+      });
+    }
+
+    // ────────────────────────────────────────────────
+    // Build response using primary CO structure
+    // ────────────────────────────────────────────────
+    const resData = allStudents.map(student => {
+      const regno = student.regno;
+      const marks = {};
+      let sum = 0;
+
+      primaryCOs.forEach(co => {
+        const coNum = co.coNumber;
+        const val = marksByRegNoAndCoNum.get(regno)?.[coNum] || 0;
+
+        marks[coNum] = {
+          coId: co.coId,                // primary coId (for reference/update)
+          coType: co.COType?.coType || 'N/A',
+          consolidatedMark: val.toFixed(2),
+        };
+
+        sum += val;
+      });
+
+      const finalAvg = primaryCOs.length ? (sum / primaryCOs.length).toFixed(2) : '0.00';
+
+      return {
+        regno,
+        name: student.name,
+        marks,
+        averages: { finalAvg },
+      };
+    });
+
+    resData.sort((a, b) => a.regno.localeCompare(b.regno));
+
+    res.json({
+      status: 'success',
+      data: {
+        students: resData,
+        partitions: {
+          theoryCount: primaryCOs.filter(c => c.COType?.coType === 'THEORY').length || 0,
+        },
+      },
+    });
+
+  } catch (err) {
+    console.error('getStudentCOMarks error:', err);
+    res.status(500).json({ status: 'error', message: err.message || 'Internal server error' });
+  }
 });
+
 
 export const getStudentsForCourse = catchAsync(async (req, res) => {
   const { courseCode } = req.params;

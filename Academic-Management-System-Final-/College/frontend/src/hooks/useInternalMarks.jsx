@@ -1,11 +1,16 @@
 import { useState, useEffect } from 'react';
-import { getCOsForCourse, getStudentCOMarks, exportCourseWiseCsv } from '../services/staffService';
+import {
+  getCOsForCourse,
+  getStudentCOMarks,
+  exportCourseWiseCsv,
+  getStudentsForSection,          // ← added this import
+} from '../services/staffService';
 import Swal from 'sweetalert2';
 import withReactContent from 'sweetalert2-react-content';
 
 const MySwal = withReactContent(Swal);
 
-const useInternalMarks = (courseCode) => {
+const useInternalMarks = (courseCode, compositeSectionIds = '') => {
   const [students, setStudents] = useState([]);
   const [courseOutcomes, setCourseOutcomes] = useState([]);
   const [error, setError] = useState('');
@@ -13,7 +18,6 @@ const useInternalMarks = (courseCode) => {
 
   useEffect(() => {
     const fetchData = async () => {
-      // Allow alphanumeric and underscores
       if (!courseCode || !courseCode.match(/^[A-Za-z0-9_]+$/)) {
         console.error('Invalid courseCode:', courseCode);
         setError('Invalid course code provided');
@@ -25,7 +29,7 @@ const useInternalMarks = (courseCode) => {
         setError('');
         setLoading(true);
 
-        // 1. Fetch COs (Primary Course)
+        // 1. Fetch COs (same across all sections of the same course)
         const cos = await getCOsForCourse(courseCode);
         if (!Array.isArray(cos)) {
           setError('No course outcomes found for this course');
@@ -35,27 +39,64 @@ const useInternalMarks = (courseCode) => {
         }
         setCourseOutcomes(cos);
 
-        // 2. Fetch Consolidated Marks (Merged)
+        // ────────────────────────────────────────────────────────────────
+        // 2. Handle composite section IDs → fetch students from ALL sections
+        // ────────────────────────────────────────────────────────────────
+        const sectionIds = compositeSectionIds && compositeSectionIds.includes('_')
+          ? compositeSectionIds.split('_').map(id => id.trim()).filter(Boolean)
+          : (compositeSectionIds ? [compositeSectionIds] : []);
+
+        const studentMap = new Map(); // deduplicate by regno
+
+        // If no composite IDs provided → fallback to course-level students (if your backend supports it)
+        if (sectionIds.length === 0) {
+          console.warn('No section IDs provided → trying course-level student fetch if available');
+          // You can add fallback logic here if your backend has a course-level student list endpoint
+        }
+
+        for (const sid of sectionIds) {
+          if (!sid) continue;
+
+          try {
+            const studentsData = await getStudentsForSection(courseCode, sid);
+            if (Array.isArray(studentsData)) {
+              studentsData.forEach(student => {
+                if (!studentMap.has(student.regno)) {
+                  studentMap.set(student.regno, { ...student });
+                }
+              });
+            }
+          } catch (secErr) {
+            console.warn(`Failed to fetch students for section ${sid}:`, secErr);
+          }
+        }
+
+        let allStudents = Array.from(studentMap.values());
+
+        if (allStudents.length === 0) {
+          console.warn('No students found in any of the sections');
+        }
+
+        // 3. Fetch consolidated CO marks (course-level – should cover students from all sections)
         const marksData = await getStudentCOMarks(courseCode);
 
         if (!marksData || !Array.isArray(marksData.students)) {
-          console.warn('No students found for course:', courseCode);
-          setStudents([]);
+          console.warn('No consolidated marks found for course:', courseCode);
+          // Still show students even without marks
+          setStudents(allStudents.map(s => ({ ...s, marks: {} })));
           setLoading(false);
           return;
         }
 
-        // 3. Process Students & Normalize IDs
-        const processedStudents = marksData.students.map(student => {
+        // 4. Normalize marks to use CO IDs (same logic as before)
+        const processedStudents = allStudents.map(student => {
           const marksByCoId = {};
-          
-          if (student.marks) {
-            // student.marks is keyed by CO Number (e.g., "CO1")
-            Object.entries(student.marks).forEach(([coNum, markData]) => {
-              // We must find the Primary CO that matches this CO Number
-              // This aligns marks from "Course B" to "Course A" IDs
+
+          const studentMarks = marksData.students.find(m => m.regno === student.regno);
+
+          if (studentMarks && studentMarks.marks) {
+            Object.entries(studentMarks.marks).forEach(([coNum, markData]) => {
               const primaryCO = cos.find(c => c.coNumber === coNum);
-              
               if (primaryCO) {
                 marksByCoId[primaryCO.coId] = Number(markData.consolidatedMark || 0);
               }
@@ -64,7 +105,7 @@ const useInternalMarks = (courseCode) => {
 
           return {
             ...student,
-            marks: marksByCoId // Now all marks use Primary CO IDs
+            marks: marksByCoId
           };
         });
 
@@ -81,7 +122,7 @@ const useInternalMarks = (courseCode) => {
     };
 
     fetchData();
-  }, [courseCode]);
+  }, [courseCode, compositeSectionIds]);
 
   const calculateInternalMarks = (regno) => {
     const student = students.find((s) => s.regno === regno);
@@ -97,7 +138,6 @@ const useInternalMarks = (courseCode) => {
     let expSum = 0, expCount = 0;
 
     courseOutcomes.forEach((co) => {
-      // Now we can safely use co.coId because we normalized it above
       const mark = parseFloat(student.marks[co.coId]);
 
       if (!isNaN(mark)) {
@@ -130,7 +170,7 @@ const useInternalMarks = (courseCode) => {
     return { avgTheory, avgPractical, avgExperiential, finalAvg };
   };
 
-  const handleExportCourseWiseCsv = async (courseCode) => {
+  const handleExportCourseWiseCsv = async () => {
     try {
       setError('');
       await exportCourseWiseCsv(courseCode);
