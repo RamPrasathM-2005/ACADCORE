@@ -1,4 +1,3 @@
-// controllers/studentNptelController.js
 import db from "../models/index.js";
 import catchAsync from "../utils/catchAsync.js";
 import { Op } from "sequelize";
@@ -18,6 +17,9 @@ const {
   User
 } = db;
 
+// Helper to safely get current user ID (handles both 'id' from JWT and 'userId' naming)
+const getCurrentUserId = (req) => req.user?.id || req.user?.userId;
+
 /**
  * Utility: Get Student Registration Number from User Session
  */
@@ -33,8 +35,12 @@ const getRegNo = async (userId) => {
 };
 
 export const getNptelCourses = catchAsync(async (req, res) => {
+  const userId = getCurrentUserId(req);
+  if (!userId) {
+    return res.status(401).json({ status: "failure", message: "User not authenticated" });
+  }
+
   const { semesterId } = req.query;
-  const userId = req.user.id;
 
   if (!semesterId) {
     return res.status(400).json({ status: "failure", message: "semesterId is required" });
@@ -42,13 +48,11 @@ export const getNptelCourses = catchAsync(async (req, res) => {
 
   const regno = await getRegNo(userId);
 
-  // 1. Fetch available NPTEL courses
   const courses = await NptelCourse.findAll({
     where: { semesterId, isActive: 'YES' },
     order: [['courseTitle', 'ASC']]
   });
 
-  // 2. Fetch student's current enrollments for these courses
   const enrollments = await StudentNptelEnrollment.findAll({
     where: {
       regno,
@@ -59,7 +63,6 @@ export const getNptelCourses = catchAsync(async (req, res) => {
 
   const enrolledIds = new Set(enrollments.map(e => e.nptelCourseId));
 
-  // 3. Map "isEnrolled" status
   const enriched = courses.map(c => ({
     ...c.toJSON(),
     isEnrolled: enrolledIds.has(c.nptelCourseId)
@@ -69,8 +72,12 @@ export const getNptelCourses = catchAsync(async (req, res) => {
 });
 
 export const enrollNptel = catchAsync(async (req, res) => {
+  const userId = getCurrentUserId(req);
+  if (!userId) {
+    return res.status(401).json({ status: "failure", message: "User not authenticated" });
+  }
+
   const { semesterId, nptelCourseIds } = req.body;
-  const userId = req.user.id;
 
   if (!semesterId || !Array.isArray(nptelCourseIds) || nptelCourseIds.length === 0) {
     return res.status(400).json({ status: "failure", message: "Invalid input data" });
@@ -80,11 +87,9 @@ export const enrollNptel = catchAsync(async (req, res) => {
 
   const transaction = await sequelize.transaction();
   try {
-    // Validate Semester
     const sem = await Semester.findOne({ where: { semesterId, isActive: 'YES' }, transaction });
     if (!sem) throw new Error("Invalid or inactive semester");
 
-    // Validate Courses exist in this semester
     const validCourses = await NptelCourse.findAll({
       where: {
         nptelCourseId: { [Op.in]: nptelCourseIds },
@@ -98,7 +103,6 @@ export const enrollNptel = catchAsync(async (req, res) => {
       throw new Error("One or more courses are invalid for this semester");
     }
 
-    // Perform bulk enrollment
     let enrolledCount = 0;
     for (const courseId of nptelCourseIds) {
       const [record, created] = await StudentNptelEnrollment.findOrCreate({
@@ -117,7 +121,11 @@ export const enrollNptel = catchAsync(async (req, res) => {
 });
 
 export const getStudentNptelEnrollments = catchAsync(async (req, res) => {
-  const userId = req.user.id;
+  const userId = getCurrentUserId(req);
+  if (!userId) {
+    return res.status(401).json({ status: "failure", message: "User not authenticated" });
+  }
+
   const regno = await getRegNo(userId);
 
   const enrollments = await StudentNptelEnrollment.findAll({
@@ -130,8 +138,6 @@ export const getStudentNptelEnrollments = catchAsync(async (req, res) => {
     order: [[Semester, 'semesterNumber', 'DESC'], [NptelCourse, 'courseTitle', 'ASC']]
   });
 
-  // Since StudentGrade isn't directly associated with Enrollment (it's linked via courseCode),
-  // we fetch grades separately and merge
   const courseCodes = enrollments.map(e => e.NptelCourse.courseCode);
   const grades = await StudentGrade.findAll({ where: { regno, courseCode: { [Op.in]: courseCodes } } });
   const gradeMap = new Map(grades.map(g => [g.courseCode, g.grade]));
@@ -154,8 +160,12 @@ export const getStudentNptelEnrollments = catchAsync(async (req, res) => {
 });
 
 export const requestCreditTransfer = catchAsync(async (req, res) => {
+  const userId = getCurrentUserId(req);
+  if (!userId) {
+    return res.status(401).json({ status: "failure", message: "User not authenticated" });
+  }
+
   const { enrollmentId, decision, remarks } = req.body;
-  const userId = req.user.id;
 
   if (!['accepted', 'rejected'].includes(decision)) {
     return res.status(400).json({ status: "failure", message: "Invalid decision" });
@@ -163,20 +173,17 @@ export const requestCreditTransfer = catchAsync(async (req, res) => {
 
   const regno = await getRegNo(userId);
 
-  // 1. Verify Enrollment
   const enrollment = await StudentNptelEnrollment.findOne({
     where: { enrollmentId, regno },
     include: [{ model: NptelCourse }]
   });
   if (!enrollment) return res.status(404).json({ status: "failure", message: "Enrollment not found" });
 
-  // 2. Get Imported Grade
   const gradeRecord = await StudentGrade.findOne({
     where: { regno, courseCode: enrollment.NptelCourse.courseCode }
   });
   if (!gradeRecord) return res.status(400).json({ status: "failure", message: "Grade not imported yet" });
 
-  // 3. Upsert into Credit Transfer
   await NptelCreditTransfer.upsert({
     enrollmentId,
     regno,
@@ -194,9 +201,11 @@ export const requestCreditTransfer = catchAsync(async (req, res) => {
 });
 
 export const getOecPecProgress = catchAsync(async (req, res) => {
-  const userId = req.user.id;
+  const userId = getCurrentUserId(req);
+  if (!userId) {
+    return res.status(401).json({ status: "failure", message: "User not authenticated" });
+  }
 
-  // 1. Get Core Info
   const student = await StudentDetails.findOne({
     where: { [Op.or]: [{ registerNumber: req.user.userNumber }, { studentId: userId }] },
     include: [{ model: Department, as: 'department' }]
@@ -204,13 +213,11 @@ export const getOecPecProgress = catchAsync(async (req, res) => {
 
   if (!student) return res.status(404).json({ status: "failure", message: "Student not found" });
 
-  // Find Batch/Regulation
   const batch = await Batch.findOne({ 
     where: { batch: student.batch, branch: student.department.Deptacronym, isActive: 'YES' } 
   });
   if (!batch || !batch.regulationId) return res.status(404).json({ status: "failure", message: "Regulation not assigned" });
 
-  // 2. Count Requirements from Regulation
   const required = await RegulationCourse.findAll({
     where: { regulationId: batch.regulationId, category: { [Op.in]: ['OEC', 'PEC'] }, isActive: 'YES' },
     attributes: ['category', [sequelize.fn('COUNT', sequelize.col('category')), 'count']],
@@ -220,7 +227,6 @@ export const getOecPecProgress = catchAsync(async (req, res) => {
   const requiredMap = { OEC: 0, PEC: 0 };
   required.forEach(r => requiredMap[r.category] = parseInt(r.get('count')));
 
-  // 3. Count Accepted NPTEL Credits
   const nptel = await NptelCreditTransfer.findAll({
     where: { regno: student.registerNumber, studentStatus: 'accepted' },
     include: [{ model: NptelCourse, attributes: ['type'] }],
@@ -235,7 +241,6 @@ export const getOecPecProgress = catchAsync(async (req, res) => {
     if (type) nptelMap[type] = parseInt(r.get('count'));
   });
 
-  // 4. Count Allocated College Electives
   const college = await StudentElectiveSelection.findAll({
     where: { regno: student.registerNumber, status: 'allocated' },
     include: [{ model: Course, where: { category: { [Op.in]: ['OEC', 'PEC'] } } }],
@@ -267,5 +272,5 @@ export const getOecPecProgress = catchAsync(async (req, res) => {
   });
 });
 
-// Alias for requestCreditTransfer per your original code
+// Alias (unchanged)
 export const studentNptelCreditDecision = requestCreditTransfer;

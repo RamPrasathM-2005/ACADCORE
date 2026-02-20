@@ -1,4 +1,3 @@
-// controllers/studentEnrollmentViewController.js
 import db from "../models/index.js";
 import catchAsync from "../utils/catchAsync.js";
 import { Op } from "sequelize";
@@ -15,10 +14,22 @@ const {
   Section 
 } = db;
 
+// Helper to safely get current user ID (handles both 'id' from JWT and 'userId' naming)
+const getCurrentUserId = (req) => req.user?.id || req.user?.userId;
+
 export const getStudentEnrollments = catchAsync(async (req, res) => {
+  // Defensive check: ensure user is authenticated (optional but recommended)
+  const currentUserId = getCurrentUserId(req);
+  if (!currentUserId) {
+    return res.status(401).json({ 
+      status: "failure", 
+      message: "Not authenticated - please login" 
+    });
+  }
+
   const { batch, dept, sem } = req.query;
 
-  // 1. Validation Logic
+  // 1. Validation Logic (unchanged)
   if (sem) {
     const semNum = parseInt(sem, 10);
     if (isNaN(semNum) || semNum < 1 || semNum > 8) {
@@ -32,12 +43,12 @@ export const getStudentEnrollments = catchAsync(async (req, res) => {
     return res.status(400).json({ status: 'failure', message: 'Invalid dept acronym.' });
   }
 
-  // 2. Querying via StudentCourse (The intersection table)
+  // 2. Querying via StudentCourse (unchanged)
   const rows = await StudentCourse.findAll({
     include: [
       {
         model: StudentDetails,
-        required: true, // INNER JOIN
+        required: true,
         where: {
           ...(batch && { batch }),
           ...(sem && { semester: sem })
@@ -74,16 +85,13 @@ export const getStudentEnrollments = catchAsync(async (req, res) => {
       }
     ],
     order: [
-        [StudentDetails, 'registerNumber', 'ASC'],
-        [Course, 'courseCode', 'ASC']
+      [StudentDetails, 'registerNumber', 'ASC'],
+      [Course, 'courseCode', 'ASC']
     ]
   });
 
-  // 3. Flattening the data
-  // Since one Course + Section can have a Staff assigned in StaffCourse table, 
-  // we look up the staff for each record.
+  // 3. Flattening the data (unchanged logic)
   const enrollments = await Promise.all(rows.map(async (row) => {
-    // Find the staff assigned to this specific course and section
     const staffAssignment = await StaffCourse.findOne({
       where: { 
         courseId: row.courseId, 
