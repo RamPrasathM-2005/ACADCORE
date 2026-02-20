@@ -46,11 +46,19 @@ const useMarkAllocation = (courseCode, sectionId) => {
         setLoading(false);
         return;
       }
+
       try {
         setError('');
         setLoading(true);
 
-        // Fetch partitions
+        // ────────────────────────────────────────────────────────────────
+        // Handle composite section IDs (e.g. "8_9" → ["8", "9"])
+        // ────────────────────────────────────────────────────────────────
+        const sectionIds = sectionId.includes('_')
+          ? sectionId.split('_').map(id => id.trim()).filter(Boolean)
+          : [sectionId];
+
+        // Fetch partitions (usually same for the course)
         const parts = await getCoursePartitions(courseCode);
         console.log('getCoursePartitions response:', parts);
         setPartitions(parts);
@@ -80,29 +88,50 @@ const useMarkAllocation = (courseCode, sectionId) => {
         );
         setCourseOutcomes(cosWithTools);
 
-        // Fetch students
-        const studentsData = await getStudentsForSection(courseCode, sectionId);
-        console.log('getStudentsForSection response:', studentsData);
-        if (!Array.isArray(studentsData)) {
-          console.error('Error: getStudentsForSection did not return an array:', studentsData);
-          setError('No students found for this course section');
-          setStudents([]);
-          setLoading(false);
-          return;
+        // ────────────────────────────────────────────────────────────────
+        // Fetch students from ALL sections → merge / deduplicate by regno
+        // ────────────────────────────────────────────────────────────────
+        const studentMap = new Map(); // key = regno, value = student object
+
+        for (const sid of sectionIds) {
+          try {
+            const studentsData = await getStudentsForSection(courseCode, sid);
+            console.log(`getStudentsForSection(${sid}) response:`, studentsData);
+
+            if (Array.isArray(studentsData)) {
+              studentsData.forEach(student => {
+                if (!studentMap.has(student.regno)) {
+                  studentMap.set(student.regno, {
+                    ...student,
+                    marks: {},
+                    consolidatedMarks: {}
+                  });
+                }
+              });
+            }
+          } catch (secErr) {
+            console.warn(`Failed to fetch students for section ${sid}:`, secErr);
+          }
         }
 
-        // Fetch CO marks from StudentCOMarks
-        const coMarks = await getStudentCOMarks(courseCode);
-        console.log('getStudentCOMarks response:', coMarks);
+        let allStudents = Array.from(studentMap.values());
 
-        // Fetch all tool marks once per tool (outside student loop)
+        if (allStudents.length === 0) {
+          setError('No students found in any of the selected sections');
+        }
+
+        // Fetch CO marks from StudentCOMarks (course-level)
+        const coMarksResponse = await getStudentCOMarks(courseCode);
+        console.log('getStudentCOMarks response:', coMarksResponse);
+        const coMarks = coMarksResponse?.data?.students || [];
+
+        // Fetch all tool marks once per tool (course-level)
         const allToolMarks = {};
         for (const co of cosWithTools) {
           for (const tool of co.tools || []) {
             try {
-              // UPDATED: Pass courseCode to handle merged courses
               const marksData = await getStudentMarksForTool(tool.toolId, courseCode);
-              allToolMarks[tool.toolId] = marksData;
+              allToolMarks[tool.toolId] = marksData || [];
             } catch (markErr) {
               console.warn(`Error fetching marks for tool ${tool.toolId}:`, markErr);
               allToolMarks[tool.toolId] = [];
@@ -110,26 +139,28 @@ const useMarkAllocation = (courseCode, sectionId) => {
           }
         }
 
-        // Fetch tool marks and combine with CO marks
-        const studentsWithMarks = studentsData.map((student) => {
+        // Combine everything
+        const studentsWithMarks = allStudents.map((student) => {
           const marks = {};
           const consolidatedMarks = {};
+
           for (const co of cosWithTools) {
-            // Store consolidated mark for this CO
-            const coMark = coMarks.data?.students?.find((m) => m.regno === student.regno);
+            // Consolidated mark for this CO
+            const coMark = coMarks.find((m) => m.regno === student.regno);
             const markData = coMark?.marks?.[co.coNumber];
             consolidatedMarks[co.coId] = markData ? Number(markData.consolidatedMark) : 0;
 
-            // Fetch tool marks from pre-fetched data
+            // Tool marks
             for (const tool of co.tools || []) {
               const toolMarks = allToolMarks[tool.toolId] || [];
               const studentMark = toolMarks.find((m) => m.regno === student.regno);
               marks[tool.toolId] = studentMark ? Number(studentMark.marksObtained) : 0;
             }
           }
+
           return { ...student, marks, consolidatedMarks };
         });
-        
+
         setStudents(studentsWithMarks);
         setLoading(false);
       } catch (err) {
@@ -138,8 +169,13 @@ const useMarkAllocation = (courseCode, sectionId) => {
         setLoading(false);
       }
     };
+
     fetchData();
   }, [courseCode, sectionId]);
+
+  // ────────────────────────────────────────────────────────────────
+  // All your existing functions remain completely unchanged below
+  // ────────────────────────────────────────────────────────────────
 
   const calculateInternalMarks = (regno) => {
     const student = students.find((s) => s.regno === regno);
@@ -277,7 +313,6 @@ const useMarkAllocation = (courseCode, sectionId) => {
       console.error('Error saving partitions:', err);
       const errMsg = err.response?.data?.message || err.message || 'Failed to save partitions';
       if (err.response?.status === 409) {
-        // Handle explicit logic for existing partitions via SweetAlert if needed
         return { success: false, error: 'Partitions already exist' };
       }
       setError(errMsg);
@@ -306,7 +341,6 @@ const useMarkAllocation = (courseCode, sectionId) => {
       setError('');
       const toolsToSave = tempTools.map(({ uniqueId, ...tool }) => tool);
       
-      // UPDATED: Pass courseCode to sync tools across merged courses
       await saveToolsForCO(coId, { tools: toolsToSave }, courseCode);
       
       const updatedTools = await getToolsForCO(coId);
@@ -327,7 +361,6 @@ const useMarkAllocation = (courseCode, sectionId) => {
     try {
       setError('');
       if (tool.toolId) {
-        // UPDATED: Pass courseCode to handle merged course deletions if necessary
         await deleteTool(tool.toolId, courseCode);
       }
       setTempTools((prev) => prev.filter((t) => t.uniqueId !== tool.uniqueId));
@@ -375,10 +408,8 @@ const useMarkAllocation = (courseCode, sectionId) => {
 
     try {
       setError('');
-      // UPDATED: Pass courseCode and sectionId to handle splitting marks across merged courses
       await saveStudentMarksForTool(toolId, { marks }, courseCode, sectionId);
       
-      // UPDATED: Pass courseCode to fetch consolidated marks from all sources
       const updatedMarks = await getStudentMarksForTool(toolId, courseCode);
       
       setStudents((prev) =>
@@ -417,7 +448,6 @@ const useMarkAllocation = (courseCode, sectionId) => {
       setError('');
       const response = await importMarksForTool(selectedTool.toolId, importFile);
       
-      // UPDATED: Pass courseCode
       const updatedMarks = await getStudentMarksForTool(selectedTool.toolId, courseCode);
       
       setStudents((prev) =>

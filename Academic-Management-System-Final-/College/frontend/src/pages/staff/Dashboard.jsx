@@ -34,7 +34,6 @@ class ErrorBoundary extends React.Component {
 }
 
 // --- Professional Theme Generator ---
-// Returns elegant gradients instead of flat colors for a "unique" look
 const getCourseTheme = (index) => {
   const themes = [
     { 
@@ -84,7 +83,6 @@ const Dashboard = () => {
 
   useEffect(() => {
     const fetchCourses = async () => {
-      // 1. CLEAR LOGIC: Check for userId (2), not staffId
       if (!user?.userId) { 
         console.warn("Dashboard: No userId found in user object", user);
         setLoading(false); 
@@ -95,27 +93,24 @@ const Dashboard = () => {
       try {
         console.log("Dashboard: Fetching courses for User ID:", user.userId);
         
-        // 2. CALL API: The ID is usually handled by the JWT token on the backend,
-        // so we don't necessarily need to pass it here, but calling it as is.
         const courseList = await getMyCourses();
         
         console.log("Dashboard: Received data:", courseList);
 
-        // 3. MAP DATA: Ensure fields match your Controller's "groupedMap" output
         const validCourses = Array.isArray(courseList)
           ? courseList.map((course, index) => ({
               ...course,
-              // The controller sends 'id' as the courseCode or joined codes
-              id: course.id || `course-${index}`,
-              // The controller sends 'displayCode'
-              displayId: course.displayCode || course.id,
+              id: course.id || course.mainCourseCode || course.displayCode || `course-${index}`,
+              displayId: course.displayCode || course.id || course.mainCourseCode || 'N/A',
               title: course.title || 'Untitled Course',
               semester: course.semester || 'N/A',
               degree: course.degree || '',
               branch: course.branch || 'General',
+              branches: course.branches || (course.branch ? [course.branch] : []),
               batch: course.batch || 'N/A',
               sectionName: course.sectionName || '',
-              theme: getCourseTheme(index), 
+              compositeSectionIds: course.compositeSectionIds || '',  // keep this field
+              theme: getCourseTheme(index),
             }))
           : [];
 
@@ -129,7 +124,6 @@ const Dashboard = () => {
     };
 
     fetchCourses();
-    // 4. DEPENDENCY: Listen for changes in userId
   }, [user?.userId]);
 
   const filteredCourses = courses.filter((course) => {
@@ -250,11 +244,9 @@ const Dashboard = () => {
                   >
                     {/* Unique Professional Banner */}
                     <div className={`relative h-36 bg-gradient-to-br ${course.theme.gradient} p-5 flex flex-col justify-between overflow-hidden`}>
-                      {/* Abstract Decoration */}
                       <div className="absolute -right-4 -top-8 w-24 h-24 rounded-full bg-white opacity-10 blur-xl"></div>
                       <div className="absolute left-10 -bottom-10 w-32 h-32 rounded-full bg-white opacity-5 blur-2xl"></div>
                       
-                      {/* Glass Badge for ID */}
                       <div className="flex justify-between items-start z-10">
                         <span className={`px-3 py-1 rounded-lg backdrop-blur-md ${course.theme.badge} border border-white/20 text-white text-xs font-bold tracking-wide shadow-sm`}>
                           {course.displayId}
@@ -266,7 +258,6 @@ const Dashboard = () => {
                         )}
                       </div>
 
-                      {/* Info Overlap Hint */}
                       <div className="z-10 text-white/80 text-xs font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity transform translate-y-2 group-hover:translate-y-0">
                          View Details <ArrowRight className="w-3 h-3" />
                       </div>
@@ -284,24 +275,27 @@ const Dashboard = () => {
 
                       <div className="mt-auto space-y-2 border-t border-gray-50 pt-3">
                         <div className="flex items-center text-sm text-slate-600">
-                           <Users className="w-4 h-4 mr-2 text-slate-400" />
-                           <span className="truncate">{course.branch}</span>
+                          <Users className="w-4 h-4 mr-2 text-slate-400" />
+                          <span className="truncate">
+                            {course.branches?.length > 0 
+                              ? course.branches.join(' / ') 
+                              : course.branch}
+                          </span>
                         </div>
                         <div className="flex items-center text-sm text-slate-600">
-                           <Calendar className="w-4 h-4 mr-2 text-slate-400" />
-                           <span>Batch {course.batch}</span>
+                          <Calendar className="w-4 h-4 mr-2 text-slate-400" />
+                          <span>Batch {course.batch}</span>
                         </div>
                       </div>
                     </div>
                   </div>
                 ) : (
-                  // === LIST VIEW (Clean & Linear) ===
+                  // === LIST VIEW ===
                   <div
                     key={course.id}
                     onClick={() => handleCourseClick(course)}
                     className="group bg-white rounded-xl border border-gray-200 p-4 flex flex-col md:flex-row items-center gap-4 hover:shadow-md hover:border-blue-300 transition-all cursor-pointer"
                   >
-                    {/* Small Colored Box */}
                     <div className={`w-16 h-16 rounded-lg bg-gradient-to-br ${course.theme.gradient} flex items-center justify-center text-white font-bold text-xs shadow-sm shrink-0`}>
                       {course.displayId.split('_')[0]}
                     </div>
@@ -311,10 +305,21 @@ const Dashboard = () => {
                         {course.title}
                       </h3>
                       <div className="flex flex-wrap justify-center md:justify-start gap-x-4 gap-y-1 mt-1 text-sm text-slate-500">
-                        <span className="flex items-center gap-1"><GraduationCap className="w-3 h-3" /> {course.degree}</span>
-                        <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {course.branch}</span>
-                        <span className="flex items-center gap-1"><BookOpen className="w-3 h-3" /> {course.semester}</span>
-                        {course.sectionName && <span className="text-blue-600 font-medium">Sec {course.sectionName}</span>}
+                        <span className="flex items-center gap-1">
+                          <GraduationCap className="w-3 h-3" /> {course.degree}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <Users className="w-3 h-3" /> 
+                          {course.branches?.length > 0 
+                            ? course.branches.join(' / ') 
+                            : course.branch}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <BookOpen className="w-3 h-3" /> {course.semester}
+                        </span>
+                        {course.sectionName && (
+                          <span className="text-blue-600 font-medium">Sec {course.sectionName}</span>
+                        )}
                       </div>
                     </div>
 
