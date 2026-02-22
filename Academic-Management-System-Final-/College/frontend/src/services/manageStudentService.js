@@ -16,7 +16,11 @@ const manageStudentsService = {
       if (semestersRes.status !== 200) throw new Error('Failed to load semesters.');
       if (batchesRes.status !== 200) throw new Error('Failed to load batches.');
 
-      console.log('Fetched filter options:', { branches: branchesRes.data.data, semesters: semestersRes.data.data, batches: batchesRes.data.data });
+      console.log('Fetched filter options:', { 
+        branches: branchesRes.data.data, 
+        semesters: semestersRes.data.data, 
+        batches: batchesRes.data.data 
+      });
 
       return {
         branches: branchesRes.data.data || [],
@@ -25,86 +29,88 @@ const manageStudentsService = {
       };
     } catch (err) {
       console.error('Error in fetchFilterOptions:', err);
-      throw new Error(err.message);
+      showErrorToast(err.message || 'Failed to load filter options');
+      throw err;
     }
   },
 
   fetchStudentsAndCourses: async (filters, batches) => {
-  try {
-    const { degree, branch, batch, semester } = filters;
-    const semesterNumber = semester && typeof semester === 'string' && semester.startsWith('Semester ')
-      ? semester.replace('Semester ', '')
-      : '';
+    try {
+      const { degree, branch, batch, semester } = filters;
+      const semesterNumber = semester && typeof semester === 'string' && semester.startsWith('Semester ')
+        ? semester.replace('Semester ', '')
+        : '';
 
-    console.log('fetchStudentsAndCourses - Filters:', { degree, branch, batch, semester, semesterNumber });
+      console.log('fetchStudentsAndCourses - Filters:', { degree, branch, batch, semester, semesterNumber });
 
-    const studentsRes = await api.get(`${API_BASE}/students/search`, {
-      params: {
-        degree,
-        branch,
-        batch,
-        semesterNumber,
-        _t: Date.now(), // Add cache-busting
-      },
-    });
+      const studentsRes = await api.get(`${API_BASE}/students/search`, {
+        params: {
+          degree,
+          branch,
+          batch,
+          semesterNumber,
+          _t: Date.now(), // cache-busting
+        },
+      });
 
-    if (studentsRes.status !== 200 || studentsRes.data.status !== 'success') {
-      throw new Error(studentsRes.data.message || 'Failed to fetch students');
+      if (studentsRes.status !== 200 || studentsRes.data.status !== 'success') {
+        throw new Error(studentsRes.data.message || 'Failed to fetch students');
+      }
+
+      let studentsData = studentsRes.data.studentsData || [];
+      let coursesData = studentsRes.data.coursesData || [];
+
+      console.log('Raw studentsData:', studentsData);
+      console.log('Raw coursesData:', coursesData);
+
+      const cleanedStudents = Array.isArray(studentsData)
+        ? studentsData.map((student) => ({
+            ...student,
+            enrolledCourses: Array.isArray(student.enrolledCourses)
+              ? student.enrolledCourses.map((course) => ({
+                  ...course,
+                  courseId: String(course.courseId),
+                  courseCode: course.courseCode,
+                  staffId: course.staffId ? String(course.staffId).replace(/"/g, '') : '',
+                  staffName: course.staffName && typeof course.staffName === 'string' ? course.staffName.replace(/"/g, '') : 'Not Assigned',
+                  sectionName: course.sectionName && typeof course.sectionName === 'string' ? course.sectionName.replace(/"/g, '') : '',
+                }))
+              : [],
+            selectedElectiveIds: student.selectedElectiveIds?.map(id => String(id)) || [],
+          }))
+        : [];
+
+      coursesData = Array.isArray(coursesData)
+        ? coursesData.map((course) => ({
+            ...course,
+            courseId: String(course.courseId),
+            courseCode: course.courseCode,
+            courseTitle: course.courseTitle || 'Unknown Course',
+            category: course.category,
+            batches: Array.isArray(course.batches)
+              ? course.batches.map((batch, index) => ({
+                  ...batch,
+                  sectionId: String(batch.sectionId),
+                  sectionName: batch.sectionName || `Batch ${index + 1}`,
+                  staffId: batch.staffId ? String(batch.staffId) : '',
+                  staffName: batch.staffName || 'Not Assigned',
+                  enrolled: batch.enrolled || 0,
+                  capacity: batch.capacity || 'N/A',
+                }))
+              : [],
+          }))
+        : [];
+
+      console.log('Cleaned Students Data:', cleanedStudents);
+      console.log('Courses Data:', coursesData);
+
+      return { studentsData: cleanedStudents, coursesData };
+    } catch (err) {
+      console.error('Error in fetchStudentsAndCourses:', err);
+      showErrorToast(err.message || 'Failed to load students and courses');
+      throw err;
     }
-
-    let studentsData = studentsRes.data.studentsData || [];
-    let coursesData = studentsRes.data.coursesData || [];
-
-    console.log('Raw studentsData:', studentsData);
-    console.log('Raw coursesData:', coursesData);
-
-    const cleanedStudents = Array.isArray(studentsData)
-      ? studentsData.map((student) => ({
-          ...student,
-          enrolledCourses: Array.isArray(student.enrolledCourses)
-            ? student.enrolledCourses.map((course) => ({
-                ...course,
-                courseId: String(course.courseId),
-                courseCode: course.courseCode,
-                staffId: course.staffId ? String(course.staffId).replace(/"/g, '') : '',
-                staffName: course.staffName && typeof course.staffName === 'string' ? course.staffName.replace(/"/g, '') : 'Not Assigned',
-                sectionName: course.sectionName && typeof course.sectionName === 'string' ? course.sectionName.replace(/"/g, '') : '',
-              }))
-            : [],
-          selectedElectiveIds: student.selectedElectiveIds?.map(id => String(id)) || [],
-        }))
-      : [];
-
-    coursesData = Array.isArray(coursesData)
-      ? coursesData.map((course) => ({
-          ...course,
-          courseId: String(course.courseId),
-          courseCode: course.courseCode,
-          courseTitle: course.courseTitle || 'Unknown Course',
-          category: course.category,
-          batches: Array.isArray(course.batches)
-            ? course.batches.map((batch, index) => ({
-                ...batch,
-                sectionId: String(batch.sectionId),
-                sectionName: batch.sectionName || `Batch ${index + 1}`,
-                staffId: batch.staffId ? String(batch.staffId) : '',
-                staffName: batch.staffName || 'Not Assigned',
-                enrolled: batch.enrolled || 0,
-                capacity: batch.capacity || 'N/A',
-              }))
-            : [],
-        }))
-      : [];
-
-    console.log('Cleaned Students Data:', cleanedStudents);
-    console.log('Courses Data:', coursesData);
-
-    return { studentsData: cleanedStudents, coursesData };
-  } catch (err) {
-    console.error('Error in fetchStudentsAndCourses:', err);
-    throw new Error(err.message);
-  }
-},
+  },
 
   fetchStudentsByBatchAndSemester: async (branch, batch, semesterNumber) => {
     try {
@@ -117,7 +123,7 @@ const manageStudentsService = {
       return res.data.data;
     } catch (err) {
       console.error('Error in fetchStudentsByBatchAndSemester:', err);
-      showErrorToast(err.message);
+      showErrorToast(err.message || 'Failed to fetch students by batch/semester');
       throw err;
     }
   },
@@ -135,7 +141,7 @@ const manageStudentsService = {
       return res.data;
     } catch (err) {
       console.error('Error in bulkUpdateStudentSemester:', err);
-      showErrorToast(err.message);
+      showErrorToast(err.message || 'Bulk semester update failed');
       throw err;
     }
   },
@@ -151,7 +157,8 @@ const manageStudentsService = {
       return true;
     } catch (err) {
       console.error('Error in unenroll:', err);
-      throw new Error(err.message);
+      showErrorToast(err.message || 'Failed to unenroll student');
+      throw err;
     }
   },
 
@@ -185,7 +192,8 @@ const manageStudentsService = {
       return true;
     } catch (err) {
       console.error('Error in saveAssignments:', err);
-      throw new Error(err.message);
+      showErrorToast(err.message || 'Failed to save course assignments');
+      throw err;
     }
   },
 };

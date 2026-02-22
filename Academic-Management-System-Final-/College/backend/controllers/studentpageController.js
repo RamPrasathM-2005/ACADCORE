@@ -9,13 +9,17 @@ const {
   DayAttendance, Section, StudentCourse, sequelize 
 } = db;
 
-// 1. GET STUDENT ACADEMIC IDS (The function that was missing)
+// Helper to safely get user ID from req.user (handles both id and userId)
+const getCurrentUserId = (req) => req.user?.id || req.user?.userId;
+
+// 1. GET STUDENT ACADEMIC IDS
 export const getStudentAcademicIds = catchAsync(async (req, res) => {
-  if (!req.user || !req.user.userId) {
+  const userId = getCurrentUserId(req);
+  if (!userId) {
     return res.status(401).json({ status: "failure", message: "User not authenticated" });
   }
 
-  const student = await User.findByPk(req.user.userId, {
+  const student = await User.findByPk(userId, {
     include: [{
       model: StudentDetails,
       as: 'studentProfile',
@@ -29,12 +33,11 @@ export const getStudentAcademicIds = catchAsync(async (req, res) => {
 
   const profile = student.studentProfile;
 
-  // Find IDs from other tables based on the profile values
   const [batchRecord, semesterRecord] = await Promise.all([
     Batch.findOne({ where: { batch: profile.batch, isActive: 'YES' } }),
     Semester.findOne({ 
-        where: { semesterNumber: profile.semester, isActive: 'YES' },
-        include: [{ model: Batch, where: { batch: profile.batch } }] 
+      where: { semesterNumber: profile.semester, isActive: 'YES' },
+      include: [{ model: Batch, where: { batch: profile.batch } }] 
     })
   ]);
 
@@ -50,7 +53,10 @@ export const getStudentAcademicIds = catchAsync(async (req, res) => {
 
 // 2. GET OEC/PEC PROGRESS
 export const getOecPecProgress = catchAsync(async (req, res) => {
-  const userId = req.user.userId;
+  const userId = getCurrentUserId(req);
+  if (!userId) {
+    return res.status(401).json({ status: "failure", message: "User not authenticated" });
+  }
 
   const user = await User.findByPk(userId, {
     include: [{ 
@@ -72,14 +78,12 @@ export const getOecPecProgress = catchAsync(async (req, res) => {
   const { registerNumber } = user.studentProfile;
   const { regulationId } = user.studentProfile.batchRecord;
 
-  // Required from Regulation
   const required = await RegulationCourse.findAll({
     where: { regulationId, category: { [Op.in]: ['OEC', 'PEC'] }, isActive: 'YES' },
     attributes: ['category', [sequelize.fn('COUNT', sequelize.col('category')), 'count']],
     group: ['category']
   });
 
-  // Approved NPTEL
   const nptel = await NptelCreditTransfer.findAll({
     where: { regno: registerNumber, studentStatus: 'accepted' },
     include: [{ 
@@ -88,7 +92,6 @@ export const getOecPecProgress = catchAsync(async (req, res) => {
     }]
   });
 
-  // Allocated College Electives
   const college = await StudentElectiveSelection.findAll({
     where: { regno: registerNumber, status: 'allocated' },
     include: [{ model: Course, attributes: ['category'] }]
@@ -116,32 +119,37 @@ export const getOecPecProgress = catchAsync(async (req, res) => {
 
 // 3. GET STUDENT DETAILS (PROFILE)
 export const getStudentDetails = catchAsync(async (req, res) => {
+  const userId = getCurrentUserId(req);
+  if (!userId) {
+    return res.status(401).json({ status: "failure", message: "User not authenticated" });
+  }
+
   const student = await User.findOne({
-    where: { userId: req.user.userId, status: 'Active' },
+    where: { userId, status: 'Active' },
     include: [{
       model: StudentDetails,
       as: 'studentProfile',
       include: [
         { model: Department, as: 'department' },
-        { 
-          model: Batch, 
-          required: false,
-          on: { '$studentProfile.batch$': { [Op.col]: 'studentProfile->Batch.batch' } }
-        }
       ]
     }]
   });
+
+  if (!student) {
+    return res.status(404).json({ status: "failure", message: "Student not found" });
+  }
+
   res.status(200).json({ status: "success", data: student });
 });
 
-// 4. GET ELECTIVE BUCKETS
+// 4. GET ELECTIVE BUCKETS (unchanged – no userId needed)
 export const getElectiveBuckets = catchAsync(async (req, res) => {
   const { semesterId } = req.query;
   const buckets = await ElectiveBucket.findAll({
     where: { semesterId },
     include: [{ 
-        model: ElectiveBucketCourse, 
-        include: [{ model: Course, where: { isActive: 'YES' } }] 
+      model: ElectiveBucketCourse, 
+      include: [{ model: Course, where: { isActive: 'YES' } }] 
     }]
   });
   res.status(200).json({ status: "success", data: buckets });
@@ -149,15 +157,25 @@ export const getElectiveBuckets = catchAsync(async (req, res) => {
 
 // 5. ALLOCATE ELECTIVES
 export const allocateElectives = catchAsync(async (req, res) => {
+  const userId = getCurrentUserId(req);
+  if (!userId) {
+    return res.status(401).json({ status: "failure", message: "User not authenticated" });
+  }
+
+  const user = await User.findByPk(userId, { include: [{ model: StudentDetails, as: 'studentProfile' }] });
+  
+  if (!user?.studentProfile) {
+    return res.status(404).json({ status: "failure", message: "Student profile not found" });
+  }
+
   const { selections } = req.body;
-  const user = await User.findByPk(req.user.userId, { include: [{ model: StudentDetails, as: 'studentProfile' }] });
   
   const data = selections.map(s => ({
     regno: user.studentProfile.registerNumber,
     bucketId: s.bucketId,
     selectedCourseId: s.courseId,
     status: 'allocated',
-    createdBy: req.user.userId
+    createdBy: userId   // ← safe
   }));
 
   await StudentElectiveSelection.bulkCreate(data);
@@ -166,8 +184,18 @@ export const allocateElectives = catchAsync(async (req, res) => {
 
 // 6. ATTENDANCE SUMMARY
 export const getAttendanceSummary = catchAsync(async (req, res) => {
+  const userId = getCurrentUserId(req);
+  if (!userId) {
+    return res.status(401).json({ status: "failure", message: "User not authenticated" });
+  }
+
   const { semesterId } = req.query;
-  const user = await User.findByPk(req.user.userId, { include: [{ model: StudentDetails, as: 'studentProfile' }] });
+  const user = await User.findByPk(userId, { include: [{ model: StudentDetails, as: 'studentProfile' }] });
+
+  if (!user?.studentProfile) {
+    return res.status(404).json({ status: "failure", message: "Student profile not found" });
+  }
+
   const sem = await Semester.findByPk(semesterId);
 
   const stats = await DayAttendance.findAll({
@@ -184,33 +212,54 @@ export const getAttendanceSummary = catchAsync(async (req, res) => {
 
 // 7. GET ENROLLED COURSES
 export const getStudentEnrolledCourses = catchAsync(async (req, res) => {
-    const { semesterId } = req.query;
-    const user = await User.findByPk(req.user.userId, { include: [{ model: StudentDetails, as: 'studentProfile' }] });
+  const userId = getCurrentUserId(req);
+  if (!userId) {
+    return res.status(401).json({ status: "failure", message: "User not authenticated" });
+  }
 
-    const courses = await StudentCourse.findAll({
-        where: { regno: user.studentProfile.registerNumber },
-        include: [{ model: Course, where: semesterId ? { semesterId } : {} }, { model: Section }]
-    });
-    res.status(200).json({ status: "success", data: courses });
+  const { semesterId } = req.query;
+  const user = await User.findByPk(userId, { include: [{ model: StudentDetails, as: 'studentProfile' }] });
+
+  if (!user?.studentProfile) {
+    return res.status(404).json({ status: "failure", message: "Student profile not found" });
+  }
+
+  const courses = await StudentCourse.findAll({
+    where: { regno: user.studentProfile.registerNumber },
+    include: [{ model: Course, where: semesterId ? { semesterId } : {} }, { model: Section }]
+  });
+
+  res.status(200).json({ status: "success", data: courses });
 });
 
-// 8. OTHER REQUIRED EXPORTS
+// 8. OTHER REQUIRED EXPORTS (some unchanged, some fixed)
 export const getMandatoryCourses = catchAsync(async (req, res) => {
   const { semesterId } = req.query;
-  const courses = await Course.findAll({ where: { semesterId, isActive: 'YES', category: { [Op.notIn]: ['PEC', 'OEC'] } } });
+  const courses = await Course.findAll({ 
+    where: { semesterId, isActive: 'YES', category: { [Op.notIn]: ['PEC', 'OEC'] } } 
+  });
   res.status(200).json({ status: "success", data: courses });
 });
 
 export const getSemesters = catchAsync(async (req, res) => {
-    const semesters = await Semester.findAll({ include: [{ model: Batch, where: { isActive: 'YES' } }] });
-    res.status(200).json({ status: "success", data: semesters });
+  const semesters = await Semester.findAll({ 
+    include: [{ model: Batch, where: { isActive: 'YES' } }] 
+  });
+  res.status(200).json({ status: "success", data: semesters });
 });
 
 export const getUserId = catchAsync(async (req, res) => {
-  res.status(200).json({ status: "success", data: { userId: req.user.userId } });
+  const userId = getCurrentUserId(req);
+  if (!userId) {
+    return res.status(401).json({ status: "failure", message: "User not authenticated" });
+  }
+  res.status(200).json({ status: "success", data: { userId } });
 });
 
 export const getElectiveSelections = catchAsync(async (req, res) => {
-    const selections = await StudentElectiveSelection.findAll({ where: { status: 'allocated' }, include: [Course] });
-    res.status(200).json({ status: "success", data: selections });
+  const selections = await StudentElectiveSelection.findAll({ 
+    where: { status: 'allocated' }, 
+    include: [Course] 
+  });
+  res.status(200).json({ status: "success", data: selections });
 });

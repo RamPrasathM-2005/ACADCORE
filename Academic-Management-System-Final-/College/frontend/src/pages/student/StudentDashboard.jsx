@@ -274,7 +274,7 @@ const StudentDashboard = () => {
       </div>
     );
   }
-
+  console.log('Student Details:', studentDetails);
   return (
     <div className="min-h-screen bg-[#F8F9FD] text-slate-800 p-6 font-sans">
       <div className="max-w-[1400px] mx-auto">
@@ -284,7 +284,7 @@ const StudentDashboard = () => {
             <div>
                 <h1 className="text-3xl font-extrabold text-slate-900 tracking-tight">Overview</h1>
                 <p className="text-slate-500 font-medium mt-1">
-                    Welcome back, {studentDetails?.username?.split(' ')[0]}
+                    Welcome back, {studentDetails?.userName?.split(' ')[0]}
                 </p>
             </div>
             

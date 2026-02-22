@@ -37,7 +37,7 @@ router.use(requireAuth);
 router.get("/userid", getUserId);
 
 // Get student profile details
-router.get("/details", getStudentDetails);
+router.get("/details", requireAuth, getStudentDetails);
 
 // Get semesters for student's batch
 router.get("/semesters", getSemesters);

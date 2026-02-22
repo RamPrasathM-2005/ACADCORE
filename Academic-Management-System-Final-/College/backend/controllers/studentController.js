@@ -1,4 +1,3 @@
-// controllers/studentController.js
 import db from "../models/index.js";
 import catchAsync from "../utils/catchAsync.js";
 import { Op } from "sequelize";
@@ -16,46 +15,49 @@ const {
   sequelize 
 } = db;
 
+// Helper to safely get current user ID (handles both 'id' from JWT and 'userId' naming)
+const getCurrentUserId = (req) => req.user?.id || req.user?.userId;
+
 /**
  * Adds a new student - Creates both User and StudentDetails records
  */
 export const addStudent = catchAsync(async (req, res) => {
+  const currentUserId = getCurrentUserId(req);
+  if (!currentUserId) {
+    return res.status(401).json({ status: "failure", message: "Not authenticated - please login" });
+  }
+
   const { rollnumber, name, degree, branch, batch, semesterNumber, email, password } = req.body;
   
   if (!rollnumber || !name || !degree || !branch || !batch || !semesterNumber) {
     return res.status(400).json({ status: "failure", message: "All fields are required" });
   }
 
-  // Start Transaction
   const t = await sequelize.transaction();
 
   try {
-    // 1. Check if student already exists
     const existing = await User.findOne({ where: { userNumber: rollnumber } });
     if (existing) {
       throw new Error("Student with this roll number already exists");
     }
 
-    // 2. Find Batch and Dept
     const batchRecord = await Batch.findOne({
       where: { degree, branch, batch, isActive: 'YES' }
     });
     if (!batchRecord) throw new Error(`Batch ${batch} for ${branch} not found`);
 
-    // 3. Create User Account (for login)
     const newUser = await User.create({
       companyId: 1,
       userNumber: rollnumber,
       userName: name,
-      userMail: email || `${rollnumber}@nec.edu.in`, // Fallback if email not provided
-      password: password || "$2b$10$fCgaFOA0WC5ak9q7H9fMlO2mP9EbFXaH7JzHZNmYgT43I.pWxhSoG", // Default hashed password
-      roleId: 1, // Assuming 1 is Student role
-      departmentId: batchRecord.regulationId ? 2 : batchRecord.Deptid, // Use logical mapping
+      userMail: email || `${rollnumber}@nec.edu.in`,
+      password: password || "$2b$10$fCgaFOA0WC5ak9q7H9fMlO2mP9EbFXaH7JzHZNmYgT43I.pWxhSoG",
+      roleId: 3, 
+      departmentId: batchRecord.regulationId ? 2 : batchRecord.Deptid,
       status: 'Active',
-      createdBy: req.user?.userId
+      createdBy: currentUserId
     }, { transaction: t });
 
-    // 4. Create Student Profile
     await StudentDetails.create({
       companyId: 1,
       studentName: name,
@@ -64,7 +66,7 @@ export const addStudent = catchAsync(async (req, res) => {
       batch: batch,
       semester: semesterNumber,
       pending: true,
-      createdBy: req.user?.userId
+      createdBy: currentUserId
     }, { transaction: t });
 
     await t.commit();
@@ -95,6 +97,11 @@ export const getAllStudents = catchAsync(async (req, res) => {
  * Updates student profile
  */
 export const updateStudent = catchAsync(async (req, res) => {
+  const currentUserId = getCurrentUserId(req);
+  if (!currentUserId) {
+    return res.status(401).json({ status: "failure", message: "Not authenticated - please login" });
+  }
+
   const { rollnumber } = req.params;
   const { name, semesterNumber, batch, status } = req.body;
 
@@ -102,15 +109,13 @@ export const updateStudent = catchAsync(async (req, res) => {
   if (!student) return res.status(404).json({ status: "failure", message: "Student not found" });
 
   await sequelize.transaction(async (t) => {
-    // Update Profile
     await student.update({
       studentName: name || student.studentName,
       semester: semesterNumber || student.semester,
       batch: batch || student.batch,
-      updatedBy: req.user?.userId
+      updatedBy: currentUserId
     }, { transaction: t });
 
-    // Update User table name if changed
     if (name) {
       await User.update({ userName: name }, { where: { userNumber: rollnumber }, transaction: t });
     }
@@ -139,7 +144,6 @@ export const getStudentEnrolledCourses = catchAsync(async (req, res) => {
     ]
   });
 
-  // Fetch staff names for these courses/sections
   const data = await Promise.all(enrollments.map(async (e) => {
     const staffAlloc = await StaffCourse.findOne({
       where: { courseId: e.courseId, sectionId: e.sectionId },
@@ -187,6 +191,11 @@ export const getSemesters = catchAsync(async (req, res) => {
  * Delete student and their user account
  */
 export const deleteStudent = catchAsync(async (req, res) => {
+  const currentUserId = getCurrentUserId(req);
+  if (!currentUserId) {
+    return res.status(401).json({ status: "failure", message: "Not authenticated - please login" });
+  }
+
   const { rollnumber } = req.params;
 
   const result = await sequelize.transaction(async (t) => {
@@ -212,7 +221,6 @@ export const getBatches = catchAsync(async (req, res) => {
   res.status(200).json({ status: "success", data: batches });
 });
 
-
 /**
  * Gets a single student's full profile by roll number
  */
@@ -229,7 +237,7 @@ export const getStudentByRollNumber = catchAsync(async (req, res) => {
       },
       {
         model: User,
-        as: 'creator', // Matches association in StudentDetails model
+        as: 'creator',
         attributes: ['userName']
       }
     ]
@@ -242,7 +250,6 @@ export const getStudentByRollNumber = catchAsync(async (req, res) => {
     });
   }
 
-  // To maintain compatibility with your frontend naming conventions
   const responseData = {
     ...student.toJSON(),
     rollnumber: student.registerNumber,
@@ -263,12 +270,11 @@ export const getStudentsByCourseAndSection = catchAsync(async (req, res) => {
 
   if (!courseCode || !sectionId) {
     return res.status(400).json({ 
-        status: "failure", 
-        message: "courseCode and sectionId are required" 
+      status: "failure", 
+      message: "courseCode and sectionId are required" 
     });
   }
 
-  // 1. Find the course ID from the code
   const course = await Course.findOne({ 
     where: { courseCode, isActive: 'YES' } 
   });
@@ -277,7 +283,6 @@ export const getStudentsByCourseAndSection = catchAsync(async (req, res) => {
     return res.status(404).json({ status: 'failure', message: 'Course not found' });
   }
 
-  // 2. Find all student enrollments
   const enrollments = await StudentCourse.findAll({
     where: { 
       courseId: course.courseId, 
@@ -295,7 +300,6 @@ export const getStudentsByCourseAndSection = catchAsync(async (req, res) => {
     ]
   });
 
-  // 3. Format data for frontend
   const data = enrollments.map(e => ({
     rollnumber: e.regno,
     name: e.StudentDetail?.studentName,

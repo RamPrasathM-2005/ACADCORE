@@ -1,4 +1,3 @@
-// controllers/studentEnrollmentViewController.js
 import db from "../models/index.js";
 import catchAsync from "../utils/catchAsync.js";
 
@@ -13,7 +12,19 @@ const {
   Department 
 } = db;
 
+// Helper to safely get current user ID (handles both 'id' from JWT and 'userId' naming)
+const getCurrentUserId = (req) => req.user?.id || req.user?.userId;
+
 export const getStudentEnrollments = catchAsync(async (req, res) => {
+  // Defensive check: ensure user is authenticated (optional but recommended)
+  const currentUserId = getCurrentUserId(req);
+  if (!currentUserId) {
+    return res.status(401).json({ 
+      status: "failure", 
+      message: "Not authenticated - please login" 
+    });
+  }
+
   const { batch, dept, sem } = req.query;
 
   // ... (Validation logic remains the same) ...
@@ -57,8 +68,8 @@ export const getStudentEnrollments = catchAsync(async (req, res) => {
       }
     ],
     order: [
-        [StudentDetails, 'registerNumber', 'ASC'],
-        [Course, 'courseCode', 'ASC']
+      [StudentDetails, 'registerNumber', 'ASC'],
+      [Course, 'courseCode', 'ASC']
     ]
   });
 

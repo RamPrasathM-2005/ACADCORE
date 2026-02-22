@@ -1,17 +1,19 @@
-// src/services/studentService.js
 import { api } from './authService';
+
+// Optional: Add a helper to handle common response checks
+const handleResponse = (response) => {
+  if (response.data?.status === 'success') {
+    return response.data.data;
+  }
+  throw new Error(response.data?.message || 'Request failed');
+};
 
 export const fetchStudentDetails = async () => {
   try {
     const response = await api.get("/student/details");
-    console.log(response);
-    if (response.data.status === "success") {
-      return response.data.data;
-    } else {
-      throw new Error(
-        response.data.message || "Failed to fetch student details"
-      );
-    }
+    console.log('fetchStudentDetails full response:', response);
+
+    return handleResponse(response);
   } catch (error) {
     console.error("fetchStudentDetails error:", error);
     throw new Error(
@@ -27,11 +29,8 @@ export const fetchSemesters = async (batchYear) => {
       params: { batchYear }
     });
     console.log('Semesters response:', response.data);
-    if (response.data.status === 'success') {
-      return response.data.data;
-    } else {
-      throw new Error(response.data.message || "Failed to fetch semesters");
-    }
+
+    return handleResponse(response);
   } catch (error) {
     console.error("fetchSemesters error:", error);
     throw new Error(
@@ -45,13 +44,7 @@ export const fetchMandatoryCourses = async (semesterId) => {
     const response = await api.get('/student/courses/mandatory', {
       params: { semesterId }
     });
-    if (response.data.status === 'success') {
-      return response.data.data;
-    } else {
-      throw new Error(
-        response.data.message || "Failed to fetch mandatory courses"
-      );
-    }
+    return handleResponse(response);
   } catch (error) {
     console.error("fetchMandatoryCourses error:", error);
     throw new Error(
@@ -65,13 +58,7 @@ export const fetchElectiveBuckets = async (semesterId) => {
     const response = await api.get('/student/elective-buckets', {
       params: { semesterId }
     });
-    if (response.data.status === 'success') {
-      return response.data.data;
-    } else {
-      throw new Error(
-        response.data.message || "Failed to fetch elective buckets"
-      );
-    }
+    return handleResponse(response);
   } catch (error) {
     console.error("fetchElectiveBuckets error:", error);
     throw new Error(
@@ -86,11 +73,7 @@ export const allocateElectives = async (semesterId, selections) => {
       semesterId,
       selections,
     });
-    if (response.data.status === 'success') {
-      return response.data;
-    } else {
-      throw new Error(response.data.message || "Failed to allocate electives");
-    }
+    return handleResponse(response);
   } catch (error) {
     console.error("allocateElectives error:", error);
     throw new Error(
@@ -106,13 +89,7 @@ export const fetchEnrolledCourses = async (semesterId) => {
       params: { semesterId }
     });
     console.log('Enrolled courses response:', response.data);
-    if (response.data.status === 'success') {
-      return response.data.data;
-    } else {
-      throw new Error(
-        response.data.message || "Failed to fetch enrolled courses"
-      );
-    }
+    return handleResponse(response);
   } catch (error) {
     console.error("fetchEnrolledCourses error:", error);
     throw new Error(
@@ -127,13 +104,7 @@ export const fetchAttendanceSummary = async (semesterId) => {
     const response = await api.get('/student/attendance-summary', {
       params: { semesterId }
     });
-    if (response.data.status === 'success') {
-      return response.data.data;
-    } else {
-      throw new Error(
-        response.data.message || "Failed to fetch attendance summary"
-      );
-    }
+    return handleResponse(response);
   } catch (error) {
     console.error("fetchAttendanceSummary error:", error);
     throw new Error(
@@ -145,29 +116,26 @@ export const fetchAttendanceSummary = async (semesterId) => {
 export const fetchUserId = async () => {
   try {
     const response = await api.get("/student/userid");
-    if (response.data.status === "success") {
-      return response.data.data.Userid;
-    } else {
-      throw new Error(response.data.message || "Failed to fetch Userid");
-    }
+    return handleResponse(response)?.userId; // adjust key if response uses "Userid"
   } catch (error) {
     console.error("fetchUserId error:", error);
-    throw new Error(error.response?.data?.message || "Failed to fetch Userid");
+    throw new Error(
+      error.response?.data?.message || "Failed to fetch Userid"
+    );
   }
 };
-
 
 export const fetchNptelCourses = async (semesterId) => {
   try {
     const response = await api.get('/student/nptel-courses', {
       params: { semesterId }
     });
-    if (response.data.status === 'success') {
-      return response.data.data;
-    }
-    throw new Error(response.data.message);
+    return handleResponse(response);
   } catch (error) {
-    throw new Error(error.response?.data?.message || 'Failed to fetch NPTEL courses');
+    console.error("fetchNptelCourses error:", error);
+    throw new Error(
+      error.response?.data?.message || 'Failed to fetch NPTEL courses'
+    );
   }
 };
 
@@ -177,48 +145,48 @@ export const enrollNptelCourses = async (semesterId, nptelCourseIds) => {
       semesterId,
       nptelCourseIds
     });
-    if (response.data.status === 'success') {
-      return response.data;
-    }
-    throw new Error(response.data.message);
+    return handleResponse(response);
   } catch (error) {
-    throw new Error(error.response?.data?.message || 'Failed to enroll in NPTEL courses');
+    console.error("enrollNptelCourses error:", error);
+    throw new Error(
+      error.response?.data?.message || 'Failed to enroll in NPTEL courses'
+    );
   }
 };
 
 export const fetchStudentNptelEnrollments = async () => {
   try {
     const response = await api.get('/student/nptel-enrollments');
-    if (response.data.status === 'success') {
-      return response.data.data;
-    }
-    throw new Error(response.data.message);
+    return handleResponse(response);
   } catch (error) {
-    throw new Error(error.response?.data?.message || 'Failed to fetch NPTEL enrollments');
+    console.error("fetchStudentNptelEnrollments error:", error);
+    throw new Error(
+      error.response?.data?.message || 'Failed to fetch NPTEL enrollments'
+    );
   }
 };
 
 export const requestNptelCreditTransfer = async (enrollmentId) => {
   try {
     const response = await api.post('/student/nptel-credit-transfer', { enrollmentId });
-    if (response.data.status === 'success') {
-      return response.data;
-    }
-    throw new Error(response.data.message);
+    return handleResponse(response);
   } catch (error) {
-    throw new Error(error.response?.data?.message || 'Failed to request credit transfer');
+    console.error("requestNptelCreditTransfer error:", error);
+    throw new Error(
+      error.response?.data?.message || 'Failed to request credit transfer'
+    );
   }
 };
 
 export const fetchOecPecProgress = async () => {
   try {
     const response = await api.get('/student/oec-pec-progress');
-    if (response.data.status === 'success') {
-      return response.data.data;
-    }
-    throw new Error(response.data.message);
+    return handleResponse(response);
   } catch (error) {
-    throw new Error(error.response?.data?.message || 'Failed to fetch OEC/PEC progress');
+    console.error("fetchOecPecProgress error:", error);
+    throw new Error(
+      error.response?.data?.message || 'Failed to fetch OEC/PEC progress'
+    );
   }
 };
 
@@ -227,17 +195,11 @@ export const fetchStudentAcademicIds = async () => {
     const response = await api.get("/student/academic-ids");
     console.log("Academic IDs response:", response);
 
-    if (response.data.status === "success") {
-      return response.data.data; // { deptId, batchId, semesterId }
-    } else {
-      throw new Error(
-        response.data.message || "Failed to fetch academic IDs"
-      );
-    }
+    return handleResponse(response); // returns { deptId, batchId, semesterId }
   } catch (error) {
     console.error("fetchStudentAcademicIds error:", error);
     throw new Error(
       error.response?.data?.message || "Failed to fetch academic IDs"
     );
   }
-}
+};
