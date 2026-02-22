@@ -7,23 +7,23 @@ const API_BASE = 'http://localhost:4000/api/admin';
 
 const CourseCard = ({ 
   course, 
-  sections, 
+  courseBatches,               // ← we use this now
   getCourseTypeColor, 
   handleCourseClick, 
   handleDeleteCourse, 
   openEditModal 
 }) => {
-  // course.semesterDetails contains the Semester object
   const sem = course.semesterDetails;
   
-  // Calculate batch count based on the sections state provided by parent
-  const numBatches = sections[String(course.courseId)] 
-    ? Object.keys(sections[String(course.courseId)]).length 
+  // Safe batch count
+  const numBatches = courseBatches && typeof courseBatches === 'object' 
+    ? Object.keys(courseBatches).length 
     : 0;
 
   const handleDelete = async (e) => {
     e.stopPropagation();
-    if (!confirm('Are you sure you want to delete this course?')) return;
+    if (!window.confirm('Are you sure you want to delete this course?')) return;
+
     try {
       await api.delete(`${API_BASE}/courses/${course.courseId}`);
       toast.success('Course deleted successfully');
@@ -40,7 +40,6 @@ const CourseCard = ({
       onClick={() => handleCourseClick(course)}
     >
       <div className="p-6">
-        {/* Course Code & Type Badge */}
         <div className="flex justify-between items-start mb-4">
           <div className="flex-1">
             <h3 className="text-xl font-semibold text-gray-900 mb-1">{course.courseCode}</h3>
@@ -51,16 +50,14 @@ const CourseCard = ({
           </span>
         </div>
 
-        {/* Course Details Info */}
         <div className="space-y-2 mb-4">
           <div className="flex items-center text-sm text-gray-500">
             <BookOpen size={16} className="mr-2" />
-            <span>Credits: {course.credits}</span>
+            <span>Credits: {course.credits || 'N/A'}</span>
           </div>
           
           <div className="flex items-center text-sm text-gray-500">
             <Calendar size={16} className="mr-2" />
-            {/* FIXED: Accessed branch via sem.Batch.branch */}
             <span>
               Semester: {sem ? `${sem.semesterNumber} (${sem.Batch?.branch || 'N/A'})` : 'N/A'}
             </span>
@@ -73,11 +70,10 @@ const CourseCard = ({
 
           <div className="flex items-center text-sm text-gray-500">
             <Settings size={16} className="mr-2" />
-            <span>Category: {course.category}</span>
+            <span>Category: {course.category || 'N/A'}</span>
           </div>
         </div>
 
-        {/* Action Buttons */}
         <div className="flex justify-between pt-2 border-t border-gray-50 mt-4">
           <button
             onClick={handleDelete}

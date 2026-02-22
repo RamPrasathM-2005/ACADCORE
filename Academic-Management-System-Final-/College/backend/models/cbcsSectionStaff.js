@@ -1,5 +1,7 @@
 // models/cbcsSectionStaff.js
-export default (sequelize, DataTypes) => {
+import { DataTypes } from "sequelize";
+
+export default (sequelize) => {
   const CBCSSectionStaff = sequelize.define('CBCSSectionStaff', {
     id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     cbcs_subject_id: { type: DataTypes.INTEGER, allowNull: false },
@@ -12,9 +14,23 @@ export default (sequelize, DataTypes) => {
   });
 
   CBCSSectionStaff.associate = (models) => {
-    CBCSSectionStaff.belongsTo(models.CBCSSubject, { foreignKey: 'cbcs_subject_id' });
-    CBCSSectionStaff.belongsTo(models.Section, { foreignKey: 'sectionId' });
-    CBCSSectionStaff.belongsTo(models.User, { foreignKey: 'staffId' });
+    // 1. Association with Subject
+    if (models.CBCSSubject) {
+        CBCSSectionStaff.belongsTo(models.CBCSSubject, { foreignKey: 'cbcs_subject_id', as: 'subject' });
+    }
+
+    // 2. Association with Section
+    if (models.Section) {
+        CBCSSectionStaff.belongsTo(models.Section, { foreignKey: 'sectionId', as: 'section' });
+    }
+
+    // 3. Association with User (Staff) - CRITICAL FIX
+    if (models.User) {
+        // We add "as: 'staff'" so you can include it easily in controllers
+        CBCSSectionStaff.belongsTo(models.User, { foreignKey: 'staffId', as: 'staff' });
+    } else {
+        console.error("Critical: 'User' model missing when associating CBCSSectionStaff");
+    }
   };
 
   return CBCSSectionStaff;
