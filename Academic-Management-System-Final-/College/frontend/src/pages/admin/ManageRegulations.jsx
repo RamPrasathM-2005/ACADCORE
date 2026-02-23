@@ -16,6 +16,7 @@ const ManageRegulations = () => {
   const [availableCourses, setAvailableCourses] = useState([]);
   const [selectedDept, setSelectedDept] = useState('');
   const [selectedRegulation, setSelectedRegulation] = useState('');
+  const [newRegulationYear, setNewRegulationYear] = useState('');
   const [selectedVertical, setSelectedVertical] = useState('');
   const [selectedCourses, setSelectedCourses] = useState([]);
   const [file, setFile] = useState(null);
@@ -112,6 +113,39 @@ const ManageRegulations = () => {
       fetchAvailableCourses(regulationId);
     } else {
       setVerticals([]);
+    }
+  };
+
+  const handleAddRegulationYear = async () => {
+    if (!selectedDept) {
+      toast.error('Please select a department first');
+      return;
+    }
+
+    const year = Number(newRegulationYear);
+    if (!Number.isInteger(year) || year < 2000 || year > 2100) {
+      toast.error('Enter a valid regulation year');
+      return;
+    }
+
+    try {
+      const res = await api.post(`${API_BASE}/regulations`, {
+        Deptid: Number(selectedDept),
+        regulationYear: year,
+      });
+
+      const created = res?.data?.data;
+      toast.success(res?.data?.message || 'Regulation year added');
+      setNewRegulationYear('');
+      await fetchRegulations(selectedDept);
+      if (created?.regulationId) {
+        setSelectedRegulation(String(created.regulationId));
+        fetchVerticals(created.regulationId);
+        fetchAvailableCourses(created.regulationId);
+      }
+    } catch (err) {
+      const message = err.response?.data?.message || 'Failed to add regulation year';
+      toast.error(message);
     }
   };
 
@@ -483,6 +517,26 @@ const ManageRegulations = () => {
                     </option>
                   ))}
                 </select>
+                <div className="mt-3 flex gap-2">
+                  <input
+                    type="number"
+                    min="2000"
+                    max="2100"
+                    value={newRegulationYear}
+                    onChange={(e) => setNewRegulationYear(e.target.value)}
+                    placeholder="Add year (e.g., 2026)"
+                    disabled={!selectedDept}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all disabled:bg-gray-100 disabled:cursor-not-allowed"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddRegulationYear}
+                    disabled={!selectedDept || !newRegulationYear}
+                    className="shrink-0 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  >
+                    Add
+                  </button>
+                </div>
               </div>
             </div>
           </div>

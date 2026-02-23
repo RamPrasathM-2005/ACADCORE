@@ -85,6 +85,7 @@ import {
 } from "../../controllers/electiveBucketController.js";
 import {
   getAllRegulations,
+  createRegulation,
   importRegulationCourses,
   createVertical,
   getVerticalsByRegulation,
@@ -215,7 +216,7 @@ router.get("/consolidated-marks", requireAuth, getConsolidatedMarks);
 /* =========================
 📌 Regulation Routes
 ========================= */
-router.route('/regulations').get(requireAuth, getAllRegulations);
+router.route('/regulations').get(requireAuth, getAllRegulations).post(requireAuth, createRegulation);
 router.route('/regulations/courses').post(requireAuth, importRegulationCourses);
 router.route('/regulations/verticals').post(requireAuth, createVertical);
 router.route('/regulations/:regulationId/verticals').get(requireAuth, getVerticalsByRegulation);

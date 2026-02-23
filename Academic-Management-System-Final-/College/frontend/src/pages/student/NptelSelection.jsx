@@ -4,6 +4,7 @@ import { getUserRole } from '../../utils/auth';
 import { toast } from 'react-hot-toast';
 import { api } from '../../services/authService';
 import {
+  fetchStudentDetails,
   fetchSemesters,
   fetchNptelCourses,
   enrollNptelCourses,
@@ -34,11 +35,18 @@ const NptelSelection = () => {
     const loadData = async () => {
       try {
         setLoading(true);
-        const sems = await fetchSemesters();
+        const studentData = await fetchStudentDetails();
+        const sems = await fetchSemesters(studentData?.studentProfile?.batch);
         setSemesters(sems);
 
-        const active = sems.find(s => s.isActive === 'YES') || sems[0];
-        setSelectedSemester(active?.semesterId || '');
+        const studentSemesterNumber = Number(studentData?.studentProfile?.semester);
+        const byStudentSemester = sems.find(
+          s => Number(s.semesterNumber) === studentSemesterNumber
+        );
+        const active = sems.find(s => s.isActive === 'YES');
+        const fallback = sems[0];
+        const defaultSemester = byStudentSemester || active || fallback;
+        setSelectedSemester(defaultSemester?.semesterId || '');
 
         const prog = await fetchOecPecProgress();
         setProgress(prog);

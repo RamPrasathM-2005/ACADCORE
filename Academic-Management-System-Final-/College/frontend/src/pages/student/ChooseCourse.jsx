@@ -47,12 +47,18 @@ const ChooseCourse = () => {
         const studentData = await fetchStudentDetails(userId);
         setStudentDetails(studentData);
 
-        const semesterData = await fetchSemesters(String(studentData.batchYear));
+        const batchYear = studentData?.studentProfile?.batch;
+        const semesterData = await fetchSemesters(batchYear ? String(batchYear) : undefined);
         setSemesters(semesterData);
 
-        const activeSemester = semesterData.find((sem) => sem.isActive === 'YES') || semesterData[0];
-        if (activeSemester) {
-          setSelectedSemester(activeSemester.semesterId.toString());
+        const studentSemesterNumber = Number(studentData?.studentProfile?.semester);
+        const byStudentSemester = semesterData.find(
+          (sem) => Number(sem.semesterNumber) === studentSemesterNumber
+        );
+        const activeSemester = semesterData.find((sem) => sem.isActive === 'YES');
+        const defaultSemester = byStudentSemester || activeSemester || semesterData[0];
+        if (defaultSemester) {
+          setSelectedSemester(defaultSemester.semesterId.toString());
         }
 
         const prog = await fetchOecPecProgress();

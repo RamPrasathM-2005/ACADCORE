@@ -53,66 +53,119 @@ export const getStudentAcademicIds = catchAsync(async (req, res) => {
 
 // 2. GET OEC/PEC PROGRESS
 export const getOecPecProgress = catchAsync(async (req, res) => {
-  const userId = getCurrentUserId(req);
+  const userId = req.user?.id || req.user?.userId;
   if (!userId) {
     return res.status(401).json({ status: "failure", message: "User not authenticated" });
   }
 
-  const user = await User.findByPk(userId, {
-    include: [{ 
-      model: StudentDetails, 
-      as: 'studentProfile',
-      include: [{ 
-        model: Batch, 
-        required: true,
-        on: { '$studentProfile.batch$': { [Op.col]: 'studentProfile->batchRecord.batch' } },
-        as: 'batchRecord'
-      }]
-    }]
-  });
+  // Step 1: Get the current user's registerNumber reliably
+  let regno;
 
-  if (!user?.studentProfile?.batchRecord) {
-    return res.status(404).json({ status: "failure", message: "Academic record or Regulation not found" });
+  // If JWT already has userNumber (future-proof)
+  if (req.user?.userNumber) {
+    regno = req.user.userNumber;
+  } else {
+    // Fallback: fetch from users table
+    const currentUser = await User.findByPk(userId, { 
+      attributes: ['userNumber'] 
+    });
+    
+    if (!currentUser || !currentUser.userNumber) {
+      return res.status(404).json({ 
+        status: "failure", 
+        message: "User or register number not found" 
+      });
+    }
+    regno = currentUser.userNumber;
   }
 
-  const { registerNumber } = user.studentProfile;
-  const { regulationId } = user.studentProfile.batchRecord;
+  // Step 2: Fetch student profile using registerNumber (most reliable key)
+  const student = await StudentDetails.findOne({
+    where: { registerNumber: regno },
+    include: [{ model: Department, as: 'department' }]
+  });
 
+  if (!student) {
+    return res.status(404).json({ 
+      status: "failure", 
+      message: `Student profile not found for register number ${regno}` 
+    });
+  }
+
+  // Step 3: Now safely get batch using student's data
+  const batch = await Batch.findOne({ 
+    where: { 
+      batch: student.batch, 
+      branch: student.department?.Deptacronym || '',  // safe chaining
+      isActive: 'YES' 
+    } 
+  });
+
+  if (!batch || !batch.regulationId) {
+    return res.status(404).json({ 
+      status: "failure", 
+      message: "Batch or regulation not assigned for this student" 
+    });
+  }
+
+  // The rest of your original logic (unchanged from here)
   const required = await RegulationCourse.findAll({
-    where: { regulationId, category: { [Op.in]: ['OEC', 'PEC'] }, isActive: 'YES' },
+    where: { regulationId: batch.regulationId, category: { [Op.in]: ['OEC', 'PEC'] }, isActive: 'YES' },
     attributes: ['category', [sequelize.fn('COUNT', sequelize.col('category')), 'count']],
     group: ['category']
   });
 
+  const requiredMap = { OEC: 0, PEC: 0 };
+  required.forEach(r => requiredMap[r.category] = parseInt(r.get('count')));
+
   const nptel = await NptelCreditTransfer.findAll({
-    where: { regno: registerNumber, studentStatus: 'accepted' },
-    include: [{ 
-      model: StudentNptelEnrollment, 
-      include: [{ model: NptelCourse, attributes: ['type'] }] 
-    }]
+    where: { regno: student.registerNumber, studentStatus: 'accepted' },
+    include: [{ model: NptelCourse, attributes: ['type'] }],
+    attributes: [[sequelize.fn('COUNT', sequelize.col('NptelCreditTransfer.transferId')), 'count']],
+    includeIgnoreAttributes: false,
+    group: ['NptelCourse.type']
+  });
+
+  const nptelMap = { OEC: 0, PEC: 0 };
+  nptel.forEach(r => {
+    const type = r.NptelCourse?.type;
+    if (type) nptelMap[type] = parseInt(r.get('count'));
   });
 
   const college = await StudentElectiveSelection.findAll({
-    where: { regno: registerNumber, status: 'allocated' },
-    include: [{ model: Course, attributes: ['category'] }]
+    where: { regno: student.registerNumber, status: 'allocated' },
+    include: [{
+      model: Course,
+      attributes: [],
+      where: { category: { [Op.in]: ['OEC', 'PEC'] } }
+    }],
+    group: ['Course.category'],
+    attributes: [
+      [sequelize.col('Course.category'), 'category'],
+      [sequelize.fn('COUNT', sequelize.col('Course.category')), 'count']
+    ]
   });
 
-  const reqMap = { OEC: 0, PEC: 0 };
-  required.forEach(r => reqMap[r.category] = parseInt(r.get('count')));
+  const collegeMap = { OEC: 0, PEC: 0 };
+  college.forEach(r => {
+    const cat = r.get('category');
+    if (cat) collegeMap[cat] = parseInt(r.get('count'));
+  });
 
-  const compMap = { OEC: 0, PEC: 0 };
-  nptel.forEach(n => { if(n.StudentNptelEnrollment?.NptelCourse) compMap[n.StudentNptelEnrollment.NptelCourse.type]++ });
-  college.forEach(c => { if(c.Course) compMap[c.Course.category]++ });
+  const totalOec = nptelMap.OEC + collegeMap.OEC;
+  const totalPec = nptelMap.PEC + collegeMap.PEC;
 
   res.status(200).json({
     status: "success",
     data: {
-      required: reqMap,
-      completed: compMap,
+      required: requiredMap,
+      completed: { OEC: totalOec, PEC: totalPec },
       remaining: {
-        OEC: Math.max(0, reqMap.OEC - compMap.OEC),
-        PEC: Math.max(0, reqMap.PEC - compMap.PEC)
-      }
+        OEC: Math.max(0, requiredMap.OEC - totalOec),
+        PEC: Math.max(0, requiredMap.PEC - totalPec)
+      },
+      fromNptel: nptelMap,
+      fromCollege: collegeMap
     }
   });
 });
@@ -145,14 +198,49 @@ export const getStudentDetails = catchAsync(async (req, res) => {
 // 4. GET ELECTIVE BUCKETS (unchanged – no userId needed)
 export const getElectiveBuckets = catchAsync(async (req, res) => {
   const { semesterId } = req.query;
+  if (!semesterId) {
+    return res.status(400).json({ status: "failure", message: "semesterId is required" });
+  }
+
   const buckets = await ElectiveBucket.findAll({
     where: { semesterId },
-    include: [{ 
-      model: ElectiveBucketCourse, 
-      include: [{ model: Course, where: { isActive: 'YES' } }] 
-    }]
+    attributes: ["bucketId", "bucketNumber", "bucketName"],
+    include: [{
+      model: ElectiveBucketCourse,
+      attributes: ["id", "courseId"],
+      include: [{
+        model: Course,
+        required: false,
+        where: { isActive: "YES" },
+        attributes: ["courseId", "courseCode", "courseTitle", "credits", "category"]
+      }]
+    }],
+    order: [["bucketNumber", "ASC"]]
   });
-  res.status(200).json({ status: "success", data: buckets });
+
+  const formatted = buckets.map((bucket) => {
+    const b = bucket.toJSON();
+    const courses = (b.ElectiveBucketCourses || [])
+      .map((item) => item.Course)
+      .filter(Boolean)
+      .map((course) => ({
+        courseId: course.courseId,
+        courseCode: course.courseCode,
+        courseTitle: course.courseTitle,
+        credits: course.credits,
+        category: course.category
+      }));
+
+    return {
+      bucketId: b.bucketId,
+      bucketNumber: b.bucketNumber,
+      bucketName: b.bucketName,
+      requiredSelections: courses.length > 0 ? 1 : 0,
+      courses
+    };
+  });
+
+  res.status(200).json({ status: "success", data: formatted });
 });
 
 // 5. ALLOCATE ELECTIVES
