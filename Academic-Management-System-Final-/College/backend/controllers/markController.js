@@ -404,7 +404,18 @@ export const getConsolidatedMarks = catchAsync(async (req, res) => {
   const s = await Semester.findOne({ where: { batchId: b.batchId, semesterNumber: sem } });
   const students = await StudentDetails.findAll({ where: { departmentId: d.Deptid, batch, semester: sem } });
   const courses = await Course.findAll({ where: { semesterId: s.semesterId }, include: [CoursePartitions] });
-  const cos = await CourseOutcome.findAll({ where: { courseId: courses.map(c => c.courseId) }, include: [COType] });
+  const courseCodes = [...new Set(courses.map(c => c.courseCode))];
+  const relatedCourses = await Course.findAll({
+    where: { courseCode: courseCodes },
+    attributes: ['courseId', 'courseCode']
+  });
+  const courseIdsByCode = relatedCourses.reduce((acc, c) => {
+    if (!acc[c.courseCode]) acc[c.courseCode] = [];
+    acc[c.courseCode].push(c.courseId);
+    return acc;
+  }, {});
+  const relatedCourseIds = relatedCourses.map(c => c.courseId);
+  const cos = await CourseOutcome.findAll({ where: { courseId: relatedCourseIds }, include: [COType] });
   const marks = await StudentCoMarks.findAll({ where: { regno: students.map(st => st.registerNumber), coId: cos.map(c => c.coId) } });
   const map = {};
   students.forEach(st => {
@@ -412,7 +423,11 @@ export const getConsolidatedMarks = catchAsync(async (req, res) => {
     courses.forEach(c => {
       map[st.registerNumber][c.courseCode] = { theory: '0.00', practical: '0.00', experiential: '0.00' };
       ['THEORY', 'PRACTICAL', 'EXPERIENTIAL'].forEach(t => {
-        const tc = cos.filter(co => co.courseId === c.courseId && co.COType?.coType === t);
+        let tc = cos.filter(co => co.courseId === c.courseId && co.COType?.coType === t);
+        if (!tc.length) {
+          const fallbackIds = courseIdsByCode[c.courseCode] || [];
+          tc = cos.filter(co => fallbackIds.includes(co.courseId) && co.COType?.coType === t);
+        }
         if (tc.length) {
           const sum = tc.reduce((acc, co) => acc + parseFloat(marks.find(m => m.regno === st.registerNumber && m.coId === co.coId)?.consolidatedMark || 0), 0);
           map[st.registerNumber][c.courseCode][t.toLowerCase()] = (sum / tc.length).toFixed(2);

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, BookOpen, Upload } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { ClipLoader } from 'react-spinners'; // Import the spinner
+import { ClipLoader } from 'react-spinners';
 import { api } from '../../../services/authService';
 import * as XLSX from 'xlsx';
 import Filters from './Filters.jsx';
@@ -42,7 +42,7 @@ const ManageCourses = () => {
   const [selectedBatch, setSelectedBatch] = useState(null);
   const [selectedSemesterId, setSelectedSemesterId] = useState('');
   const [newBatchForm, setNewBatchForm] = useState({ numberOfBatches: 1 });
-  const [updateKey, setUpdateKey] = useState(0); // Force re-render
+  const [updateKey, setUpdateKey] = useState(0);
 
   const courseTypes = ['THEORY', 'PRACTICAL', 'INTEGRATED', 'EXPERIENTIAL LEARNING'];
 
@@ -83,7 +83,6 @@ const ManageCourses = () => {
       for (const course of allCourses) {
         try {
           const sectionRes = await api.get(`${API_BASE}/courses/${course.courseId}/sections`);
-          // console.log(`ManageCourses: Sections API response for course ${course.courseId}:`, sectionRes.data);
           if (sectionRes.data?.status === 'success' && Array.isArray(sectionRes.data.data)) {
             const batches = sectionRes.data.data.reduce((acc, section) => {
               if (section.sectionName) {
@@ -92,10 +91,8 @@ const ManageCourses = () => {
               }
               return acc;
             }, {});
-            sectionsData[String(course.courseId)] = batches;
 
             const staffRes = await api.get(`${API_BASE}/courses/${course.courseId}/staff`);
-            // console.log(`ManageCourses: Staff API response for course ${course.courseId}:`, staffRes.data);
             if (staffRes.data?.status === 'success' && Array.isArray(staffRes.data.data)) {
               staffRes.data.data.forEach(alloc => {
                 const normalizedName = alloc.sectionName.replace('BatchBatch', 'Batch');
@@ -115,16 +112,13 @@ const ManageCourses = () => {
             sectionsData[String(course.courseId)] = batches;
           } else {
             sectionsData[String(course.courseId)] = {};
-            // console.warn(`ManageCourses: No sections found for course ${course.courseId}`);
           }
         } catch (err) {
           sectionsData[String(course.courseId)] = {};
-          // console.error(`ManageCourses: Error fetching sections for course ${course.courseId}:`, err.response?.data || err);
-          // toast.warn(`Failed to fetch sections for course ${course.courseCode}: ${err.response?.data?.message || err.message}`);
         }
       }
       setSections(sectionsData);
-      
+
       const usersRes = await api.get(`${API_BASE}/users`);
       let staffData = usersRes.data.data.filter(user => user.departmentId);
       staffData = staffData.map(user => ({
@@ -173,26 +167,22 @@ const ManageCourses = () => {
         api.get(`${API_BASE}/courses/${course.courseId}/sections`),
         new Promise((_, reject) => setTimeout(() => reject(new Error('Request timed out')), 5000))
       ]);
-      
-      if (sectionRes.data?.status !== 'success' || !Array.isArray(sectionRes.data.data)) {
-        setSections(prev => {
-          const newState = { ...prev, [String(courseId)]: {} };
-          return newState;
-        });
+
+      let batches = {};
+      if (sectionRes.data?.status === 'success' && Array.isArray(sectionRes.data.data)) {
+        batches = sectionRes.data.data.reduce((acc, section) => {
+          if (section.sectionName) {
+            const normalizedName = section.sectionName.replace('BatchBatch', 'Batch');
+            acc[normalizedName] = [];
+          }
+          return acc;
+        }, {});
+      } else {
         toast.warn('No sections found for this course');
-        return;
       }
 
-      const batches = sectionRes.data.data.reduce((acc, section) => {
-        if (section.sectionName) {
-          const normalizedName = section.sectionName.replace('BatchBatch', 'Batch');
-          acc[normalizedName] = [];
-        }
-        return acc;
-      }, {});
-
       const staffRes = await api.get(`${API_BASE}/courses/${course.courseId}/staff`);
-      
+
       if (staffRes.data?.status === 'success' && Array.isArray(staffRes.data.data)) {
         staffRes.data.data.forEach(alloc => {
           const normalizedName = alloc.sectionName.replace('BatchBatch', 'Batch');
@@ -210,18 +200,22 @@ const ManageCourses = () => {
         });
       }
 
-      setSections(prev => {
-        const newState = { ...prev, [String(courseId)]: batches };
-        setUpdateKey(prev => prev + 1); 
-        return newState;
-      });
+      // Always create fresh object to force prop change
+      setSections(prev => ({
+        ...prev,
+        [String(courseId)]: { ...batches }   // ← fresh nested object
+      }));
+
+      setUpdateKey(prev => prev + 1);
+
       setSelectedCourse(prev => ({
         ...prev,
         courseId,
         courseCode: course.courseCode,
         allocations: staffRes.data.data || [],
       }));
-      toast.success('Fetched course staff successfully');
+
+      toast.success('Course batches & staff refreshed');
     } catch (err) {
       const message = err.response?.data?.message || err.message || 'Error fetching course staff';
       toast.error(message);
@@ -232,10 +226,12 @@ const ManageCourses = () => {
       } else if (message.includes('Unknown column')) {
         toast.warn('Database configuration issue detected. Please check server settings.');
       }
-      setSections(prev => {
-        const newState = { ...prev, [String(courseId)]: {} };
-        return newState;
-      });
+
+      setSections(prev => ({
+        ...prev,
+        [String(courseId)]: {}   // fresh empty object
+      }));
+      setUpdateKey(prev => prev + 1);
     } finally {
       setFetchingSections(false);
     }
@@ -247,15 +243,16 @@ const ManageCourses = () => {
   };
 
   const handleDeleteBatch = async (courseId, sectionName) => {
-    // Optimistic update
     setSections(prev => {
       const normalizedName = sectionName.replace('BatchBatch', 'Batch');
       const updatedBatches = { ...prev[String(courseId)] };
       delete updatedBatches[normalizedName];
-      const newState = { ...prev, [String(courseId)]: updatedBatches };
-      setUpdateKey(prev => prev + 1);
-      return newState;
+      return {
+        ...prev,
+        [String(courseId)]: updatedBatches
+      };
     });
+    setUpdateKey(prev => prev + 1);
 
     await fetchCourseStaff(courseId);
   };
@@ -316,8 +313,10 @@ const ManageCourses = () => {
   };
 
   const handleAddBatch = async () => {
-    await fetchCourseStaff(selectedCourse.courseId);
-    setUpdateKey(prev => prev + 1);
+    if (selectedCourse?.courseId) {
+      await fetchCourseStaff(selectedCourse.courseId);
+      setUpdateKey(prev => prev + 1);
+    }
   };
 
   const openEditModal = (course) => {
@@ -326,6 +325,7 @@ const ManageCourses = () => {
   };
 
   const handleImport = async (file, semesterId) => {
+    // ... (unchanged - keeping your original import logic)
     if (!file) {
       toast.error('No file selected');
       return;
@@ -373,7 +373,7 @@ const ManageCourses = () => {
             return;
           }
 
-          const coursesData = jsonData.slice(1).filter(row => row && row.length >= 12).map((row, index) => {
+          const coursesData = jsonData.slice(1).filter(row => row && row.length >= 12).map((row) => {
             const rawCategory = row[3]?.toString() || '';
             const category = rawCategory.trim().toUpperCase();
 
@@ -448,7 +448,6 @@ const ManageCourses = () => {
     return 'THEORY';
   };
 
-  // UPDATED LOADING STATE
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
@@ -491,9 +490,7 @@ const ManageCourses = () => {
               Add Course
             </button>
             <button
-              onClick={() => {
-                setShowImportModal(true);
-              }}
+              onClick={() => setShowImportModal(true)}
               className="bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white px-6 py-3 rounded-xl flex items-center gap-2 transition-all duration-200 transform hover:scale-[1.02] hover:shadow-lg font-semibold"
             >
               <Upload size={20} />
@@ -508,12 +505,14 @@ const ManageCourses = () => {
           courseTypes={courseTypes}
         />
       </div>
-      <div className="w-full max-w-7xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+
+      {/* Grid with key to force re-render when updateKey changes */}
+      <div className="w-full max-w-7xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" key={updateKey}>
         {displayCourses.map(course => (
           <CourseCard
             key={course.courseId}
             course={course}
-            sections={sections}
+            courseBatches={sections[String(course.courseId)] || {}}
             getCourseTypeColor={getCourseTypeColor}
             handleCourseClick={handleCourseClick}
             handleDeleteCourse={handleDeleteCourse}
@@ -521,6 +520,7 @@ const ManageCourses = () => {
           />
         ))}
       </div>
+
       {displayCourses.length === 0 && (
         <div className="text-center py-12">
           <BookOpen size={48} className="mx-auto text-gray-400 mb-4" />
@@ -528,6 +528,7 @@ const ManageCourses = () => {
           <p className="text-gray-500">Try adjusting your filters or create a new course.</p>
         </div>
       )}
+
       {showCreateModal && (
         <SelectSemesterModal
           semesters={semesters}

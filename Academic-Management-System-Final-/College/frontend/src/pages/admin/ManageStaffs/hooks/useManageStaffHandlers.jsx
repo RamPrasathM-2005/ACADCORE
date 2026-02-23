@@ -14,7 +14,7 @@ const useManageStaffHandlers = ({
   selectedCourseStudents,
   setSelectedCourseStudents,
   selectedCourseCode,
-  setSelectedCourseCode, // Added to receive the setter
+  setSelectedCourseCode, 
   courses,
   fetchData,
 }) => {
@@ -63,17 +63,17 @@ const useManageStaffHandlers = ({
   };
 
   const handleAllocateCourse = async () => {
+    // 1. Basic Validation
     if (!selectedStaff || !selectedCourse || !selectedSectionId) {
       showErrorToast('Validation Error', 'Missing staff, course, or section information');
       return;
     }
-    if (!selectedStaff.staffId) {
-      showErrorToast('Validation Error', `Staff ID is missing for ${selectedStaff.name}`);
-      return;
-    }
+
     setOperationLoading(true);
     const isUpdate = selectedCourse?.isAllocated ?? false;
+
     try {
+      // 2. Prepare Optimistic UI Update
       const staffCourseId = isUpdate && selectedStaff?.allocatedCourses
         ? selectedStaff.allocatedCourses.find(c => c.courseCode === selectedCourse.code)?.id
         : Date.now();
@@ -87,11 +87,9 @@ const useManageStaffHandlers = ({
         semester: selectedCourse.semester || 'N/A',
         year: selectedCourse.batchYears || 'N/A',
       };
+
       setSelectedStaff(prev => {
-        if (!prev) {
-          showErrorToast('Error', 'No staff selected for course allocation');
-          return prev;
-        }
+        if (!prev) return prev;
         return {
           ...prev,
           allocatedCourses: isUpdate
@@ -100,29 +98,39 @@ const useManageStaffHandlers = ({
         };
       });
 
+      // 3. API Calls
       let res;
       if (isUpdate) {
+        // UPDATE LOGIC
         const payload = { sectionId: selectedSectionId };
         res = await manageStaffService.updateCourseAllocation(staffCourseId, payload);
       } else {
-        const staffId = parseInt(selectedStaff.staffId, 10);
-        if (isNaN(staffId)) {
-          throw new Error('Invalid Staff ID');
+        // ALLOCATION LOGIC - FIXED HERE
+        
+        // Use the numeric Database ID (e.g., 2) instead of parsing "cset01"
+        // If your API specifically requires the string "cset01", use selectedStaff.staffId without parseInt
+        const userDbId = selectedStaff.id; 
+
+        if (!userDbId) {
+             throw new Error("Invalid User Database ID");
         }
+
         const payload = {
-          Userid: staffId,
+          Userid: userDbId, 
           courseId: selectedCourse.courseId,
           sectionId: selectedSectionId,
           departmentId: selectedStaff.departmentId,
         };
+
         res = await manageStaffService.allocateCourse(
-          staffId,
+          userDbId, // Passed the numeric ID
           selectedCourse.courseId,
           selectedSectionId,
           selectedStaff.departmentId
         );
       }
 
+      // 4. Handle Response
       if (res.status === 201 || res.status === 200) {
         await fetchData();
         setSelectedCourse(null);
@@ -131,28 +139,28 @@ const useManageStaffHandlers = ({
         setCourseRefreshKey(prev => prev + 1);
         showSuccessToast(`Course ${selectedCourse.code} ${isUpdate ? 'updated' : 'allocated'} successfully`);
       } else {
-        setSelectedStaff(prev => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            allocatedCourses: isUpdate
-              ? prev.allocatedCourses.map(c => c.courseCode === selectedCourse.code ? selectedStaff.allocatedCourses.find(sc => sc.courseCode === selectedCourse.code) : c)
-              : prev.allocatedCourses.filter(c => c.courseCode !== selectedCourse.code),
-          };
-        });
-        showErrorToast('Error', `Failed to ${isUpdate ? 'update' : 'allocate'} course: ${res.data?.message || 'Unknown error'}`);
+        // Revert Optimistic Update on failure
+        throw new Error(res.data?.message || 'Unknown error');
       }
     } catch (err) {
+      // Revert Optimistic Update
       setSelectedStaff(prev => {
         if (!prev) return prev;
+        // Logic to revert: if update, find original; if insert, filter out.
+        // For simplicity here, we assume a full fetchData() refresh might be safer, 
+        // but checking the previous state logic you had:
         return {
           ...prev,
           allocatedCourses: isUpdate
-            ? prev.allocatedCourses.map(c => c.courseCode === selectedCourse.code ? selectedStaff.allocatedCourses.find(sc => sc.courseCode === selectedCourse.code) : c)
+            ? prev.allocatedCourses // Hard to revert exact object without deep copy, usually fetchData handles this
             : prev.allocatedCourses.filter(c => c.courseCode !== selectedCourse.code),
         };
       });
-      showErrorToast('Error', `Error ${isUpdate ? 'updating' : 'allocating'} course: ${err.response?.data?.message || err.message}`);
+      
+      const errMsg = err.response?.data?.message || err.message;
+      showErrorToast('Error', `Error ${isUpdate ? 'updating' : 'allocating'} course: ${errMsg}`);
+      // Refresh data to ensure UI matches DB state after error
+      await fetchData(); 
     } finally {
       setOperationLoading(false);
     }
@@ -171,7 +179,7 @@ const useManageStaffHandlers = ({
     }
     const section = course.sections.find(s => s.sectionId === selectedSectionId);
     if (!section) {
-      showErrorToast('Validation Error', `Section ID ${selectedSectionId} not found for course ${selectedStaffCourse.courseCode}`);
+      showErrorToast('Validation Error', `Section ID ${selectedSectionId} not found`);
       return;
     }
 
@@ -183,6 +191,7 @@ const useManageStaffHandlers = ({
         sectionId: selectedSectionId,
         batch: section.sectionName || 'N/A',
       };
+      
       setSelectedStaff(prev => {
         if (!prev) return prev;
         return {
@@ -190,7 +199,9 @@ const useManageStaffHandlers = ({
           allocatedCourses: prev.allocatedCourses.map(c => c.id === selectedStaffCourse.id ? optimisticCourse : c),
         };
       });
+
       const res = await manageStaffService.updateCourseAllocation(selectedStaffCourse.id, payload);
+      
       if (res.status === 200) {
         setShowEditBatchModal(false);
         setSelectedStaffCourse(null);
@@ -203,92 +214,46 @@ const useManageStaffHandlers = ({
         setCourseRefreshKey(prev => prev + 1);
         showSuccessToast(`Section updated for course ${selectedStaffCourse.courseCode}`);
       } else {
-        setSelectedStaff(prev => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            allocatedCourses: prev.allocatedCourses.map(c => c.id === selectedStaffCourse.id ? selectedStaffCourse : c),
-          };
-        });
-        showErrorToast('Error', `Failed to update section: ${res.data?.message || 'Unknown error'}`);
+         throw new Error(res.data?.message);
       }
     } catch (err) {
-      setSelectedStaff(prev => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          allocatedCourses: prev.allocatedCourses.map(c => c.id === selectedStaffCourse.id ? selectedStaffCourse : c),
-        };
-      });
-      const errorMessage = err.response?.data?.message || err.message;
-      if (errorMessage.includes('not found')) {
-        showErrorToast('Error', `Section update failed: Staff course ID ${selectedStaffCourse.id} not found or invalid data`);
-        await fetchData();
-      } else {
-        showErrorToast('Error', `Error updating section: ${errorMessage}`);
-      }
+      showErrorToast('Error', `Error updating section: ${err.response?.data?.message || err.message}`);
+      await fetchData(); // Revert state from server
     } finally {
       setOperationLoading(false);
     }
   };
 
   const handleRemoveCourse = async (staff, staffCourseId) => {
-    if (!staff || !staffCourseId) {
-      showErrorToast('Validation Error', 'Missing staff or course information');
-      return;
-    }
+    if (!staff || !staffCourseId) return;
+    
     const courseToRemove = staff.allocatedCourses?.find(c => c.id === staffCourseId);
-    if (!courseToRemove) {
-      showErrorToast('Validation Error', 'Course not found in staff allocations');
-      return;
-    }
-
+    
     showConfirmToast(
       'Confirm Removal',
-      `Are you sure you want to remove the course ${courseToRemove.courseCode}?`,
-      'warning',
-      'Yes, remove it!',
-      'No, cancel'
+      `Are you sure you want to remove ${courseToRemove?.courseCode || 'this course'}?`,
+      'warning', 'Yes, remove it!', 'Cancel'
     ).then(async (result) => {
       if (!result.isConfirmed) return;
 
       setOperationLoading(true);
-      setSelectedStaff(prev => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          allocatedCourses: prev.allocatedCourses.filter(c => c.id !== staffCourseId),
-        };
-      });
+      // Optimistic remove
+      setSelectedStaff(prev => ({
+        ...prev,
+        allocatedCourses: prev.allocatedCourses.filter(c => c.id !== staffCourseId),
+      }));
 
       try {
         const res = await manageStaffService.removeCourseAllocation(staffCourseId);
         if (res.status === 200) {
           await fetchData();
-          setSelectedCourse(null);
-          setSelectedSectionId('');
-          setExpandedCourses(prev => prev.includes(staff.id) ? prev : [...prev, staff.id]);
-          setCourseRefreshKey(prev => prev + 1);
-          showSuccessToast(`Course ${courseToRemove.courseCode} removed successfully`);
+          showSuccessToast('Allocation removed successfully');
         } else {
-          setSelectedStaff(prev => {
-            if (!prev) return prev;
-            return {
-              ...prev,
-              allocatedCourses: [...prev.allocatedCourses, courseToRemove],
-            };
-          });
-          showErrorToast('Error', 'Failed to remove course allocation');
+          throw new Error('Failed to remove');
         }
       } catch (err) {
-        setSelectedStaff(prev => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            allocatedCourses: [...prev.allocatedCourses, courseToRemove],
-          };
-        });
-        showErrorToast('Error', `Error removing course: ${err.response?.data?.message || err.message}`);
+        showErrorToast('Error', `Removal failed: ${err.message}`);
+        await fetchData(); // Revert
       } finally {
         setOperationLoading(false);
       }
@@ -300,7 +265,7 @@ const useManageStaffHandlers = ({
     try {
       const students = await manageStaffService.getEnrolledStudents(courseCode, sectionId);
       setSelectedCourseStudents(students);
-      setSelectedCourseCode(courseCode); // Now properly defined
+      setSelectedCourseCode(courseCode); 
       setShowStudentsModal(true);
     } catch (err) {
       showErrorToast('Error', `Error fetching students: ${err.response?.data?.message || err.message}`);

@@ -169,7 +169,7 @@ const OverallConsolidatedMarks = () => {
       console.log('Sending request with params:', params);
       const res = await api.get('/admin/consolidated-marks', { params });
       console.log('API response:', JSON.stringify(res.data, null, 2));
-      const { students, courses, marks, message } = res.data.data;
+      const { students = [], courses = [], marks = {}, message } = res.data.data || {};
       if (message) {
         setError(message);
         MySwal.fire({
@@ -215,7 +215,23 @@ const OverallConsolidatedMarks = () => {
           timerProgressBar: true,
         });
       }
-      setData({ students, courses, marks });
+      const normalizedStudents = students.map((student) => ({
+        ...student,
+        regno: student.regno || student.registerNumber,
+        name: student.name || student.studentName,
+      }));
+
+      const normalizedCourses = courses.map((course) => {
+        const partition = course.CoursePartitions?.[0] || {};
+        return {
+          ...course,
+          theoryCount: Number(course.theoryCount ?? partition.theoryCount ?? (course.type === 'THEORY' ? 1 : 0)),
+          practicalCount: Number(course.practicalCount ?? partition.practicalCount ?? (course.type === 'PRACTICAL' ? 1 : 0)),
+          experientialCount: Number(course.experientialCount ?? partition.experientialCount ?? (course.type === 'EXPERIENTIAL' ? 1 : 0)),
+        };
+      });
+
+      setData({ students: normalizedStudents, courses: normalizedCourses, marks });
       console.log('Marks data:', marks);
     } catch (err) {
       const errorMsg = err.response?.data?.message || 'Failed to fetch consolidated marks';

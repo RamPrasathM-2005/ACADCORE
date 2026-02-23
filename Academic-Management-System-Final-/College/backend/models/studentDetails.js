@@ -50,6 +50,7 @@ export default (sequelize, DataTypes) => {
     StudentDetails.belongsTo(models.User, { foreignKey: 'createdBy', as: 'creator' });
     StudentDetails.belongsTo(models.User, { foreignKey: 'updatedBy', as: 'updater' });
     StudentDetails.belongsTo(models.User, { foreignKey: 'approvedBy', as: 'approver' });
+    StudentDetails.belongsTo(models.User, { foreignKey: 'registerNumber', targetKey: 'userNumber', as: 'user' });
 
     // FIXED: Added sourceKey: 'registerNumber' to all academic links to match the String type
     const commonOptions = { foreignKey: 'regno', sourceKey: 'registerNumber' };
