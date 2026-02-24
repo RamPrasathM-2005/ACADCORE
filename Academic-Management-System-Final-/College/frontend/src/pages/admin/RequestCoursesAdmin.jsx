@@ -127,9 +127,10 @@ const RequestCoursesAdmin = () => {
     }
   };
 
-  const filteredRequests = requests.filter(request => 
-    !filters.name || request.courseTitle.toLowerCase().includes(filters.name.toLowerCase())
-  );
+  const filteredRequests = requests.filter(request => {
+    const title = request.Course?.courseTitle || request.courseTitle || '';
+    return !filters.name || title.toLowerCase().includes(filters.name.toLowerCase());
+  });
 
   return (
     <div className="p-6 bg-gray-100 min-h-screen">
@@ -175,17 +176,17 @@ const RequestCoursesAdmin = () => {
               className="bg-white rounded-xl shadow-md p-6 hover:shadow-lg transition-all duration-300 border border-gray-200"
             >
               <h3 className="font-semibold text-lg mb-2 text-gray-800">
-                {request.courseCode} - {request.courseTitle}
+                {request.Course?.courseCode || request.courseCode || 'N/A'} - {request.Course?.courseTitle || request.courseTitle || 'N/A'}
               </h3>
               <div className="space-y-1 text-sm text-gray-600 mb-4">
-                <p><span className="font-medium">Requested by:</span> {request.staffName} ({request.email})</p>
-                <p><span className="font-medium">Branch:</span> {request.branch}</p>
-                <p><span className="font-medium">Semester:</span> {request.semesterNumber}</p>
-                <p><span className="font-medium">Batch:</span> {request.batch}</p>
-                <p><span className="font-medium">Credits:</span> {request.credits}</p>
-                <p><span className="font-medium">Department:</span> {request.deptName}</p>
-                <p><span className="font-medium">Requested on:</span> {new Date(request.requestedAt).toLocaleDateString()}</p>
-                <p><span className="font-medium">Assigned Slots:</span> {request.assignedCount}/{request.sectionCount}</p>
+                <p><span className="font-medium">Requested by:</span> {request.User?.userName || request.staffName || 'N/A'} ({request.User?.userMail || request.email || 'N/A'})</p>
+                <p><span className="font-medium">Branch:</span> {request.Course?.Semester?.Batch?.branch || request.branch || 'N/A'}</p>
+                <p><span className="font-medium">Semester:</span> {request.Course?.Semester?.semesterNumber || request.semesterNumber || 'N/A'}</p>
+                <p><span className="font-medium">Batch:</span> {request.Course?.Semester?.Batch?.batch || request.batch || 'N/A'}</p>
+                <p><span className="font-medium">Credits:</span> {request.Course?.credits || request.credits || 'N/A'}</p>
+                <p><span className="font-medium">Department:</span> {request.Course?.Semester?.Batch?.Regulation?.Department?.Deptname || request.deptName || 'N/A'}</p>
+                <p><span className="font-medium">Requested on:</span> {request.requestedAt ? new Date(request.requestedAt).toLocaleDateString() : 'N/A'}</p>
+                <p><span className="font-medium">Assigned Slots:</span> {request.assignedCount ?? 0}/{request.sectionCount ?? 0}</p>
               </div>
               <div className="flex gap-2">
                 <button

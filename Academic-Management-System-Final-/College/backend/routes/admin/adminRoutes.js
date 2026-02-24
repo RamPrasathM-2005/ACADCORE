@@ -100,6 +100,7 @@ import {
 import { requireAuth } from "../../middleware/requireAuth.js";
 
 import { getStudentEnrollments } from "../../controllers/studentEnrollmentViewController.js";
+import { getStudentCourseMatrix } from "../../controllers/studentCourseMappingController.js";
 import { getElectiveSelections } from "../../controllers/studentpageController.js";
 import { getCOsForCourseAdmin, getStudentCOMarksAdmin, updateStudentCOMarkAdmin } from "../../controllers/markController.js";
 import multer from 'multer';
@@ -226,6 +227,7 @@ router.route('/regulations/verticals/:verticalId/courses').get(requireAuth, getC
 router.route('/regulations/allocate-to-batch').post(requireAuth, allocateRegulationToBatch);
 
 router.get("/enrollments/view", requireAuth, getStudentEnrollments);
+router.get("/student-course-matrix", requireAuth, getStudentCourseMatrix);
 
 router.get("/admin-marks/cos/:courseCode", requireAuth, getCOsForCourseAdmin);
 router.get("/admin-marks/marks/co/:courseCode", requireAuth, getStudentCOMarksAdmin);

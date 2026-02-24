@@ -465,7 +465,7 @@ const ManageCourses = () => {
     return (
       (!dept || semDetails?.branch === dept) &&
       (!semester || semDetails?.semesterNumber.toString() === semester) &&
-      (!batch || semDetails?.batch === batch) &&
+      (!batch || semDetails?.batch === batch || semDetails?.Batch?.batch === batch) &&
       (!name || course.courseTitle.toLowerCase().includes(name.toLowerCase())) &&
       (!type || course.type === type)
     );
