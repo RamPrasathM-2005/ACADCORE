@@ -1,7 +1,31 @@
 import React from 'react';
 import { Search } from 'lucide-react';
 
-const Filters = ({ filters, setFilters, semesters, courseTypes }) => {
+const Filters = ({ filters, setFilters, semesters, courseTypes, departments }) => {
+  const deptOptions = Array.isArray(departments) && departments.length > 0
+    ? departments.map((dept) => ({
+        value: String(dept.departmentId ?? dept.Deptid ?? dept.id ?? ''),
+        label: `${dept.departmentName || dept.Deptname || 'Department'}${
+          dept.departmentAcr || dept.deptCode || dept.Deptacronym
+            ? ` (${dept.departmentAcr || dept.deptCode || dept.Deptacronym})`
+            : ''
+        }`
+      })).filter(d => d.value)
+    : [...new Set((semesters || [])
+        .map(s => s.branch ?? s.Batch?.branch)
+        .filter(Boolean)
+      )].map(branch => ({ value: branch, label: branch }));
+
+  const batchOptions = [...new Set((semesters || [])
+    .map(s => s.batch ?? s.Batch?.batch)
+    .filter(Boolean)
+  )].sort();
+
+  const semesterOptions = [...new Set((semesters || [])
+    .map(s => s.semesterNumber)
+    .filter(Boolean)
+  )].sort((a, b) => a - b);
+
   return (
     <div className="bg-white p-4 rounded-lg shadow-sm mb-4">
       <div className="flex flex-wrap gap-4 items-end justify-center">
@@ -13,8 +37,8 @@ const Filters = ({ filters, setFilters, semesters, courseTypes }) => {
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
           >
             <option value="">All Departments</option>
-            {[...new Set(semesters.map(s => s.branch))].map(dept => (
-              <option key={dept} value={dept}>{dept}</option>
+            {deptOptions.map((dept) => (
+              <option key={dept.value} value={dept.value}>{dept.label}</option>
             ))}
           </select>
         </div>
@@ -26,7 +50,7 @@ const Filters = ({ filters, setFilters, semesters, courseTypes }) => {
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
           >
             <option value="">All Semesters</option>
-            {[...new Set(semesters.map(s => s.semesterNumber))].sort((a, b) => a - b).map(num => (
+            {semesterOptions.map(num => (
               <option key={num} value={num}>Semester {num}</option>
             ))}
           </select>
@@ -39,7 +63,7 @@ const Filters = ({ filters, setFilters, semesters, courseTypes }) => {
             className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
           >
             <option value="">All Batches</option>
-            {[...new Set(semesters.map(s => s.batch))].filter(batch => batch).sort().map(batch => (
+            {batchOptions.map(batch => (
               <option key={batch} value={batch}>{batch}</option>
             ))}
           </select>

@@ -6,17 +6,49 @@ const {
 import { Op } from 'sequelize';
 import catchAsync from '../utils/catchAsync.js';
 
-// Helper to ensure we get the ID correctly
-const getUserId = (req) => req.user.userId; 
-const getDeptId = (req) => req.user.departmentId;
+// Helper to normalize JWT payload vs DB fields.
+const getUserContext = async (req) => {
+  const userId = req.user?.userId || req.user?.id || null;
+  if (!userId) return { userId: null, departmentId: null, userNumber: null };
+
+  let departmentId = req.user?.departmentId ?? null;
+  let userNumber = req.user?.userNumber ?? null;
+
+  if (departmentId && userNumber) {
+    return { userId, departmentId, userNumber };
+  }
+
+  const user = await User.findByPk(userId, {
+    attributes: ['userId', 'departmentId', 'userNumber']
+  });
+
+  return {
+    userId,
+    departmentId: departmentId ?? user?.departmentId ?? null,
+    userNumber: userNumber ?? user?.userNumber ?? String(userId)
+  };
+};
 
 // 1. Get Available Courses
 export const getAvailableCoursesForStaff = catchAsync(async (req, res) => {
-  const { semester, branch, batch, type } = req.query;
+  const { semester, branch, batch, type, dept } = req.query;
   
-  // CHANGE 1: Use correct casing from User table data
-  const userId = getUserId(req); 
-  const staffDeptId = getDeptId(req);
+  const { userId, departmentId: staffDeptId } = await getUserContext(req);
+  if (!userId) {
+    return res.status(401).json({ status: 'error', message: 'Authentication required' });
+  }
+  const deptId = dept ? parseInt(dept) : staffDeptId;
+  if (!deptId) {
+    return res.status(400).json({ status: 'error', message: 'Staff department not found' });
+  }
+
+  const deptRecord = await Department.findByPk(deptId, {
+    attributes: ['Deptid', 'Deptacronym']
+  });
+  if (!deptRecord) {
+    return res.status(400).json({ status: 'error', message: 'Invalid department' });
+  }
+  const branchFilter = branch || deptRecord.Deptacronym;
 
   const courses = await Course.findAll({
     where: {
@@ -35,14 +67,14 @@ export const getAvailableCoursesForStaff = catchAsync(async (req, res) => {
         model: Batch,
         required: true,
         where: {
-          ...(branch && { branch }),
+          ...(branchFilter && { branch: branchFilter }),
           ...(batch && { batch })
         },
         include: [{
           model: Regulation,
-          required: true,
+          required: false,
           // CHANGE 3: Regulation model uses 'Deptid', User uses 'departmentId'
-          where: { Deptid: staffDeptId } 
+          where: { Deptid: deptId } 
         }]
       }]
     }],
@@ -54,9 +86,23 @@ export const getAvailableCoursesForStaff = catchAsync(async (req, res) => {
 
 // 2. Get All Courses with Status Labels
 export const getAllCoursesForStaff = catchAsync(async (req, res) => {
-  const { semester, branch, batch, type } = req.query;
-  const userId = getUserId(req);
-  const staffDeptId = getDeptId(req);
+  const { semester, branch, batch, type, dept } = req.query;
+  const { userId, departmentId: staffDeptId } = await getUserContext(req);
+  if (!userId) {
+    return res.status(401).json({ status: 'error', message: 'Authentication required' });
+  }
+  const deptId = dept ? parseInt(dept) : staffDeptId;
+  if (!deptId) {
+    return res.status(400).json({ status: 'error', message: 'Staff department not found' });
+  }
+
+  const deptRecord = await Department.findByPk(deptId, {
+    attributes: ['Deptid', 'Deptacronym']
+  });
+  if (!deptRecord) {
+    return res.status(400).json({ status: 'error', message: 'Invalid department' });
+  }
+  const branchFilter = branch || deptRecord.Deptacronym;
 
   const courses = await Course.findAll({
     attributes: {
@@ -99,13 +145,13 @@ export const getAllCoursesForStaff = catchAsync(async (req, res) => {
         model: Batch,
         required: true,
         where: {
-          ...(branch && { branch }),
+          ...(branchFilter && { branch: branchFilter }),
           ...(batch && { batch })
         },
         include: [{
           model: Regulation,
-          required: true,
-          where: { Deptid: staffDeptId }
+          required: false,
+          where: { Deptid: deptId }
         }]
       }]
     }],
@@ -118,8 +164,13 @@ export const getAllCoursesForStaff = catchAsync(async (req, res) => {
 // 3. Send Course Request
 export const sendCourseRequest = catchAsync(async (req, res) => {
   const { courseId } = req.params;
-  const userId = getUserId(req);
-  const staffDeptId = getDeptId(req);
+  const { userId, departmentId: staffDeptId, userNumber } = await getUserContext(req);
+  if (!userId) {
+    return res.status(401).json({ status: 'error', message: 'Authentication required' });
+  }
+  if (!staffDeptId) {
+    return res.status(400).json({ status: 'error', message: 'Staff department not found' });
+  }
 
   const course = await Course.findByPk(courseId, {
     include: [{
@@ -143,7 +194,7 @@ export const sendCourseRequest = catchAsync(async (req, res) => {
   await CourseRequest.create({
     staffId: userId,
     courseId,
-    createdBy: req.user.userNumber // Using userNumber (cset01) for audit
+    createdBy: userNumber // Using userNumber (cset01) for audit
   });
 
   res.json({ status: 'success', message: 'Request sent successfully' });
@@ -152,7 +203,10 @@ export const sendCourseRequest = catchAsync(async (req, res) => {
 // 4. Cancel Pending Request
 export const cancelCourseRequest = catchAsync(async (req, res) => {
   const { requestId } = req.params;
-  const userId = getUserId(req);
+  const { userId } = await getUserContext(req);
+  if (!userId) {
+    return res.status(401).json({ status: 'error', message: 'Authentication required' });
+  }
 
   const deleted = await CourseRequest.destroy({
     where: { requestId, staffId: userId, status: 'PENDING' }
@@ -164,7 +218,10 @@ export const cancelCourseRequest = catchAsync(async (req, res) => {
 
 // 5. Recent Request History
 export const getRecentRequestHistory = catchAsync(async (req, res) => {
-  const userId = getUserId(req);
+  const { userId } = await getUserContext(req);
+  if (!userId) {
+    return res.status(401).json({ status: 'error', message: 'Authentication required' });
+  }
   const history = await CourseRequest.findAll({
     where: { staffId: userId },
     include: [{
@@ -180,7 +237,10 @@ export const getRecentRequestHistory = catchAsync(async (req, res) => {
 // 6. Resend Rejected Request
 export const resendRejectedRequest = catchAsync(async (req, res) => {
   const { requestId } = req.params;
-  const userId = getUserId(req);
+  const { userId, userNumber } = await getUserContext(req);
+  if (!userId) {
+    return res.status(401).json({ status: 'error', message: 'Authentication required' });
+  }
 
   const request = await CourseRequest.findOne({
     where: { requestId, staffId: userId, status: 'REJECTED' }
@@ -191,7 +251,7 @@ export const resendRejectedRequest = catchAsync(async (req, res) => {
   await request.update({
     status: 'PENDING',
     rejectedAt: null,
-    updatedBy: req.user.userNumber
+    updatedBy: userNumber
   });
 
   res.json({ status: 'success', message: 'Request resent successfully' });
@@ -242,6 +302,7 @@ export const getPendingRequestsForAdmin = catchAsync(async (req, res) => {
 // 8. Accept Course Request
 export const acceptCourseRequest = catchAsync(async (req, res) => {
   const { requestId } = req.params;
+  const { userNumber } = await getUserContext(req);
 
   await sequelize.transaction(async (t) => {
     const request = await CourseRequest.findOne({
@@ -272,7 +333,7 @@ export const acceptCourseRequest = catchAsync(async (req, res) => {
     await request.update({
       status: 'ACCEPTED',
       approvedAt: new Date(),
-      updatedBy: req.user.userNumber
+      updatedBy: userNumber
     }, { transaction: t });
 
     // 2. Insert into StaffCourse
@@ -284,7 +345,7 @@ export const acceptCourseRequest = catchAsync(async (req, res) => {
       courseId,
       sectionId: availableSection.sectionId,
       Deptid: staffUser.departmentId, // Mapping departmentId to Deptid
-      createdBy: req.user.userNumber
+      createdBy: userNumber
     }, { transaction: t });
 
     // 3. Auto-reject others if course is now full
@@ -301,7 +362,7 @@ export const acceptCourseRequest = catchAsync(async (req, res) => {
       await CourseRequest.update({
         status: 'REJECTED',
         rejectedAt: new Date(),
-        updatedBy: req.user.userNumber
+        updatedBy: userNumber
       }, {
         where: { courseId, status: 'PENDING', requestId: { [Op.ne]: requestId } },
         transaction: t
@@ -315,11 +376,12 @@ export const acceptCourseRequest = catchAsync(async (req, res) => {
 // 9. Reject Course Request
 export const rejectCourseRequest = catchAsync(async (req, res) => {
   const { requestId } = req.params;
+  const { userNumber } = await getUserContext(req);
 
   const updated = await CourseRequest.update({
     status: 'REJECTED',
     rejectedAt: new Date(),
-    updatedBy: req.user.userNumber
+    updatedBy: userNumber
   }, {
     where: { requestId, status: 'PENDING' }
   });
@@ -331,7 +393,10 @@ export const rejectCourseRequest = catchAsync(async (req, res) => {
 // 10. Leave Course
 export const leaveCourse = catchAsync(async (req, res) => {
   const { staffCourseId } = req.params;
-  const userId = getUserId(req);
+  const { userId, userNumber } = await getUserContext(req);
+  if (!userId) {
+    return res.status(401).json({ status: 'error', message: 'Authentication required' });
+  }
 
   await sequelize.transaction(async (t) => {
     // CHANGE 6: Matching 'Userid' column with 'userId' value
@@ -346,7 +411,7 @@ export const leaveCourse = catchAsync(async (req, res) => {
     await CourseRequest.update({
       status: 'WITHDRAWN',
       withdrawnAt: new Date(),
-      updatedBy: req.user.userNumber
+      updatedBy: userNumber
     }, {
       where: { staffId: userId, courseId: assignment.courseId, status: 'ACCEPTED' },
       transaction: t
@@ -361,7 +426,10 @@ export const leaveCourse = catchAsync(async (req, res) => {
 
 // 11. My Requests
 export const getMyRequests = catchAsync(async (req, res) => {
-  const userId = getUserId(req);
+  const { userId } = await getUserContext(req);
+  if (!userId) {
+    return res.status(401).json({ status: 'error', message: 'Authentication required' });
+  }
 
   const requests = await CourseRequest.findAll({
     where: { staffId: userId, status: { [Op.in]: ['PENDING', 'ACCEPTED', 'REJECTED'] } },
@@ -389,7 +457,10 @@ export const getMyRequests = catchAsync(async (req, res) => {
 
 // 12. Notifications
 export const getNotifications = catchAsync(async (req, res) => {
-  const userId = getUserId(req);
+  const { userId } = await getUserContext(req);
+  if (!userId) {
+    return res.status(401).json({ status: 'error', message: 'Authentication required' });
+  }
   const notifications = await CourseRequest.findAll({
     where: {
       staffId: userId,

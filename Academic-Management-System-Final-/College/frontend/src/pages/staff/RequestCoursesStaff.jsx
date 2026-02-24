@@ -14,6 +14,7 @@ const RequestCoursesStaff = () => {
   const [myRequests, setMyRequests] = useState([]); 
   const [selectedCourses, setSelectedCourses] = useState([]); 
   const [semOptions, setSemOptions] = useState([]); 
+  const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [filters, setFilters] = useState({ dept: '', branch: '', semester: '', batch: '', name: '', type: '' });
@@ -44,8 +45,20 @@ const RequestCoursesStaff = () => {
   useEffect(() => {
     const init = async () => {
       try {
-        const semRes = await api.get('/admin/semesters');
-        setSemOptions(semRes.data.data || []);
+        const [semRes, deptRes] = await Promise.allSettled([
+          api.get('/admin/semesters'),
+          api.get('/departments')
+        ]);
+        if (semRes.status === 'fulfilled') {
+          setSemOptions(semRes.value.data.data || []);
+        } else {
+          console.error('Failed to fetch semesters', semRes.reason);
+        }
+        if (deptRes.status === 'fulfilled') {
+          setDepartments(deptRes.value.data.data || []);
+        } else {
+          console.error('Failed to fetch departments', deptRes.reason);
+        }
         await fetchMyRequests();
         await fetchAvailableCourses();
       } catch (err) {
@@ -169,7 +182,13 @@ const RequestCoursesStaff = () => {
         <main className="flex-1 overflow-y-auto p-8">
           <div className="max-w-4xl mx-auto">
             <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 mb-8">
-              <Filters filters={filters} setFilters={setFilters} semesters={semOptions} courseTypes={courseTypes} />
+              <Filters
+                filters={filters}
+                setFilters={setFilters}
+                semesters={semOptions}
+                courseTypes={courseTypes}
+                departments={departments}
+              />
             </div>
 
             {loading ? (
