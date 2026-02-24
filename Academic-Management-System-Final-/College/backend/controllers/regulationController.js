@@ -173,12 +173,20 @@ export const allocateRegulationToBatch = async (req, res) => {
     const batch = await Batch.findOne({ where: { batchId, isActive: 'YES' }, transaction });
     if (!batch) throw new Error('Batch not found or inactive');
 
-    const deptInfo = branchMap[batch.branch];
+    const branchCode = String(batch.branch || '').trim().toUpperCase();
+    const deptInfo = await Department.findOne({
+      where: sequelize.where(
+        sequelize.fn('UPPER', sequelize.col('Deptacronym')),
+        branchCode
+      ),
+      attributes: ['Deptid', 'Deptacronym'],
+      transaction
+    });
     if (!deptInfo) throw new Error(`Invalid branch: ${batch.branch}`);
 
     const regulation = await Regulation.findOne({ where: { regulationId, isActive: 'YES' }, transaction });
     if (!regulation) throw new Error('Regulation not found');
-    if (regulation.Deptid !== deptInfo.Deptid) {
+    if (Number(regulation.Deptid) !== Number(deptInfo.Deptid)) {
       throw new Error(`Regulation department mismatch for branch ${batch.branch}`);
     }
 
@@ -301,5 +309,65 @@ export const getCoursesByVertical = async (req, res) => {
   } catch (err) {
     console.error('Error fetching courses by vertical:', err);
     res.status(500).json({ status: 'failure', message: 'Server error: ' + err.message });
+  }
+};
+
+export const createRegulation = async (req, res) => {
+  const { Deptid, regulationYear } = req.body;
+  const createdBy = req.user?.userName || 'admin';
+
+  const deptIdNum = Number(Deptid);
+  const yearNum = Number(regulationYear);
+
+  if (!deptIdNum || !yearNum) {
+    return res.status(400).json({
+      status: 'failure',
+      message: 'Deptid and regulationYear are required',
+    });
+  }
+
+  if (!Number.isInteger(yearNum) || yearNum < 2000 || yearNum > 2100) {
+    return res.status(400).json({
+      status: 'failure',
+      message: 'Invalid regulation year',
+    });
+  }
+
+  try {
+    const dept = await Department.findByPk(deptIdNum, { attributes: ['Deptid'] });
+    if (!dept) {
+      return res.status(404).json({ status: 'failure', message: 'Department not found' });
+    }
+
+    const existing = await Regulation.findOne({
+      where: {
+        Deptid: deptIdNum,
+        regulationYear: yearNum,
+        isActive: 'YES',
+      },
+    });
+
+    if (existing) {
+      return res.status(409).json({
+        status: 'failure',
+        message: 'Regulation year already exists for this department',
+      });
+    }
+
+    const created = await Regulation.create({
+      Deptid: deptIdNum,
+      regulationYear: yearNum,
+      isActive: 'YES',
+      createdBy,
+      updatedBy: createdBy,
+    });
+
+    return res.status(201).json({
+      status: 'success',
+      message: 'Regulation year added successfully',
+      data: created,
+    });
+  } catch (err) {
+    return res.status(500).json({ status: 'failure', message: 'Server error: ' + err.message });
   }
 };

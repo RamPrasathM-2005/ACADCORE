@@ -14,7 +14,8 @@ const {
   RegulationCourse,
   StudentElectiveSelection,
   Course,
-  User
+  User,
+  Department
 } = db;
 
 // Helper to safely get current user ID (handles both 'id' from JWT and 'userId' naming)
@@ -23,15 +24,26 @@ const getCurrentUserId = (req) => req.user?.id || req.user?.userId;
 /**
  * Utility: Get Student Registration Number from User Session
  */
-const getRegNo = async (userId) => {
+const getRegNo = async (req) => {
+  const userId = getCurrentUserId(req);
+  if (!userId) return null;
+
+  let regno = req.user?.userNumber;
+  if (!regno) {
+    const currentUser = await User.findByPk(userId, {
+      attributes: ["userNumber"],
+    });
+    regno = currentUser?.userNumber || null;
+  }
+
+  if (!regno) return null;
+
   const student = await StudentDetails.findOne({
-    where: { 
-      [Op.or]: [{ registerNumber: userId }, { studentId: userId }] 
-    },
-    attributes: ['registerNumber']
+    where: { registerNumber: regno },
+    attributes: ["registerNumber"],
   });
-  if (!student) throw new Error("Student profile not found");
-  return student.registerNumber;
+
+  return student?.registerNumber || null;
 };
 
 export const getNptelCourses = catchAsync(async (req, res) => {
@@ -46,7 +58,10 @@ export const getNptelCourses = catchAsync(async (req, res) => {
     return res.status(400).json({ status: "failure", message: "semesterId is required" });
   }
 
-  const regno = await getRegNo(userId);
+  const regno = await getRegNo(req);
+  if (!regno) {
+    return res.status(404).json({ status: "failure", message: "Student profile not found" });
+  }
 
   const courses = await NptelCourse.findAll({
     where: { semesterId, isActive: 'YES' },
@@ -83,7 +98,10 @@ export const enrollNptel = catchAsync(async (req, res) => {
     return res.status(400).json({ status: "failure", message: "Invalid input data" });
   }
 
-  const regno = await getRegNo(userId);
+  const regno = await getRegNo(req);
+  if (!regno) {
+    return res.status(404).json({ status: "failure", message: "Student profile not found" });
+  }
 
   const transaction = await sequelize.transaction();
   try {
@@ -126,7 +144,10 @@ export const getStudentNptelEnrollments = catchAsync(async (req, res) => {
     return res.status(401).json({ status: "failure", message: "User not authenticated" });
   }
 
-  const regno = await getRegNo(userId);
+  const regno = await getRegNo(req);
+  if (!regno) {
+    return res.status(404).json({ status: "failure", message: "Student profile not found" });
+  }
 
   const enrollments = await StudentNptelEnrollment.findAll({
     where: { regno, isActive: 'YES' },
@@ -171,7 +192,10 @@ export const requestCreditTransfer = catchAsync(async (req, res) => {
     return res.status(400).json({ status: "failure", message: "Invalid decision" });
   }
 
-  const regno = await getRegNo(userId);
+  const regno = await getRegNo(req);
+  if (!regno) {
+    return res.status(404).json({ status: "failure", message: "Student profile not found" });
+  }
 
   const enrollment = await StudentNptelEnrollment.findOne({
     where: { enrollmentId, regno },
@@ -201,56 +225,138 @@ export const requestCreditTransfer = catchAsync(async (req, res) => {
 });
 
 export const getOecPecProgress = catchAsync(async (req, res) => {
-  const userId = getCurrentUserId(req);
+  // 1. Safely get userId (from your updated middleware)
+  const userId = req.user?.id || req.user?.userId;
   if (!userId) {
     return res.status(401).json({ status: "failure", message: "User not authenticated" });
   }
 
+  // 2. Get registerNumber reliably (most important key)
+  let regno;
+
+  // Prefer userNumber if already in JWT (future-proof)
+  if (req.user?.userNumber) {
+    regno = req.user.userNumber;
+  } else {
+    // Fallback: look up userNumber from users table
+    const currentUser = await User.findByPk(userId, {
+      attributes: ['userNumber'],
+    });
+
+    if (!currentUser || !currentUser.userNumber) {
+      return res.status(404).json({
+        status: "failure",
+        message: "User or register number not found",
+      });
+    }
+
+    regno = currentUser.userNumber;
+    console.log(currentUser); 
+  }
+ // Debug log (remove in production)
+  console.log(`[OEC/PEC] Fetching for userId: ${userId}, regno: ${regno}`);
+
+  // 3. Fetch student profile using registerNumber (reliable)
   const student = await StudentDetails.findOne({
-    where: { [Op.or]: [{ registerNumber: req.user.userNumber }, { studentId: userId }] },
-    include: [{ model: Department, as: 'department' }]
+    where: { registerNumber: regno },
+    include: [{ model: Department, as: 'department' }],
   });
 
-  if (!student) return res.status(404).json({ status: "failure", message: "Student not found" });
+  if (!student) {
+    return res.status(404).json({
+      status: "failure",
+      message: `Student profile not found for register number ${regno}`,
+    });
+  }
 
-  const batch = await Batch.findOne({ 
-    where: { batch: student.batch, branch: student.department.Deptacronym, isActive: 'YES' } 
-  });
-  if (!batch || !batch.regulationId) return res.status(404).json({ status: "failure", message: "Regulation not assigned" });
+  // Debug log
+  console.log(`[OEC/PEC] Student found: ${student.registerNumber}, batch: ${student.batch}`);
 
+  // 4. Now safely access department
+  const deptAcr = student.department?.Deptacronym || '';
+
+  // 5. Find batch/regulation with fallback:
+  // first try batch+branch, then batch-only (some data sets have branch mismatch).
+  const baseBatchWhere = {
+    batch: student.batch,
+    isActive: 'YES',
+  };
+
+  let batch = null;
+  if (deptAcr) {
+    batch = await Batch.findOne({
+      where: { ...baseBatchWhere, branch: deptAcr },
+    });
+  }
+
+  if (!batch) {
+    batch = await Batch.findOne({
+      where: baseBatchWhere,
+      order: [['updatedDate', 'DESC']],
+    });
+  }
+
+  // If regulation mapping is missing, return safe zero-progress response
+  // instead of failing the whole NPTEL page.
+  if (!batch || !batch.regulationId) {
+    return res.status(200).json({
+      status: "success",
+      data: {
+        required: { OEC: 0, PEC: 0 },
+        completed: { OEC: 0, PEC: 0 },
+        remaining: { OEC: 0, PEC: 0 },
+        fromNptel: { OEC: 0, PEC: 0 },
+        fromCollege: { OEC: 0, PEC: 0 },
+        warning: "Batch or regulation not assigned for this student",
+      },
+    });
+  }
+
+  // 6. Rest of your logic remains unchanged
   const required = await RegulationCourse.findAll({
-    where: { regulationId: batch.regulationId, category: { [Op.in]: ['OEC', 'PEC'] }, isActive: 'YES' },
+    where: {
+      regulationId: batch.regulationId,
+      category: { [Op.in]: ['OEC', 'PEC'] },
+      isActive: 'YES',
+    },
     attributes: ['category', [sequelize.fn('COUNT', sequelize.col('category')), 'count']],
-    group: ['category']
+    group: ['category'],
   });
 
   const requiredMap = { OEC: 0, PEC: 0 };
-  required.forEach(r => requiredMap[r.category] = parseInt(r.get('count')));
+  required.forEach((r) => (requiredMap[r.category] = parseInt(r.get('count'))));
 
   const nptel = await NptelCreditTransfer.findAll({
     where: { regno: student.registerNumber, studentStatus: 'accepted' },
     include: [{ model: NptelCourse, attributes: ['type'] }],
     attributes: [[sequelize.fn('COUNT', sequelize.col('NptelCreditTransfer.transferId')), 'count']],
     includeIgnoreAttributes: false,
-    group: ['NptelCourse.type']
+    group: ['NptelCourse.type'],
   });
 
   const nptelMap = { OEC: 0, PEC: 0 };
-  nptel.forEach(r => {
+  nptel.forEach((r) => {
     const type = r.NptelCourse?.type;
     if (type) nptelMap[type] = parseInt(r.get('count'));
   });
 
   const college = await StudentElectiveSelection.findAll({
     where: { regno: student.registerNumber, status: 'allocated' },
-    include: [{ model: Course, where: { category: { [Op.in]: ['OEC', 'PEC'] } } }],
+    include: [{
+      model: Course,
+      attributes: [],
+      where: { category: { [Op.in]: ['OEC', 'PEC'] } }
+    }],
     group: ['Course.category'],
-    attributes: [[sequelize.fn('COUNT', sequelize.col('Course.category')), 'count']]
+    attributes: [
+      [sequelize.col('Course.category'), 'category'],
+      [sequelize.fn('COUNT', sequelize.col('Course.category')), 'count']
+    ],
   });
 
   const collegeMap = { OEC: 0, PEC: 0 };
-  college.forEach(r => {
-    const cat = r.Course?.category;
+  college.forEach((r) => {
+    const cat = r.get('category');
     if (cat) collegeMap[cat] = parseInt(r.get('count'));
   });
 
@@ -264,11 +370,11 @@ export const getOecPecProgress = catchAsync(async (req, res) => {
       completed: { OEC: totalOec, PEC: totalPec },
       remaining: {
         OEC: Math.max(0, requiredMap.OEC - totalOec),
-        PEC: Math.max(0, requiredMap.PEC - totalPec)
+        PEC: Math.max(0, requiredMap.PEC - totalPec),
       },
       fromNptel: nptelMap,
-      fromCollege: collegeMap
-    }
+      fromCollege: collegeMap,
+    },
   });
 });
 

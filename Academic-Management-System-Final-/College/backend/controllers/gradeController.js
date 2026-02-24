@@ -246,10 +246,27 @@ export const getStudentsForGrade = catchAsync(async (req, res) => {
 });
 
 export const getStudentGpaHistory = catchAsync(async (req, res) => {
-  const userId = req.user.id; 
+  const userId = req.user?.id || req.user?.userId;
+  if (!userId) {
+    return res.status(401).json({ status: 'fail', message: 'User not authenticated' });
+  }
+
+  let regno = req.user?.userNumber;
+  if (!regno) {
+    const currentUser = await User.findByPk(userId, { attributes: ['userNumber'] });
+    regno = currentUser?.userNumber;
+  }
+
+  const orConditions = [];
+  if (regno) orConditions.push({ registerNumber: regno });
+  if (userId) orConditions.push({ studentId: userId });
+
+  if (orConditions.length === 0) {
+    return res.status(404).json({ status: 'fail', message: 'Student profile not found' });
+  }
 
   const student = await StudentDetails.findOne({
-    where: { [Op.or]: [{ registerNumber: req.user.userNumber }, { studentId: userId }] }
+    where: orConditions.length === 1 ? orConditions[0] : { [Op.or]: orConditions }
   });
 
   if (!student) return res.status(404).json({ status: 'fail', message: 'Profile not found' });
