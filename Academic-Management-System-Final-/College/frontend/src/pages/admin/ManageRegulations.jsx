@@ -296,11 +296,18 @@ const ManageRegulations = () => {
           }));
 
           const validTypes = ['THEORY', 'INTEGRATED', 'PRACTICAL', 'EXPERIENTIAL LEARNING'];
-          const validCategories = ['HSMC', 'BSC', 'ESC', 'PEC', 'OEC', 'EEC', 'PCC'];
+          const knownCategories = ['HSMC', 'BSC', 'ESC', 'PEC', 'OEC', 'EEC', 'PCC', 'MC'];
           const validCourses = [];
           const invalidCourses = [];
 
           for (const course of coursesData) {
+            const normalizedCategory = String(course.category || '').trim().toUpperCase();
+            const isElective = ['PEC', 'OEC'].includes(normalizedCategory);
+            const hasSemester = !isNaN(course.semesterNumber);
+            const semesterOutOfRange = hasSemester && (course.semesterNumber < 1 || course.semesterNumber > 8);
+            const missingRequiredSemester = !isElective && !hasSemester;
+            const invalidSemester = semesterOutOfRange || missingRequiredSemester;
+
             const type = determineCourseType(
               course.lectureHours,
               course.tutorialHours,
@@ -308,14 +315,10 @@ const ManageRegulations = () => {
               course.experientialHours
             );
             if (
-              !course.semesterNumber ||
-              isNaN(course.semesterNumber) ||
-              course.semesterNumber < 1 ||
-              course.semesterNumber > 8 ||
               !course.courseCode ||
               !course.courseTitle ||
-              !course.category ||
-              !validCategories.includes(course.category.toUpperCase()) ||
+              !normalizedCategory ||
+              invalidSemester ||
               !validTypes.includes(type) ||
               isNaN(course.minMark) ||
               isNaN(course.maxMark) ||
@@ -327,14 +330,12 @@ const ManageRegulations = () => {
             ) {
               invalidCourses.push({
                 course,
-                error: `Invalid data: ${!course.semesterNumber ? 'Missing semester number' : ''} ${
-                  isNaN(course.semesterNumber) ? 'Invalid semester number' : ''
-                } ${course.semesterNumber < 1 || course.semesterNumber > 8 ? 'Semester out of range' : ''} ${
+                error: `Invalid data: ${missingRequiredSemester ? 'Missing semester number for non-PEC/OEC' : ''} ${
+                  semesterOutOfRange ? 'Semester out of range (1-8)' : ''
+                } ${
                   !course.courseCode ? 'Missing course code' : ''
                 } ${!course.courseTitle ? 'Missing course title' : ''} ${
-                  !course.category || !validCategories.includes(course.category.toUpperCase())
-                    ? 'Invalid category'
-                    : ''
+                  !normalizedCategory ? 'Missing category' : ''
                 } ${!validTypes.includes(type) ? 'Invalid course type' : ''} ${
                   isNaN(course.minMark) ? 'Invalid min marks' : ''
                 } ${isNaN(course.maxMark) ? 'Invalid max marks' : ''} ${
@@ -344,8 +345,20 @@ const ManageRegulations = () => {
                 }`,
               });
             } else {
-              validCourses.push(course);
+              validCourses.push({
+                ...course,
+                category: normalizedCategory,
+                // For PEC/OEC, semester can be blank (stored as null in backend).
+                semesterNumber: hasSemester ? course.semesterNumber : null,
+              });
             }
+          }
+
+          const unknownCategoryCourses = validCourses.filter(
+            c => c.category && !knownCategories.includes(c.category)
+          );
+          if (unknownCategoryCourses.length > 0) {
+            console.warn('Courses with non-standard categories (still allowed):', unknownCategoryCourses);
           }
 
           if (invalidCourses.length > 0) {
@@ -398,7 +411,15 @@ const ManageRegulations = () => {
           await fetchAvailableCourses(selectedRegulation);
         } catch (err) {
           console.error('XLSX processing error:', err);
-          toast.error('Failed to process Excel file: ' + (err.message || 'Unknown error'), { toastId: 'import-error' });
+          const backendMessage = err.response?.data?.message;
+          const skipped = err.response?.data?.skipped;
+          if (Array.isArray(skipped) && skipped.length > 0) {
+            console.warn('Backend skipped rows:', skipped);
+          }
+          toast.error(
+            'Failed to process Excel file: ' + (backendMessage || err.message || 'Unknown error'),
+            { toastId: 'import-error' }
+          );
         } finally {
           setIsImporting(false);
         }

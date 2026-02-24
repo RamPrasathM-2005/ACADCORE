@@ -150,37 +150,97 @@ export const addCoursesToBucket = catchAsync(async (req, res) => {
 
   const transaction = await sequelize.transaction();
   try {
-    const bucket = await ElectiveBucket.findByPk(bucketId, { transaction });
+    const bucket = await ElectiveBucket.findByPk(bucketId, {
+      include: [
+        {
+          model: Semester,
+          attributes: ["semesterId", "semesterNumber"],
+          include: [{ model: Batch, attributes: ["batchId", "regulationId"] }],
+        },
+      ],
+      transaction,
+    });
+
     if (!bucket) {
       throw new Error(`Bucket with ID ${bucketId} not found`);
     }
+    if (!bucket.Semester || !bucket.Semester.Batch?.regulationId) {
+      throw new Error(`Invalid semester/batch mapping for bucket ${bucketId}`);
+    }
+
+    const bucketSemesterId = bucket.semesterId;
+    const bucketSemesterNumber = bucket.Semester.semesterNumber;
+    const regulationId = bucket.Semester.Batch.regulationId;
 
     const errors = [];
     const addedCourses = [];
 
-    for (let courseCode of courseCodes) {
-      // 1. Validate course existence in specific semester
-      const course = await Course.findOne({
+    for (const inputCode of courseCodes) {
+      const courseCode = String(inputCode || "").trim();
+      if (!courseCode) continue;
+
+      // 1. Try to find active course already available in this semester
+      let course = await Course.findOne({
         where: {
           courseCode,
-          semesterId: bucket.semesterId,
-          category: { [Op.in]: ["PEC", "OEC"] },
+          semesterId: bucketSemesterId,
           isActive: "YES",
         },
         transaction,
       });
 
       if (!course) {
-        errors.push(`Course ${courseCode} not available in this curriculum.`);
-        continue;
+        // 2. If missing, derive from RegulationCourse for this regulation and semester
+        const regCourse = await RegulationCourse.findOne({
+          where: {
+            regulationId,
+            courseCode,
+            category: { [Op.in]: ["PEC", "OEC"] },
+            isActive: "YES",
+            [Op.or]: [
+              { semesterNumber: bucketSemesterNumber }, // semester-specific elective
+              { semesterNumber: null }, // global elective
+            ],
+          },
+          order: [
+            [sequelize.literal(`CASE WHEN semesterNumber = ${Number(bucketSemesterNumber)} THEN 0 ELSE 1 END`), "ASC"],
+          ],
+          transaction,
+        });
+
+        if (!regCourse) {
+          errors.push(`Course ${courseCode} not found in regulation electives for this semester.`);
+          continue;
+        }
+
+        const [createdOrFound] = await Course.findOrCreate({
+          where: { courseCode: regCourse.courseCode, semesterId: bucketSemesterId },
+          defaults: {
+            courseTitle: regCourse.courseTitle,
+            category: regCourse.category,
+            type: regCourse.type,
+            lectureHours: regCourse.lectureHours,
+            tutorialHours: regCourse.tutorialHours,
+            practicalHours: regCourse.practicalHours,
+            experientialHours: regCourse.experientialHours,
+            totalContactPeriods: regCourse.totalContactPeriods,
+            credits: regCourse.credits,
+            minMark: regCourse.minMark,
+            maxMark: regCourse.maxMark,
+            createdBy: req.user?.userName || "system-auto",
+            updatedBy: req.user?.userName || "system-auto",
+          },
+          transaction,
+        });
+        course = createdOrFound;
       }
 
-      // 2. Check if assigned to another bucket in this semester
+      // 3. Check if assigned to another bucket in this semester
       const otherBucket = await ElectiveBucketCourse.findOne({
         where: { bucketId: { [Op.ne]: bucketId } },
         include: [{
           model: Course,
-          where: { courseCode, semesterId: bucket.semesterId }
+          where: { courseCode, semesterId: bucketSemesterId }
         }],
         transaction
       });
@@ -190,9 +250,9 @@ export const addCoursesToBucket = catchAsync(async (req, res) => {
         continue;
       }
 
-      // 3. Add to bucket (findOrCreate to prevent duplicates)
+      // 4. Add to bucket (findOrCreate to prevent duplicates)
       await ElectiveBucketCourse.findOrCreate({
-        where: { bucketId, courseId: course.courseId },
+        where: { bucketId: Number(bucketId), courseId: course.courseId },
         transaction,
       });
 
