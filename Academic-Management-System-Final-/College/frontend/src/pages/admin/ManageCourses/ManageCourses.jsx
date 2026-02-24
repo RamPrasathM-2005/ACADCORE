@@ -462,10 +462,13 @@ const ManageCourses = () => {
   const filteredCourses = courses.filter(course => {
     const { dept, semester, batch, name, type } = filters;
     const semDetails = course.semesterDetails;
+    const semBranch = semDetails?.Batch?.branch || semDetails?.branch || '';
+    const semBatch = semDetails?.Batch?.batch || semDetails?.batch || '';
+    const semNumber = semDetails?.semesterNumber;
     return (
-      (!dept || semDetails?.branch === dept) &&
-      (!semester || semDetails?.semesterNumber.toString() === semester) &&
-      (!batch || semDetails?.batch === batch || semDetails?.Batch?.batch === batch) &&
+      (!dept || String(semBranch) === String(dept)) &&
+      (!semester || String(semNumber) === String(semester)) &&
+      (!batch || String(semBatch) === String(batch)) &&
       (!name || course.courseTitle.toLowerCase().includes(name.toLowerCase())) &&
       (!type || course.type === type)
     );
