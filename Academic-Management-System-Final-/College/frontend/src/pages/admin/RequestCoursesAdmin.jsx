@@ -159,6 +159,7 @@ const RequestCoursesAdmin = () => {
         setFilters={setFilters}
         semesters={semesters}
         courseTypes={courseTypes} // Pass courseTypes to avoid undefined error in Filters
+        departments={depts}
       />
 
       {loading ? (
