@@ -35,6 +35,7 @@ export default  (sequelize, DataTypes) => {
     Course.hasMany(models.CBCSSubject, { foreignKey: 'courseId' });
     Course.hasMany(models.studentcourseChoices, { foreignKey: 'courseId' });
     Course.hasMany(models.studentTempChoice, { foreignKey: 'courseId' });
+    Course.hasMany(models.StudentGrade, { foreignKey: 'courseCode', sourceKey: 'courseCode' });
   };
 
   return Course;

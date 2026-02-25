@@ -1,11 +1,13 @@
 // models/nptelCreditTransfer.js
 export default  (sequelize, DataTypes) => {
+  const validGrades = ['O', 'A+', 'A', 'B+', 'B', 'C', 'U'];
+
   const NptelCreditTransfer = sequelize.define('NptelCreditTransfer', {
     transferId: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     enrollmentId: { type: DataTypes.INTEGER, allowNull: false },
     regno: { type: DataTypes.STRING(50), allowNull: false },
     nptelCourseId: { type: DataTypes.INTEGER, allowNull: false },
-    grade: { type: DataTypes.ENUM('O', 'A+', 'A', 'B+', 'B', 'U'), allowNull: false },
+    grade: { type: DataTypes.STRING(3), allowNull: false, validate: { isIn: [validGrades] } },
     studentStatus: { type: DataTypes.ENUM('pending', 'accepted', 'rejected'), defaultValue: 'pending' },
     studentRespondedAt: { type: DataTypes.DATE, allowNull: true },
     studentRemarks: { type: DataTypes.STRING(500), allowNull: true },
