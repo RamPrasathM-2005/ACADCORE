@@ -18,6 +18,21 @@ export default  (sequelize, DataTypes) => {
     Timetable.belongsTo(models.Semester, { foreignKey: 'semesterId' });
     Timetable.belongsTo(models.Course, { foreignKey: 'courseId' });
     Timetable.belongsTo(models.Section, { foreignKey: 'sectionId' });
+    // Compatibility association for legacy includes that use `model: StaffCourse`
+    // without an alias.
+    Timetable.hasMany(models.StaffCourse, {
+      foreignKey: 'courseId',
+      sourceKey: 'courseId',
+      constraints: false
+    });
+    // Virtual relation for timetable filtering by staff allocation.
+    // Joined by courseId; section matching is handled at query level.
+    Timetable.hasMany(models.StaffCourse, {
+      foreignKey: 'courseId',
+      sourceKey: 'courseId',
+      constraints: false,
+      as: 'teachingAssignments'
+    });
   };
 
   return Timetable;

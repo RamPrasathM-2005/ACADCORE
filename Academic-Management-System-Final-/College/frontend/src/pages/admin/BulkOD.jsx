@@ -93,8 +93,8 @@ export default function AdminAttendanceGenerator() {
 
   // ACTION: Fetch Student Roster
   const fetchStudents = async () => {
-    if (!selectedSemester || !selectedDepartment) {
-      return toast.error("Please select all filters including Department");
+    if (!selectedDegree || !selectedBatch || !selectedSemester || !selectedDepartment) {
+      return toast.error("Please select Degree, Batch, Department and Semester");
     }
 
     setLoading(true);
@@ -102,6 +102,10 @@ export default function AdminAttendanceGenerator() {
 
     try {
       const bData = batches.find((b) => b.batchId === parseInt(selectedBatch));
+      if (!bData) {
+        setLoading(false);
+        return toast.error("Invalid batch selected");
+      }
 
       const res = await axios.get(
         `${API_BASE_URL}/api/admin/attendance/students-list`,
@@ -149,6 +153,10 @@ export default function AdminAttendanceGenerator() {
     setSaving(true);
     try {
       const bData = batches.find((b) => b.batchId === parseInt(selectedBatch));
+      if (!bData) {
+        setSaving(false);
+        return toast.error("Invalid batch selected");
+      }
       await axios.post(
         `${API_BASE_URL}/api/admin/attendance/mark-full-day-od`,
         {

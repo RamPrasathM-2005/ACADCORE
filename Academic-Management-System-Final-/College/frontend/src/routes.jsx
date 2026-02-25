@@ -35,6 +35,7 @@ import CBCSList from './pages/admin/CBCS/CBCSList.jsx';
 import CBCSDetail from './pages/admin/CBCS/CBCSDetail.jsx';
 import NptelCreditTransferApproval from './pages/admin/NptelCreditTransferApproval.jsx';
 import AddUser from "./pages/superadmin/AddUser.jsx";
+import ElectiveReselectionRequests from './pages/admin/ElectiveReselectionRequests.jsx';
 
 // Staff Pages
 import StaffDashboard from "./pages/staff/Dashboard";
@@ -170,6 +171,7 @@ const routes = [
       { path: 'cbcs-detail/:id', element: <CBCSDetail /> },
       { path: 'nptel-courses', element: <NptelCourses /> },
       { path: 'nptel-approvals', element: <NptelCreditTransferApproval /> },
+      { path: 'elective-reselection-requests', element: <ElectiveReselectionRequests /> },
       { path: 'adduser', element: <AddUser /> },
 
       { path: "*", element: <NotFound /> },

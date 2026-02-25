@@ -161,23 +161,17 @@ export default function DayAttendance() {
   const handlePeriodSelect = async (courses, date, periodNumber) => {
     if (!courses || courses.length === 0) return;
 
-    // We use the first course's ID for saving, but we fetch students by Dept/Sem
+    // Use selected slot's primary course/section for enrolled-student fetch.
     const primaryCourse = courses[0]; 
     const { courseId, sectionId, courseTitle, courseCode } = primaryCourse;
 
     try {
         const dayOfWeek = new Date(date).toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
-        
-        // Use the NEW Route: /department-view/
+
+        // Fetch only students enrolled in this course/section (electives handled in backend).
         const res = await axios.get(
-            `${API_BASE_URL}/api/admin/attendance/department-view/${dayOfWeek}/${periodNumber}`, 
-            { 
-                params: { 
-                    date,
-                    Deptid: selectedDepartment,   // Essential for full roster
-                    semesterId: selectedSemester  // Essential for full roster
-                } 
-            }
+            `${API_BASE_URL}/api/admin/attendance/students/${courseId}/${sectionId || 'all'}/${dayOfWeek}/${periodNumber}`,
+            { params: { date } }
         );
         
         if (res.data.data) {
@@ -194,8 +188,8 @@ export default function DayAttendance() {
             });
         }
     } catch (err) { 
-        console.error(err);
-        toast.error("Could not fetch student list"); 
+        console.error("DayAttendance fetch error:", err?.response?.data || err);
+        toast.error(err?.response?.data?.message || "Could not fetch student list"); 
     }
   };
 
@@ -204,16 +198,26 @@ export default function DayAttendance() {
     if (!selectedSlot) return;
     setSaving(true);
     try {
-      const attendances = students.map((s) => ({ rollnumber: s.rollnumber, status: s.status }));
+      const attendances = students.map((s) => ({
+        rollnumber: s.rollnumber,
+        status: s.status,
+        courseId: s.courseId || selectedSlot.courseId
+      }));
       const dayOfWeek = new Date(selectedSlot.date).toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
       
       // Matches Route: /mark/:courseId/:sectionId/:dayOfWeek/:periodNumber
       await axios.post(
-          `${API_BASE_URL}/api/admin/mark/${selectedSlot.courseId}/${selectedSlot.sectionId}/${dayOfWeek}/${selectedSlot.periodNumber}`, 
-          { date: selectedSlot.date, attendances }
+          `${API_BASE_URL}/api/admin/attendance/mark/${selectedSlot.courseId}/${selectedSlot.sectionId}/${dayOfWeek}/${selectedSlot.periodNumber}`, 
+          {
+            date: selectedSlot.date,
+            attendances,
+            fullDay: true,
+            Deptid: selectedDepartment,
+            semesterId: selectedSemester
+          }
       );
       
-      toast.success(`Attendance saved for P${selectedSlot.periodNumber}`);
+      toast.success(`Attendance saved for the full day`);
       setSelectedSlot(null);
       setStudents([]);
     } catch (err) { 

@@ -13,6 +13,13 @@ export default  (sequelize, DataTypes) => {
     StudentCourse.belongsTo(models.StudentDetails, { foreignKey: 'regno', targetKey: 'registerNumber' });
     StudentCourse.belongsTo(models.Course, { foreignKey: 'courseId' });
     StudentCourse.belongsTo(models.Section, { foreignKey: 'sectionId' });
+    // Attendance rows are matched in queries using regno/courseId/sectionId (custom ON).
+    // This association is required so Sequelize can include PeriodAttendance from StudentCourse.
+    StudentCourse.hasMany(models.PeriodAttendance, {
+      foreignKey: 'regno',
+      sourceKey: 'regno',
+      constraints: false
+    });
   };
 
   return StudentCourse;

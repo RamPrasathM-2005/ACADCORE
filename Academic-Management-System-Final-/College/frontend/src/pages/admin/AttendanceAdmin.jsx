@@ -234,7 +234,11 @@ export default function AdminAttendanceGenerator() {
     setTimetable({});
     setSelectedCourse(null);
     try {
-      const batchData = batches.find((b) => b.batchId === parseInt(selectedBatch));
+      const batchData = batches.find((b) => b.batchId === parseInt(selectedBatch, 10));
+      if (!batchData || !selectedDegree || !selectedDepartment || !selectedSemester) {
+        toast.error("Please select valid Degree, Batch, Department and Semester");
+        return;
+      }
       const res = await axios.get(`${API_BASE_URL}/api/admin/attendance/timetable`, {
         params: {
           startDate: fromDate, endDate: toDate, degree: selectedDegree,
@@ -243,7 +247,10 @@ export default function AdminAttendanceGenerator() {
       });
       if (res.data.data?.timetable) setTimetable(res.data.data.timetable);
       else toast.info("No data found");
-    } catch (err) { toast.error("Error loading timetable"); } 
+    } catch (err) {
+      const message = err?.response?.data?.message || "Error loading timetable";
+      toast.error(message);
+    } 
     finally { setLoading(false); }
   };
 
@@ -251,8 +258,16 @@ export default function AdminAttendanceGenerator() {
     const { courseId, sectionId, sectionName, periodNumber, courseTitle, courseCode, date } = courseData;
     
     try {
+        const batchData = batches.find((b) => b.batchId === parseInt(selectedBatch));
         const dayOfWeek = new Date(date).toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
-        const res = await axios.get(`${API_BASE_URL}/api/admin/attendance/students/${courseId}/${sectionId || 'all'}/${dayOfWeek}/${periodNumber}`, { params: { date } });
+        const res = await axios.get(`${API_BASE_URL}/api/admin/attendance/students/${courseId}/${sectionId || 'all'}/${dayOfWeek}/${periodNumber}`, {
+          params: {
+            date,
+            Deptid: selectedDepartment,
+            semesterId: selectedSemester,
+            batch: batchData?.batch
+          }
+        });
         
         if (res.data.data) {
             setStudents(res.data.data.map((s) => ({ ...s, status: s.status || "P" })));
@@ -267,7 +282,9 @@ export default function AdminAttendanceGenerator() {
             });
         }
     } catch (err) { 
-        toast.error("Could not fetch students"); 
+        const message = err?.response?.data?.message || "Could not fetch students";
+        toast.error(message);
+        console.error("Student fetch error:", err?.response?.data || err);
     }
   };
 
@@ -275,9 +292,16 @@ export default function AdminAttendanceGenerator() {
     if (!selectedCourse) return;
     setSaving(true);
     try {
-      const attendances = students.map((s) => ({ rollnumber: s.rollnumber, status: s.status }));
+      const attendances = students.map((s) => ({
+        rollnumber: s.rollnumber,
+        status: s.status,
+        courseId: s.courseId || selectedCourse.courseId
+      }));
       const dayOfWeek = new Date(selectedCourse.date).toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
-      await axios.post(`${API_BASE_URL}/api/admin/attendance/mark/${selectedCourse.courseId}/${dayOfWeek}/${selectedCourse.periodNumber}`, { date: selectedCourse.date, attendances });
+      await axios.post(
+        `${API_BASE_URL}/api/admin/attendance/mark/${selectedCourse.courseId}/${selectedCourse.sectionId || 'all'}/${dayOfWeek}/${selectedCourse.periodNumber}`,
+        { date: selectedCourse.date, attendances }
+      );
       toast.success("Attendance saved!");
       setSelectedCourse(null); 
     } catch (err) { toast.error("Save failed"); } 

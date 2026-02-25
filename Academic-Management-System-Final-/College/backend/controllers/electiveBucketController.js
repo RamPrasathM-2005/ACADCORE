@@ -12,7 +12,38 @@ const {
   RegulationCourse,
   VerticalCourse,
   Vertical,
+  User,
+  StudentDetails,
+  Department,
+  StudentElectiveSelection,
 } = db;
+
+const getCurrentUserId = (req) => req.user?.id || req.user?.userId;
+const RESELECTION_KEY = "electiveReselectionRequests";
+
+const readReselectionRequests = (messages) => {
+  if (!messages || typeof messages !== "object") return [];
+  const list = messages[RESELECTION_KEY];
+  return Array.isArray(list) ? list : [];
+};
+
+const writeReselectionRequests = async (student, requests, updatedBy = null) => {
+  const currentMessages = (student.messages && typeof student.messages === "object") ? student.messages : {};
+  const nextMessages = { ...currentMessages };
+  if (Array.isArray(requests) && requests.length > 0) {
+    nextMessages[RESELECTION_KEY] = requests;
+  } else {
+    delete nextMessages[RESELECTION_KEY];
+  }
+  await StudentDetails.update(
+    {
+      messages: nextMessages,
+      ...(updatedBy ? { updatedBy } : {}),
+    },
+    { where: { studentId: student.studentId } }
+  );
+  await student.reload();
+};
 
 export const getElectiveBuckets = catchAsync(async (req, res) => {
   const { semesterId } = req.params;
@@ -303,4 +334,204 @@ export const deleteElectiveBucket = catchAsync(async (req, res) => {
   }
 
   res.status(200).json({ status: "success", message: "Bucket deleted successfully" });
+});
+
+export const requestElectiveReselection = catchAsync(async (req, res) => {
+  const userId = getCurrentUserId(req);
+  if (!userId) {
+    return res.status(401).json({ status: "failure", message: "User not authenticated" });
+  }
+
+  const { semesterId, reason } = req.body;
+  if (!semesterId) {
+    return res.status(400).json({ status: "failure", message: "semesterId is required" });
+  }
+
+  const user = await User.findByPk(userId, { include: [{ model: StudentDetails, as: "studentProfile" }] });
+  if (!user?.studentProfile) {
+    return res.status(404).json({ status: "failure", message: "Student profile not found" });
+  }
+
+  const regno = user.studentProfile.registerNumber;
+  const allocated = await StudentElectiveSelection.findAll({
+    where: { regno, status: "allocated" },
+    include: [{ model: ElectiveBucket, attributes: ["semesterId"] }]
+  });
+  const hasFinalized = allocated.some((s) => Number(s.ElectiveBucket?.semesterId) === Number(semesterId));
+  if (!hasFinalized) {
+    return res.status(400).json({ status: "failure", message: "No finalized elective submission found for this semester" });
+  }
+
+  const requests = readReselectionRequests(user.studentProfile.messages);
+  const latest = [...requests]
+    .filter((r) => Number(r.semesterId) === Number(semesterId))
+    .sort((a, b) => new Date(b.requestedAt || 0) - new Date(a.requestedAt || 0))[0];
+
+  if (latest && ["pending", "approved"].includes(latest.status)) {
+    return res.status(400).json({ status: "failure", message: "A reselection request is already in progress for this semester" });
+  }
+
+  const request = {
+    requestId: "ERS-" + Date.now() + "-" + Math.floor(Math.random() * 1000000),
+    semesterId: Number(semesterId),
+    reason: (reason || "").trim() || null,
+    status: "pending",
+    open: false,
+    requestedAt: new Date().toISOString(),
+    processedAt: null,
+    processedBy: null,
+    adminRemarks: null
+  };
+
+  requests.push(request);
+  await writeReselectionRequests(user.studentProfile, requests, userId);
+
+  res.status(200).json({ status: "success", message: "Reselection request submitted", data: request });
+});
+
+export const getElectiveReselectionRequestsForAdmin = catchAsync(async (req, res) => {
+  const { status } = req.query;
+
+  const students = await StudentDetails.findAll({
+    include: [
+      { model: Department, as: "department", attributes: ["Deptname", "Deptacronym"] },
+      { model: User, as: "user", attributes: ["userId", "userName", "userMail"] }
+    ],
+    attributes: ["studentId", "studentName", "registerNumber", "semester", "batch", "messages"]
+  });
+
+  const rows = [];
+  for (const s of students) {
+    const requests = readReselectionRequests(s.messages);
+    for (const r of requests) {
+      rows.push({
+        requestId: r.requestId,
+        status: r.status,
+        open: !!r.open,
+        semesterId: r.semesterId,
+        reason: r.reason,
+        requestedAt: r.requestedAt,
+        processedAt: r.processedAt,
+        processedBy: r.processedBy,
+        adminRemarks: r.adminRemarks,
+        student: {
+          studentId: s.studentId,
+          registerNumber: s.registerNumber,
+          studentName: s.studentName,
+          batch: s.batch,
+          semester: s.semester,
+          department: s.department?.Deptname || null,
+          departmentAcronym: s.department?.Deptacronym || null,
+          email: s.user?.userMail || null
+        }
+      });
+    }
+  }
+
+  const dedupedMap = new Map();
+  const statusPriority = {
+    approved: 4,
+    completed: 3,
+    rejected: 2,
+    pending: 1
+  };
+  for (const row of rows) {
+    const normalizedRequestId = String(row.requestId || "").trim();
+    const key = `${row.student.registerNumber}:${normalizedRequestId}`;
+    const prev = dedupedMap.get(key);
+    if (!prev) {
+      dedupedMap.set(key, { ...row, requestId: normalizedRequestId });
+      continue;
+    }
+
+    const prevStatusScore = statusPriority[String(prev.status || "").toLowerCase()] || 0;
+    const curStatusScore = statusPriority[String(row.status || "").toLowerCase()] || 0;
+    const prevProcTs = new Date(prev.processedAt || 0).getTime();
+    const curProcTs = new Date(row.processedAt || 0).getTime();
+    const prevReqTs = new Date(prev.requestedAt || 0).getTime();
+    const curReqTs = new Date(row.requestedAt || 0).getTime();
+
+    const shouldReplace =
+      curStatusScore > prevStatusScore ||
+      (curStatusScore === prevStatusScore && curProcTs > prevProcTs) ||
+      (curStatusScore === prevStatusScore && curProcTs === prevProcTs && curReqTs >= prevReqTs);
+
+    if (shouldReplace) {
+      dedupedMap.set(key, { ...row, requestId: normalizedRequestId });
+    }
+  }
+
+  const dedupedRows = Array.from(dedupedMap.values());
+  const filtered = (status && status !== "all")
+    ? dedupedRows.filter((r) => r.status === status)
+    : dedupedRows;
+
+  filtered.sort((a, b) => new Date(b.requestedAt || 0) - new Date(a.requestedAt || 0));
+  res.status(200).json({ status: "success", data: filtered });
+});
+
+export const handleElectiveReselectionRequest = catchAsync(async (req, res) => {
+  const adminUserId = getCurrentUserId(req);
+  if (!adminUserId) {
+    return res.status(401).json({ status: "failure", message: "User not authenticated" });
+  }
+
+  const { regno, requestId } = req.params;
+  const normalizedParamRequestId = String(requestId || "").trim();
+  const { action, remarks } = req.body;
+  if (!["approve", "reject"].includes(action)) {
+    return res.status(400).json({ status: "failure", message: "action must be approve or reject" });
+  }
+
+  const student = await StudentDetails.findOne({ where: { registerNumber: regno } });
+  if (!student) {
+    return res.status(404).json({ status: "failure", message: "Student not found" });
+  }
+
+  const requests = readReselectionRequests(student.messages);
+  const matchingIndexes = requests
+    .map((r, i) => ({ r, i }))
+    .filter(({ r }) => String(r.requestId || "").trim() === normalizedParamRequestId)
+    .map(({ i }) => i);
+
+  if (matchingIndexes.length === 0) {
+    return res.status(404).json({ status: "failure", message: "Request not found" });
+  }
+  const pendingIndexes = matchingIndexes.filter((i) => requests[i].status === "pending");
+  if (pendingIndexes.length === 0) {
+    return res.status(400).json({ status: "failure", message: "Only pending requests can be processed" });
+  }
+
+  for (const idx of pendingIndexes) {
+    requests[idx] = {
+      ...requests[idx],
+      status: action === "approve" ? "approved" : "rejected",
+      open: action === "approve",
+      processedAt: new Date().toISOString(),
+      processedBy: adminUserId,
+      adminRemarks: (remarks || "").trim() || null
+    };
+  }
+
+  await writeReselectionRequests(student, requests, adminUserId);
+
+  const persistedRequests = readReselectionRequests(student.messages);
+  const persistedUpdated = persistedRequests.find(
+    (r) => String(r.requestId || "").trim() === normalizedParamRequestId
+  );
+  if (!persistedUpdated || persistedUpdated.status !== (action === "approve" ? "approved" : "rejected")) {
+    return res.status(500).json({
+      status: "failure",
+      message: "Request action could not be persisted to database"
+    });
+  }
+
+  const updatedRequest = persistedUpdated;
+  res.status(200).json({
+    status: "success",
+    message: action === "approve"
+      ? "Reselection approved. Student can now reselect for this semester."
+      : "Reselection request rejected.",
+    data: updatedRequest
+  });
 });

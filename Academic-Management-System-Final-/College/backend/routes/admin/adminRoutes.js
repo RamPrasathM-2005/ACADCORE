@@ -82,6 +82,8 @@ import {
   deleteElectiveBucket,
   removeCourseFromBucket,
   updateElectiveBucketName,
+  getElectiveReselectionRequestsForAdmin,
+  handleElectiveReselectionRequest,
 } from "../../controllers/electiveBucketController.js";
 import {
   getAllRegulations,
@@ -235,6 +237,8 @@ router.put("/admin-marks/marks/co/:regno/:coId", requireAuth, updateStudentCOMar
 router.get('/export/course/:courseCode', requireAuth, exportCourseWiseCsvAdmin);
 
 router.get("/elective-selections", requireAuth, getElectiveSelections);
+router.get("/elective-reselection-requests", requireAuth, getElectiveReselectionRequestsForAdmin);
+router.post("/elective-reselection-requests/:regno/:requestId/action", requireAuth, handleElectiveReselectionRequest);
 
 router.post('/grades/import', requireAuth, upload.single('file'), uploadGrades);
 router.get('/grades/gpa', requireAuth, viewGPA);

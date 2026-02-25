@@ -27,4 +27,5 @@ export const branchMap = {
 };
 
 
+
 export default sequelize;
