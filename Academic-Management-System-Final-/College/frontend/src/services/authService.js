@@ -1,35 +1,32 @@
-import axios from 'axios';
+import API from '../api';
 
-const API_BASE = 'http://localhost:4000/api';
+const api = API;
 
-const api = axios.create({
-  baseURL: API_BASE,
-  withCredentials: false,
+let currentUser = null;
+
+const sanitizeUser = (user = {}) => ({
+  userId: user.userId ?? user.id ?? null,
+  id: user.id ?? user.userId ?? null,
+  username: user.username ?? user.userName ?? null,
+  userName: user.userName ?? user.username ?? null,
+  staffId: user.staffId ?? null,
+  departmentId: user.departmentId ?? null,
+  role: user.role ? String(user.role).toLowerCase() : null,
 });
 
-api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('token');
-  console.log('Token in request for', config.url, ':', token);
-  if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
-  } else {
-    console.log('No token found in localStorage for:', config.url);
-  }
-  return config;
-});
+export const setCurrentUser = (user) => {
+  currentUser = user ? sanitizeUser(user) : null;
+};
 
 export const login = async (email, password) => {
   try {
     const response = await api.post('/auth/login', { email, password });
-    console.log('Login response:', response.data);
-    if (response.data.status === 'success') {
-      const { user, token } = response.data.data;
-      localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify({ ...user, role: user.role.toLowerCase() }));
-      return { ...user, role: user.role.toLowerCase() };
-    } else {
-      throw new Error(response.data.message || 'Login failed');
-    }
+    const payload = response.data?.data || response.data;
+    const user = payload?.user;
+    if (!user) throw new Error(response.data?.message || 'Login failed');
+    const safeUser = sanitizeUser(user);
+    setCurrentUser(safeUser);
+    return safeUser;
   } catch (error) {
     console.error('Login API error:', error.response?.data || error.message);
     throw new Error(error.response?.data?.message || 'Invalid email or password');
@@ -46,13 +43,12 @@ export const register = async (username, email, password, role, Deptid, staffId)
     staffId: staffId ? parseInt(staffId) : null,
   });
   if (response.data.status === 'success') {
-    const { user, token } = response.data.data;
-    localStorage.setItem('token', token);
-    localStorage.setItem('user', JSON.stringify({ ...user, role: user.role.toLowerCase() }));
-    return { ...user, role: user.role.toLowerCase() };
-  } else {
-    throw new Error(response.data.message || 'Registration failed');
+    const { user } = response.data.data;
+    const safeUser = sanitizeUser(user);
+    setCurrentUser(safeUser);
+    return safeUser;
   }
+  throw new Error(response.data.message || 'Registration failed');
 };
 
 export const forgotPassword = async (email) => {
@@ -68,8 +64,7 @@ export const resetPassword = async (token, password) => {
   if (response.data.status !== 'success') {
     throw new Error(response.data.message || 'Password reset failed');
   }
-  localStorage.removeItem('token');
-  localStorage.removeItem('user');
+  setCurrentUser(null);
   return response.data.message || 'Password reset successfully';
 };
 
@@ -80,18 +75,13 @@ export const logout = async () => {
   } catch (err) {
     console.error("Logout API error:", err);
   } finally {
-    localStorage.clear(); 
-
-    
+    setCurrentUser(null);
     window.location.href = "/login";
   }
 };
 
 export const getCurrentUser = () => {
-  const userStr = localStorage.getItem('user');
-  console.log('Current user from localStorage:', JSON.parse(userStr));
-  return userStr ? JSON.parse(userStr) : null;
-  
+  return currentUser;
 };
 
 export const getDepartments = async () => {

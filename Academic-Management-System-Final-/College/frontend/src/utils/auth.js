@@ -3,8 +3,7 @@ import { getCurrentUser } from "../services/authService.js";
 
 export const isAuthenticated = () => {
   const user = getCurrentUser();
-  const token = localStorage.getItem("token");
-  return user !== null && token !== null;
+  return user !== null;
 };
 
 export const getUserRole = () => {

@@ -21,14 +21,10 @@ export default function AttendanceReport() {
   const [unmarkedReport, setUnmarkedReport] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const token = localStorage.getItem("token");
   const [minPercentage, setMinPercentage] = useState(""); // stores the input value
 
   const fetchWithAuth = async (url) => {
-    if (!token)
-      throw new Error("No authentication token found. Please log in.");
     const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}` },
       credentials: "include",
     });
     if (!res.ok) throw new Error(`HTTP error! Status: ${res.status}`);
@@ -53,7 +49,7 @@ export default function AttendanceReport() {
       }
     };
     loadBatches();
-  }, [token]);
+  }, []);
 
   useEffect(() => {
     const loadDepartments = async () => {
@@ -76,7 +72,7 @@ export default function AttendanceReport() {
       }
     };
     loadDepartments();
-  }, [filters.batch, token]);
+  }, [filters.batch]);
 
   useEffect(() => {
     const loadSemesters = async () => {
@@ -103,7 +99,7 @@ export default function AttendanceReport() {
       }
     };
     loadSemesters();
-  }, [filters.batch, filters.department, token]);
+  }, [filters.batch, filters.department]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -135,10 +131,6 @@ export default function AttendanceReport() {
     );
   };
   const handleGenerateReport = async () => {
-    if (!token) {
-      setError("No authentication token found. Please log in.");
-      return;
-    }
     try {
       setLoading(true);
       setError(null);
@@ -158,7 +150,6 @@ export default function AttendanceReport() {
 
   const handleBlackBoxReport = async () => {
     if (
-      !token ||
       !filters.batch ||
       filters.batch === "Select Batch" ||
       !filters.semester ||

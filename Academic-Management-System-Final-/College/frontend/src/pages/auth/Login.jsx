@@ -100,11 +100,10 @@ const Login = () => {
         password 
       });
 
-      if (data.token) {
-        localStorage.setItem("token", data.token);
+      if (data?.message || data?.user || data?.role || data?.token) {
         await refresh();           // This updates the user in context
         toast.success("Login Successful");
-        // No need to call handleRedirect here — useEffect will handle it
+        // No need to call handleRedirect here; useEffect will handle it
       }
     } catch (err) {
       toast.error(err.response?.data?.msg || "Login failed. Please check your credentials.");
@@ -116,10 +115,12 @@ const Login = () => {
   const handleGoogleSuccess = async (resp) => {
     try {
       const { data } = await API.post("/auth/google-login", { token: resp.credential });
-      localStorage.setItem("token", data.token);
+      if (!data?.message && !data?.user && !data?.role && !data?.token) {
+        throw new Error("Google login failed");
+      }
       await refresh();
       toast.success("Google Login Successful");
-      // Again — useEffect will redirect based on role
+      // Again; useEffect will redirect based on role
     } catch (err) {
       toast.error(err.response?.data?.msg || "Google Login Failed");
     }

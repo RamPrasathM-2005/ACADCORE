@@ -9,22 +9,29 @@ import {
   GraduationCap,
   ArrowRight
 } from 'lucide-react';
-import { getUserRole, getUserId } from '../../utils/auth';
 import {
   fetchStudentDetails,
   fetchSemesters,
   fetchElectiveBuckets,
   allocateElectives,
   fetchOecPecProgress,
+  requestElectiveReselection,
 } from '../../services/studentService';
+import { useAuth } from '../auth/AuthContext';
 
 const ChooseCourse = () => {
   const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
   
   // --- STATE ---
   const [semesters, setSemesters] = useState([]);
   const [selectedSemester, setSelectedSemester] = useState('');
   const [electiveBuckets, setElectiveBuckets] = useState([]);
+  const [bucketMeta, setBucketMeta] = useState({
+    isFinalized: false,
+    canReselectNow: false,
+    reselectionRequest: null
+  });
   const [selections, setSelections] = useState({});
   const [studentDetails, setStudentDetails] = useState({});
   const [progress, setProgress] = useState(null);
@@ -36,15 +43,16 @@ const ChooseCourse = () => {
   // --- INITIAL DATA FETCH ---
   useEffect(() => {
     const fetchStudentData = async () => {
-      if (getUserRole() !== 'student') {
+      if (authLoading) return;
+
+      if ((user?.role || '').toLowerCase() !== 'student') {
         navigate('/login');
         return;
       }
 
       try {
         setLoading(true);
-        const userId = getUserId();
-        const studentData = await fetchStudentDetails(userId);
+        const studentData = await fetchStudentDetails(user?.userId || user?.id);
         setStudentDetails(studentData);
 
         const batchYear = studentData?.studentProfile?.batch;
@@ -72,7 +80,7 @@ const ChooseCourse = () => {
     };
 
     fetchStudentData();
-  }, [navigate]);
+  }, [navigate, authLoading, user?.role, user?.userId, user?.id]);
 
   // --- FETCH BUCKETS ON SEMESTER CHANGE ---
   useEffect(() => {
@@ -85,12 +93,18 @@ const ChooseCourse = () => {
         setSuccess(null);
         setSelections({});
 
-        const bucketsData = await fetchElectiveBuckets(selectedSemester);
-        setElectiveBuckets(bucketsData);
+        const bucketData = await fetchElectiveBuckets(selectedSemester);
+        const buckets = bucketData?.buckets || [];
+        setElectiveBuckets(buckets);
+        setBucketMeta({
+          isFinalized: !!bucketData?.isFinalized,
+          canReselectNow: !!bucketData?.canReselectNow,
+          reselectionRequest: bucketData?.reselectionRequest || null
+        });
 
         const initialSelections = {};
-        bucketsData.forEach((bucket) => {
-          initialSelections[bucket.bucketId] = '';
+        buckets.forEach((bucket) => {
+          initialSelections[bucket.bucketId] = bucket.selectedCourseId || '';
         });
         setSelections(initialSelections);
       } catch (err) {
@@ -109,6 +123,7 @@ const ChooseCourse = () => {
   };
 
   const handleSelectionChange = (bucketId, courseId) => {
+    if (bucketMeta.isFinalized && !bucketMeta.canReselectNow) return;
     setSelections((prev) => ({ ...prev, [bucketId]: courseId }));
   };
 
@@ -117,6 +132,10 @@ const ChooseCourse = () => {
       setSubmitting(true);
       setError(null);
       setSuccess(null);
+
+      if (bucketMeta.isFinalized && !bucketMeta.canReselectNow) {
+        throw new Error('Your elective selection is already finalized for this semester.');
+      }
 
       const validSelections = Object.entries(selections)
         .filter(([_, courseId]) => courseId)
@@ -144,8 +163,20 @@ const ChooseCourse = () => {
       }
 
       await allocateElectives(selectedSemester, validSelections);
-      setSuccess('Elective courses allocated successfully!');
-      setTimeout(() => navigate('/student/dashboard'), 2000);
+      setSuccess('Elective selection submitted and finalized successfully.');
+      const bucketData = await fetchElectiveBuckets(selectedSemester);
+      const buckets = bucketData?.buckets || [];
+      setElectiveBuckets(buckets);
+      setBucketMeta({
+        isFinalized: !!bucketData?.isFinalized,
+        canReselectNow: !!bucketData?.canReselectNow,
+        reselectionRequest: bucketData?.reselectionRequest || null
+      });
+      const refreshedSelections = {};
+      buckets.forEach((bucket) => {
+        refreshedSelections[bucket.bucketId] = bucket.selectedCourseId || '';
+      });
+      setSelections(refreshedSelections);
     } catch (err) {
       setError(err.message || 'Failed to allocate elective courses.');
     } finally {
@@ -153,7 +184,25 @@ const ChooseCourse = () => {
     }
   };
 
+  const handleRequestReselection = async () => {
+    try {
+      if (!selectedSemester) throw new Error('Please select a semester first.');
+      const reason = window.prompt('Reason for reselection request (optional):') || '';
+      await requestElectiveReselection(selectedSemester, reason);
+      setSuccess('Reselection request submitted. Waiting for admin approval.');
+      const bucketData = await fetchElectiveBuckets(selectedSemester);
+      setBucketMeta({
+        isFinalized: !!bucketData?.isFinalized,
+        canReselectNow: !!bucketData?.canReselectNow,
+        reselectionRequest: bucketData?.reselectionRequest || null
+      });
+    } catch (err) {
+      setError(err.message || 'Failed to submit reselection request.');
+    }
+  };
+
   const isSubmitDisabled = () => {
+    if (bucketMeta.isFinalized && !bucketMeta.canReselectNow) return true;
     return electiveBuckets.length === 0 || Object.values(selections).some((val) => !val) || submitting;
   };
 
@@ -221,6 +270,21 @@ const ChooseCourse = () => {
                     </div>
                 )}
 
+                {bucketMeta.isFinalized && !bucketMeta.canReselectNow && (
+                    <div className="bg-blue-50 border border-blue-100 rounded-2xl p-4 text-sm text-blue-700">
+                        Selection is finalized for this semester. You cannot change the chosen courses unless admin approves a reselection request.
+                    </div>
+                )}
+
+                {bucketMeta.reselectionRequest && (
+                    <div className="bg-amber-50 border border-amber-100 rounded-2xl p-4 text-sm text-amber-700">
+                        Reselection request status: <span className="font-bold uppercase">{bucketMeta.reselectionRequest.status}</span>
+                        {bucketMeta.reselectionRequest.adminRemarks && (
+                          <span> | Remarks: {bucketMeta.reselectionRequest.adminRemarks}</span>
+                        )}
+                    </div>
+                )}
+
                 {/* Loading Spinner for buckets */}
                 {loading && (
                    <div className="py-12 flex justify-center">
@@ -264,6 +328,7 @@ const ChooseCourse = () => {
                                         <select
                                             value={selections[bucket.bucketId] || ''}
                                             onChange={(e) => handleSelectionChange(bucket.bucketId, e.target.value)}
+                                            disabled={(bucketMeta.isFinalized && !bucketMeta.canReselectNow) || submitting}
                                             className="w-full appearance-none bg-slate-50 border-none rounded-2xl px-5 py-4 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-indigo-100 focus:bg-white transition-all cursor-pointer"
                                         >
                                             <option value="">Select a Course...</option>
@@ -287,8 +352,34 @@ const ChooseCourse = () => {
                         ))}
                     </div>
 
+                    <div className="bg-white rounded-[24px] p-5 border border-slate-100">
+                      <h4 className="font-bold text-slate-800 mb-3">Final Submission Summary</h4>
+                      <div className="space-y-2 text-sm text-slate-600">
+                        {electiveBuckets.map((bucket) => {
+                          const selectedId = Number(selections[bucket.bucketId] || 0);
+                          const selectedCourse = bucket.courses.find((c) => Number(c.courseId) === selectedId);
+                          return (
+                            <div key={bucket.bucketId}>
+                              <span className="font-semibold">{bucket.bucketName}:</span>{' '}
+                              {selectedCourse
+                                ? `${selectedCourse.courseCode} - ${selectedCourse.courseTitle}`
+                                : 'Not selected'}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     {/* Submit Button */}
-                    <div className="flex justify-end pt-4 pb-10">
+                    <div className="flex justify-end gap-3 pt-4 pb-10">
+                        {bucketMeta.isFinalized && !bucketMeta.canReselectNow && (
+                          <button
+                            onClick={handleRequestReselection}
+                            className="px-6 py-4 rounded-full font-bold text-sm bg-amber-500 text-white hover:bg-amber-600 transition-all"
+                          >
+                            Request Reselection
+                          </button>
+                        )}
                         <button
                             onClick={handleSubmit}
                             disabled={isSubmitDisabled()}
@@ -299,7 +390,7 @@ const ChooseCourse = () => {
                                     : 'bg-indigo-600 text-white hover:bg-indigo-700 hover:shadow-indigo-200 hover:-translate-y-1'}
                             `}
                         >
-                            {submitting ? 'Allocating...' : 'Confirm Allocation'}
+                            {submitting ? 'Submitting...' : (bucketMeta.canReselectNow ? 'Submit Reselection' : 'Confirm Final Submission')}
                             {!submitting && <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />}
                         </button>
                     </div>

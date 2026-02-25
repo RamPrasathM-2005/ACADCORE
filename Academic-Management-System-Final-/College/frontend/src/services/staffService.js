@@ -4,6 +4,7 @@ const API_URL = 'http://localhost:4000/api/staff';
 
 const api = axios.create({
   baseURL: API_URL,
+  withCredentials: true,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -11,10 +12,6 @@ const api = axios.create({
 
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
     if (config.data instanceof FormData) {
       delete config.headers['Content-Type'];
     }
@@ -25,11 +22,20 @@ api.interceptors.request.use(
 
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      window.location.href = '/login';
+  async (error) => {
+    const originalRequest = error.config || {};
+    const status = error.response?.status;
+
+    if (status === 401 && !originalRequest._retry) {
+      originalRequest._retry = true;
+      try {
+        await axios.post('http://localhost:4000/api/auth/refresh', {}, { withCredentials: true });
+        return api(originalRequest);
+      } catch {
+        window.location.href = '/login';
+      }
     }
+
     return Promise.reject(error);
   }
 );

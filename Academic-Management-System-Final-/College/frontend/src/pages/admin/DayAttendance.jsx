@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 const API_BASE_URL = "http://localhost:4000"; // Update if needed
+axios.defaults.withCredentials = true;
 
 // --- PERIOD CELL COMPONENT ---
 const PeriodCell = ({ date, periodNumber, courses, selectedSlot, onSelect }) => {
@@ -70,9 +71,6 @@ export default function DayAttendance() {
 
   // Initial Date Setup
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (token) axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-    
     if (!fromDate) {
       const today = new Date();
       setFromDate(today.toISOString().split("T")[0]);

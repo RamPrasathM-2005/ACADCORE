@@ -1,20 +1,24 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import API from "../../api";
+import { setCurrentUser } from "../../services/authService";
 
 const AuthContext = createContext(null);
+
+const sanitizeUser = (user = {}) => ({
+  userId: user.userId ?? user.id ?? null,
+  id: user.id ?? user.userId ?? null,
+  username: user.username ?? user.userName ?? null,
+  userName: user.userName ?? user.username ?? null,
+  staffId: user.staffId ?? null,
+  departmentId: user.departmentId ?? null,
+  role: typeof user.role === "string" ? user.role : null,
+});
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const refresh = async () => {
-    const token = localStorage.getItem("token");
-    if (!token) {
-      setUser(null);
-      setLoading(false);
-      return null;
-    }
-
     try {
       // 1. Get basic info from /auth/me
       const { data } = await API.get("/auth/me");
@@ -28,15 +32,15 @@ export function AuthProvider({ children }) {
         ...userDetail,
         role: me.role ? me.role.toLowerCase() : userDetail.role.toLowerCase(),
       };
+      const safeUser = sanitizeUser(merged);
 
-      setUser(merged);
-      localStorage.setItem("user", JSON.stringify(merged));
-      return merged;
+      setUser(safeUser);
+      setCurrentUser(safeUser);
+      return safeUser;
     } catch (error) {
       console.error("Auth Refresh Error:", error);
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
       setUser(null);
+      setCurrentUser(null);
       return null;
     } finally {
       setLoading(false);

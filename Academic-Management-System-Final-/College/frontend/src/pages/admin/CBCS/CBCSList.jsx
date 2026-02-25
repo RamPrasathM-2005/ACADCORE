@@ -418,6 +418,10 @@ const CBCSList = () => {
                                 <GraduationCap className="h-3.5 w-3.5 text-gray-400 mr-2" />
                                 Semester {cbcs.semesterNumber}
                               </div>
+                              <div className="text-xs text-gray-500 truncate">
+                                {(cbcs.courseNames || []).slice(0, 2).join(', ') || 'No courses'}
+                                {(cbcs.courseNames || []).length > 2 ? ` +${cbcs.courseNames.length - 2} more` : ''}
+                              </div>
                             </div>
                           </td>
                           <td className="px-6 py-5">

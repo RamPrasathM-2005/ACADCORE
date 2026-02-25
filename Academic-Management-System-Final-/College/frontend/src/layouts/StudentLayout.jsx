@@ -1,15 +1,15 @@
 import React from 'react';
-import { Outlet, useNavigate } from 'react-router-dom';
-import { getUserRole } from '../utils/auth';
+import { Navigate, Outlet } from 'react-router-dom';
 import StudentHeader from '../pages/student/StudentHeader';
+import { useAuth } from '../pages/auth/AuthContext';
 
 const StudentLayout = () => {
-  const navigate = useNavigate();
-  const role = getUserRole();
+  const { user, loading } = useAuth();
 
-  if (role !== 'student') {
-    navigate('/login');
-    return null;
+  if (loading) return null;
+
+  if ((user?.role || '').toLowerCase() !== 'student') {
+    return <Navigate to="/login" replace />;
   }
 
   return (

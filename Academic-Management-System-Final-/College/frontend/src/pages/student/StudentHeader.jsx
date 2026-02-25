@@ -1,10 +1,11 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { logout, getCurrentUser } from '../../services/authService';
+import { logout } from '../../services/authService';
+import { useAuth } from '../auth/AuthContext';
 
 const StudentHeader = () => {
   const navigate = useNavigate();
-  const user = getCurrentUser();
+  const { user } = useAuth();
 
   const handleHome = () => {
     navigate('/student/dashboard');

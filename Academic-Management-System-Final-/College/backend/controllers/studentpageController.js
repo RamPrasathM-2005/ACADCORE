@@ -11,6 +11,27 @@ const {
 
 // Helper to safely get user ID from req.user (handles both id and userId)
 const getCurrentUserId = (req) => req.user?.id || req.user?.userId;
+const RESELECTION_KEY = "electiveReselectionRequests";
+
+const readReselectionRequests = (messages) => {
+  if (!messages || typeof messages !== "object") return [];
+  const list = messages[RESELECTION_KEY];
+  return Array.isArray(list) ? list : [];
+};
+
+const writeReselectionRequests = async (student, requests, updatedBy = null) => {
+  const currentMessages = (student.messages && typeof student.messages === "object") ? student.messages : {};
+  const nextMessages = { ...currentMessages };
+  if (Array.isArray(requests) && requests.length > 0) {
+    nextMessages[RESELECTION_KEY] = requests;
+  } else {
+    delete nextMessages[RESELECTION_KEY];
+  }
+  await student.update({
+    messages: nextMessages,
+    ...(updatedBy ? { updatedBy } : {}),
+  });
+};
 
 // 1. GET STUDENT ACADEMIC IDS
 export const getStudentAcademicIds = catchAsync(async (req, res) => {
@@ -197,6 +218,16 @@ export const getStudentDetails = catchAsync(async (req, res) => {
 
 // 4. GET ELECTIVE BUCKETS (unchanged – no userId needed)
 export const getElectiveBuckets = catchAsync(async (req, res) => {
+  const userId = getCurrentUserId(req);
+  if (!userId) {
+    return res.status(401).json({ status: "failure", message: "User not authenticated" });
+  }
+
+  const user = await User.findByPk(userId, { include: [{ model: StudentDetails, as: "studentProfile" }] });
+  if (!user?.studentProfile) {
+    return res.status(404).json({ status: "failure", message: "Student profile not found" });
+  }
+
   const { semesterId } = req.query;
   if (!semesterId) {
     return res.status(400).json({ status: "failure", message: "semesterId is required" });
@@ -218,9 +249,32 @@ export const getElectiveBuckets = catchAsync(async (req, res) => {
     order: [["bucketNumber", "ASC"]]
   });
 
+  const existingSelections = await StudentElectiveSelection.findAll({
+    where: { regno: user.studentProfile.registerNumber, status: "allocated" },
+    include: [{
+      model: ElectiveBucket,
+      attributes: ["bucketId", "semesterId"]
+    }, {
+      model: Course,
+      attributes: ["courseId", "courseCode", "courseTitle", "credits", "category"]
+    }]
+  });
+
+  const semesterSelections = existingSelections.filter(
+    (s) => Number(s.ElectiveBucket?.semesterId) === Number(semesterId)
+  );
+  const selectedByBucket = new Map(semesterSelections.map((s) => [Number(s.bucketId), s.Course]));
+  const isFinalized = semesterSelections.length > 0;
+
+  const reselectionRequests = readReselectionRequests(user.studentProfile.messages);
+  const latestRequest = [...reselectionRequests]
+    .filter((r) => Number(r.semesterId) === Number(semesterId))
+    .sort((a, b) => new Date(b.requestedAt || 0) - new Date(a.requestedAt || 0))[0] || null;
+  const canReselectNow = latestRequest?.status === "approved" && latestRequest?.open === true;
+
   const formatted = buckets.map((bucket) => {
     const b = bucket.toJSON();
-    const courses = (b.ElectiveBucketCourses || [])
+    const allCourses = (b.ElectiveBucketCourses || [])
       .map((item) => item.Course)
       .filter(Boolean)
       .map((course) => ({
@@ -231,16 +285,36 @@ export const getElectiveBuckets = catchAsync(async (req, res) => {
         category: course.category
       }));
 
+    const selectedCourse = selectedByBucket.get(Number(b.bucketId));
+    const courses = (isFinalized && !canReselectNow)
+      ? (selectedCourse ? [{
+          courseId: selectedCourse.courseId,
+          courseCode: selectedCourse.courseCode,
+          courseTitle: selectedCourse.courseTitle,
+          credits: selectedCourse.credits,
+          category: selectedCourse.category
+        }] : [])
+      : allCourses;
+
     return {
       bucketId: b.bucketId,
       bucketNumber: b.bucketNumber,
       bucketName: b.bucketName,
+      selectedCourseId: selectedCourse?.courseId || null,
       requiredSelections: courses.length > 0 ? 1 : 0,
       courses
     };
   });
 
-  res.status(200).json({ status: "success", data: formatted });
+  res.status(200).json({
+    status: "success",
+    data: {
+      buckets: formatted,
+      isFinalized,
+      canReselectNow,
+      reselectionRequest: latestRequest
+    }
+  });
 });
 
 // 5. ALLOCATE ELECTIVES
@@ -250,24 +324,113 @@ export const allocateElectives = catchAsync(async (req, res) => {
     return res.status(401).json({ status: "failure", message: "User not authenticated" });
   }
 
-  const user = await User.findByPk(userId, { include: [{ model: StudentDetails, as: 'studentProfile' }] });
-  
+  const user = await User.findByPk(userId, { include: [{ model: StudentDetails, as: "studentProfile" }] });
+
   if (!user?.studentProfile) {
     return res.status(404).json({ status: "failure", message: "Student profile not found" });
   }
 
-  const { selections } = req.body;
-  
-  const data = selections.map(s => ({
-    regno: user.studentProfile.registerNumber,
-    bucketId: s.bucketId,
-    selectedCourseId: s.courseId,
-    status: 'allocated',
-    createdBy: userId   // ← safe
-  }));
+  const { semesterId, selections } = req.body;
+  if (!semesterId || !Array.isArray(selections)) {
+    return res.status(400).json({ status: "failure", message: "semesterId and selections are required" });
+  }
 
-  await StudentElectiveSelection.bulkCreate(data);
-  res.status(200).json({ status: "success", message: "Allocated successfully" });
+  const buckets = await ElectiveBucket.findAll({
+    where: { semesterId },
+    include: [{
+      model: ElectiveBucketCourse,
+      attributes: ["bucketId", "courseId"]
+    }],
+    order: [["bucketNumber", "ASC"]]
+  });
+
+  if (buckets.length === 0) {
+    return res.status(400).json({ status: "failure", message: "No elective buckets configured for this semester" });
+  }
+
+  const validBucketIds = new Set(buckets.map((b) => Number(b.bucketId)));
+  const bucketCourseMap = new Map();
+  for (const bucket of buckets) {
+    bucketCourseMap.set(
+      Number(bucket.bucketId),
+      new Set((bucket.ElectiveBucketCourses || []).map((x) => Number(x.courseId)))
+    );
+  }
+
+  if (selections.length !== buckets.length) {
+    return res.status(400).json({
+      status: "failure",
+      message: "You must select exactly one course from each elective bucket."
+    });
+  }
+
+  const selectedBucketIds = new Set();
+  for (const sel of selections) {
+    const bucketId = Number(sel.bucketId);
+    const courseId = Number(sel.courseId);
+
+    if (!validBucketIds.has(bucketId)) {
+      return res.status(400).json({ status: "failure", message: "Invalid bucket selected: " + bucketId });
+    }
+    if (selectedBucketIds.has(bucketId)) {
+      return res.status(400).json({ status: "failure", message: "Only one course can be selected per bucket." });
+    }
+    selectedBucketIds.add(bucketId);
+
+    if (!bucketCourseMap.get(bucketId)?.has(courseId)) {
+      return res.status(400).json({ status: "failure", message: "Selected course is not part of bucket " + bucketId });
+    }
+  }
+
+  const regno = user.studentProfile.registerNumber;
+  const existingSelections = await StudentElectiveSelection.findAll({
+    where: { regno, status: "allocated" },
+    include: [{ model: ElectiveBucket, attributes: ["bucketId", "semesterId"] }]
+  });
+  const semesterSelections = existingSelections.filter(
+    (s) => Number(s.ElectiveBucket?.semesterId) === Number(semesterId)
+  );
+
+  const requests = readReselectionRequests(user.studentProfile.messages);
+  const latestRequestIndex = [...requests]
+    .map((r, i) => ({ ...r, index: i }))
+    .filter((r) => Number(r.semesterId) === Number(semesterId))
+    .sort((a, b) => new Date(b.requestedAt || 0) - new Date(a.requestedAt || 0))[0];
+  const canReselectNow = latestRequestIndex?.status === "approved" && latestRequestIndex?.open === true;
+
+  if (semesterSelections.length > 0 && !canReselectNow) {
+    return res.status(400).json({
+      status: "failure",
+      message: "Elective selection is already finalized for this semester. Request reselection to modify."
+    });
+  }
+
+  await sequelize.transaction(async (t) => {
+    if (semesterSelections.length > 0) {
+      await StudentElectiveSelection.destroy({
+        where: { selectionId: { [Op.in]: semesterSelections.map((s) => s.selectionId) } },
+        transaction: t
+      });
+    }
+
+    const data = selections.map((s) => ({
+      regno,
+      bucketId: Number(s.bucketId),
+      selectedCourseId: Number(s.courseId),
+      status: "allocated",
+      createdBy: userId
+    }));
+
+    await StudentElectiveSelection.bulkCreate(data, { transaction: t });
+  });
+
+  if (canReselectNow && latestRequestIndex) {
+    // Requirement: after successful reselection submission, remove the request entry from DB messages.
+    requests.splice(latestRequestIndex.index, 1);
+    await writeReselectionRequests(user.studentProfile, requests, userId);
+  }
+
+  res.status(200).json({ status: "success", message: "Elective selection submitted successfully" });
 });
 
 // 6. ATTENDANCE SUMMARY

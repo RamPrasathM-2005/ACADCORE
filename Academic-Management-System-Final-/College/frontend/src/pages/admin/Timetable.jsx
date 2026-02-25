@@ -12,6 +12,7 @@ import axios from "axios";
 
 const API_BASE_URL = "http://localhost:4000";
 const ALLOCATE_URL = `${API_BASE_URL}/api/admin/timetable/allocate`;
+axios.defaults.withCredentials = true;
 
 const Timetable = () => {
   const [degrees, setDegrees] = useState([]);
@@ -62,29 +63,6 @@ const Timetable = () => {
   };
 
   // Auth
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (token)
-      axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-  }, []);
-
-  const refreshTimetable = () => {
-  if (selectedSem) {
-    axios
-      .get(`${API_BASE_URL}/api/admin/timetable/semester/${selectedSem}`)
-      .then((res) => {
-        console.log("Timetable Data Received:", res.data.data); // DEBUG LOG
-        setTimetableData(res.data.data || []);
-      })
-      .catch(err => console.error("Fetch error:", err));
-  }
-};
-
-// Use this in your useEffect
-useEffect(() => {
-  refreshTimetable();
-}, [selectedSem]);
-
   // Fetch basic data (unchanged)
   useEffect(() => {
     axios
