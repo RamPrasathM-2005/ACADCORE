@@ -234,7 +234,11 @@ export default function AdminAttendanceGenerator() {
     setTimetable({});
     setSelectedCourse(null);
     try {
-      const batchData = batches.find((b) => b.batchId === p3arseInt(selectedBatch));
+      const batchData = batches.find((b) => b.batchId === parseInt(selectedBatch, 10));
+      if (!batchData || !selectedDegree || !selectedDepartment || !selectedSemester) {
+        toast.error("Please select valid Degree, Batch, Department and Semester");
+        return;
+      }
       const res = await axios.get(`${API_BASE_URL}/api/admin/attendance/timetable`, {
         params: {
           startDate: fromDate, endDate: toDate, degree: selectedDegree,
@@ -243,7 +247,10 @@ export default function AdminAttendanceGenerator() {
       });
       if (res.data.data?.timetable) setTimetable(res.data.data.timetable);
       else toast.info("No data found");
-    } catch (err) { toast.error("Error loading timetable"); } 
+    } catch (err) {
+      const message = err?.response?.data?.message || "Error loading timetable";
+      toast.error(message);
+    } 
     finally { setLoading(false); }
   };
 
