@@ -1198,10 +1198,13 @@ import {
   ChevronLeft,
   Filter,
 } from "lucide-react";
+import { useAuth } from "../auth/AuthContext";
 
 const API_BASE_URL = "http://localhost:4000";
+axios.defaults.withCredentials = true;
 
 export default function AttendanceGenerator() {
+  const { user } = useAuth();
   // --- ALL LOGIC REMAINS EXACTLY AS PROVIDED ---
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
@@ -1212,7 +1215,6 @@ export default function AttendanceGenerator() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [selectedCourse, setSelectedCourse] = useState(null);
-  const [userProfile, setUserProfile] = useState(null);
   const [bulkStatus, setBulkStatus] = useState("");
   const [skippedStudents, setSkippedStudents] = useState([]);
   const [nextPeriodSkippedStudents, setNextPeriodSkippedStudents] = useState(
@@ -1220,21 +1222,6 @@ export default function AttendanceGenerator() {
   );
   const [appendPeriods, setAppendPeriods] = useState({});
   const [isAppendMode, setIsAppendMode] = useState(false);
-
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-    } else {
-      setError("No authentication token found. Please log in.");
-    }
-    try {
-      const userData = JSON.parse(localStorage.getItem("user") || "{}");
-      setUserProfile(userData);
-    } catch (err) {
-      setError("Failed to load user profile");
-    }
-  }, []);
 
   useEffect(() => {
     if (!fromDate) {
@@ -1475,7 +1462,7 @@ export default function AttendanceGenerator() {
             Attendance Management
           </h1>
           <p className="text-sm text-slate-500 font-medium uppercase tracking-tight">
-            {userProfile?.staffId || "Staff View"} •{" "}
+            {user?.staffId || "Staff View"} •{" "}
             {new Date().toLocaleDateString("en-US", {
               month: "short",
               year: "numeric",

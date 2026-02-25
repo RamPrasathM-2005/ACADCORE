@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
+import {
   ChevronDown, 
   ChevronUp, 
   BookOpen, 
@@ -19,11 +19,12 @@ import {
   Shield // Icon for Degree
 } from 'lucide-react';
 
-import { api, getCurrentUser } from '../../../services/authService';
+import { api } from '../../../services/authService';
+import { useAuth } from '../../auth/AuthContext';
 
 const CreateCBCS = () => {
   // Get current user to use real ID instead of hardcoded 101
-  const currentUser = getCurrentUser();
+  const { user: currentUser } = useAuth();
 
   // State management
   const [filters, setFilters] = useState({
@@ -306,7 +307,7 @@ const CreateCBCS = () => {
         Deptid: parseInt(filters.deptId),
         batchId: parseInt(filters.batchId),
         semesterId: parseInt(filters.semesterId),
-        createdBy: currentUser?.Userid || 101, 
+        createdBy: currentUser?.userId || currentUser?.Userid || 101,
         total_students: calculateTotalStudents(),
         type: cbcsType,
         subjects: Object.values(selectedCourses)

@@ -9,7 +9,6 @@ import {
   GraduationCap,
   ArrowRight
 } from 'lucide-react';
-import { getUserRole, getUserId } from '../../utils/auth';
 import {
   fetchStudentDetails,
   fetchSemesters,
@@ -17,9 +16,11 @@ import {
   allocateElectives,
   fetchOecPecProgress,
 } from '../../services/studentService';
+import { useAuth } from '../auth/AuthContext';
 
 const ChooseCourse = () => {
   const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
   
   // --- STATE ---
   const [semesters, setSemesters] = useState([]);
@@ -36,15 +37,16 @@ const ChooseCourse = () => {
   // --- INITIAL DATA FETCH ---
   useEffect(() => {
     const fetchStudentData = async () => {
-      if (getUserRole() !== 'student') {
+      if (authLoading) return;
+
+      if ((user?.role || '').toLowerCase() !== 'student') {
         navigate('/login');
         return;
       }
 
       try {
         setLoading(true);
-        const userId = getUserId();
-        const studentData = await fetchStudentDetails(userId);
+        const studentData = await fetchStudentDetails(user?.userId || user?.id);
         setStudentDetails(studentData);
 
         const batchYear = studentData?.studentProfile?.batch;
@@ -72,7 +74,7 @@ const ChooseCourse = () => {
     };
 
     fetchStudentData();
-  }, [navigate]);
+  }, [navigate, authLoading, user?.role, user?.userId, user?.id]);
 
   // --- FETCH BUCKETS ON SEMESTER CHANGE ---
   useEffect(() => {

@@ -43,12 +43,14 @@ const Report = () => {
 
   const api = axios.create({
     baseURL: 'http://localhost:4000/api',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+    withCredentials: true,
+    headers: { 'Content-Type': 'application/json' },
   });
 
   const adminMarksApi = axios.create({
     baseURL: 'http://localhost:4000/api/admin',
-    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${localStorage.getItem('token')}` },
+    withCredentials: true,
+    headers: { 'Content-Type': 'application/json' },
   });
 
   useEffect(() => {

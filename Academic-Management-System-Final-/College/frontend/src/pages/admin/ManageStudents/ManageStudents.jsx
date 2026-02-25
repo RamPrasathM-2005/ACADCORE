@@ -37,10 +37,6 @@ const ManageStudents = () => {
       searchInputRef.current.value = '';
       console.log('Search input cleared via ref:', searchInputRef.current.value);
     }
-    if (localStorage.getItem('searchTerm')) {
-      console.warn('Found searchTerm in localStorage:', localStorage.getItem('searchTerm'));
-      localStorage.removeItem('searchTerm');
-    }
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('search')) {
       console.warn('Found search query parameter:', urlParams.get('search'));

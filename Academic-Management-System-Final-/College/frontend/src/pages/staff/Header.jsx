@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, X, CheckCircle2, XCircle } from 'lucide-react'; // Added icons
-import { logout, getCurrentUser, api } from '../../services/authService'; // Ensure api is imported
+import { logout, api } from '../../services/authService'; // Ensure api is imported
+import { useAuth } from '../auth/AuthContext';
 
 const Header = () => {
   const navigate = useNavigate();
-  const user = getCurrentUser();
+  const { user } = useAuth();
   
   // State for notifications
   const [notifications, setNotifications] = useState([]);

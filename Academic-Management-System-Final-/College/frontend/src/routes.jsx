@@ -1,6 +1,5 @@
 import React from "react";
 import { Navigate } from "react-router-dom";
-import { isAuthenticated, getUserRole } from "./utils/auth.js"; // ← you can remove if not used anymore
 
 // Layouts
 import AdminLayout from "./layouts/AdminLayout";

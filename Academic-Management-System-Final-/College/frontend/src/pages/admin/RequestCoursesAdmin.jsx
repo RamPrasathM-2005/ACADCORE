@@ -4,8 +4,9 @@ import { Search, Check, X, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css'; // Import toast styles
-import { api, getCurrentUser } from '../../services/authService'; // Adjust path as needed
+import { api } from '../../services/authService'; // Adjust path as needed
 import Filters from '../admin/ManageCourses/Filters'; // Adjust path as needed, assuming same Filters component
+import { useAuth } from '../auth/AuthContext';
 
 const RequestCoursesAdmin = () => {
   const navigate = useNavigate();
@@ -15,7 +16,7 @@ const RequestCoursesAdmin = () => {
   const [filters, setFilters] = useState({ dept: '', branch: '', semester: '', batch: '', name: '' });
   const [branches, setBranches] = useState([]);
   const [depts, setDepts] = useState([]);
-  const user = getCurrentUser(); // For admin
+  const { user } = useAuth(); // For admin
 
   const courseTypes = ['THEORY', 'PRACTICAL', 'INTEGRATED', 'EXPERIENTIAL LEARNING']; // Define for type filter to avoid undefined error
 

@@ -154,15 +154,38 @@ export const createCbcs = async (req, res) => {
  */
 export const getAllCbcs = async (req, res) => {
   try {
-    const data = await CBCS.findAll({
+    const rows = await CBCS.findAll({
       include: [
         { model: Department, attributes: ['Deptname'] },
         { model: Batch, attributes: ['batch'] },
         { model: Semester, attributes: ['semesterNumber'] },
-        { model: User, attributes: ['userName'] }
+        { model: CBCSSubject, attributes: ['courseCode', 'courseTitle'] }
       ],
       order: [['cbcs_id', 'DESC']]
     });
+
+    const data = rows.map((row) => {
+      const plain = row.get({ plain: true });
+      return {
+        cbcs_id: plain.cbcs_id,
+        Deptid: plain.Deptid,
+        batchId: plain.batchId,
+        semesterId: plain.semesterId,
+        complete: plain.complete,
+        isActive: plain.isActive,
+        total_students: plain.total_students,
+        createdBy: plain.createdBy,
+        updatedBy: plain.updatedBy,
+        createdDate: plain.createdAt || plain.createdDate,
+        updatedDate: plain.updatedAt || plain.updatedDate,
+        DeptName: plain.Department?.Deptname || 'N/A',
+        batch: plain.Batch?.batch || 'N/A',
+        semesterNumber: plain.Semester?.semesterNumber ?? null,
+        courseNames: (plain.CBCSSubjects || []).map((s) => s.courseTitle).filter(Boolean),
+        courseCodes: (plain.CBCSSubjects || []).map((s) => s.courseCode).filter(Boolean),
+      };
+    });
+
     res.json({ success: true, data });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -201,7 +224,7 @@ export const getStudentCbcsSelection = async (req, res) => {
     const { regno, batchId, deptId, semesterId } = req.query;
 
     const cbcs = await CBCS.findOne({
-      where: { batchId, Deptid: deptId, semesterId, isActive: 'YES' },
+      where: { batchId, Deptid: deptId, semesterId },
       include: [{ model: Department }, { model: Batch }, { model: Semester }]
     });
 
@@ -390,28 +413,59 @@ export const downloadCbcsExcel = async (req, res) => {
     });
 
     for (const subj of subjects) {
-      const sheet = workbook.addWorksheet(subj.courseCode || String(subj.courseId));
+      const sheet = workbook.addWorksheet((subj.courseCode || String(subj.courseId)).slice(0, 31));
       
       const sections = await CBCSSectionStaff.findAll({
         where: { cbcs_subject_id: subj.cbcs_subject_id },
-        include: [{ model: User, attributes: ['userName'] }]
+        include: [
+          { model: User, as: 'staff', attributes: ['userName'] },
+          { model: Section, as: 'section', attributes: ['sectionId', 'sectionName'] }
+        ]
       });
 
-      // Excel Formatting Logic (Condensed for brevity, same as your raw code)
-      sheet.addRow([`Subject: ${subj.courseCode} - ${subj.Course?.courseTitle}`]);
-      sheet.mergeCells(1, 1, 1, sections.length * 2);
+      sheet.columns = [
+        { header: 'Section', key: 'sectionName', width: 12 },
+        { header: 'Staff', key: 'staffName', width: 24 },
+        { header: 'Register Number', key: 'regno', width: 22 },
+        { header: 'Student Name', key: 'studentName', width: 30 },
+      ];
+
+      sheet.addRow([`Subject: ${subj.courseCode} - ${subj.Course?.courseTitle || subj.courseTitle || ''}`]);
+      sheet.mergeCells(1, 1, 1, 4);
+      sheet.getRow(1).font = { bold: true };
+      sheet.addRow([]);
+      sheet.addRow(['Section', 'Staff', 'Register Number', 'Student Name']);
+      sheet.getRow(3).font = { bold: true };
 
       const students = await StudentCourse.findAll({
         where: { courseId: subj.courseId },
-        include: [{ 
-            model: StudentDetails, 
-            on: { regno: sequelize.where(sequelize.col('StudentCourse.regno'), '=', sequelize.col('StudentDetail.registerNumber')) }
-        }],
+        include: [{ model: StudentDetails, attributes: ['registerNumber', 'studentName'] }],
         order: [['sectionId', 'ASC'], ['regno', 'ASC']]
       });
 
-      // Map students to sheet columns based on section logic...
-      // (Implementation remains similar to your ExcelJS logic)
+      const sectionLookup = new Map(
+        sections.map((s) => [
+          s.sectionId,
+          {
+            sectionName: s.section?.sectionName || `S${s.sectionId}`,
+            staffName: s.staff?.userName || 'N/A',
+          },
+        ])
+      );
+
+      if (!students.length) {
+        sheet.addRow(['-', '-', 'No students allocated', '-']);
+      } else {
+        for (const st of students) {
+          const meta = sectionLookup.get(st.sectionId) || { sectionName: `S${st.sectionId}`, staffName: 'N/A' };
+          sheet.addRow([
+            meta.sectionName,
+            meta.staffName,
+            st.regno,
+            st.StudentDetail?.studentName || st.StudentDetails?.studentName || st.regno,
+          ]);
+        }
+      }
     }
 
     const tempPath = path.join(process.cwd(), 'temp', `CBCS_${cbcs_id}.xlsx`);

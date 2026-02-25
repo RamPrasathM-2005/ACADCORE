@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 const API_BASE_URL = "http://localhost:4000";
+axios.defaults.withCredentials = true;
 
 export default function AdminAttendanceGenerator() {
   const [selectedDate, setSelectedDate] = useState("");
@@ -31,9 +32,6 @@ export default function AdminAttendanceGenerator() {
   const [selectedSemester, setSelectedSemester] = useState("");
 
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (!token) return;
-    axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
     if (!selectedDate) {
       setSelectedDate(new Date().toISOString().split("T")[0]);
     }
