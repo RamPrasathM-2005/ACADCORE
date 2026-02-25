@@ -10,8 +10,6 @@ const {
   Semester,
   StudentGrade,
   NptelCreditTransfer,
-  Batch,
-  RegulationCourse,
   StudentElectiveSelection,
   Course,
   User,
@@ -272,108 +270,112 @@ export const getOecPecProgress = catchAsync(async (req, res) => {
   // Debug log
   console.log(`[OEC/PEC] Student found: ${student.registerNumber}, batch: ${student.batch}`);
 
-  // 4. Now safely access department
-  const deptAcr = student.department?.Deptacronym || '';
+  // 4. Requirement is fixed irrespective of regulation.
+  const requiredMap = { OEC: 3, PEC: 6 };
 
-  // 5. Find batch/regulation with fallback:
-  // first try batch+branch, then batch-only (some data sets have branch mismatch).
-  const baseBatchWhere = {
-    batch: student.batch,
-    isActive: 'YES',
-  };
-
-  let batch = null;
-  if (deptAcr) {
-    batch = await Batch.findOne({
-      where: { ...baseBatchWhere, branch: deptAcr },
-    });
-  }
-
-  if (!batch) {
-    batch = await Batch.findOne({
-      where: baseBatchWhere,
-      order: [['updatedDate', 'DESC']],
-    });
-  }
-
-  // If regulation mapping is missing, return safe zero-progress response
-  // instead of failing the whole NPTEL page.
-  if (!batch || !batch.regulationId) {
-    return res.status(200).json({
-      status: "success",
-      data: {
-        required: { OEC: 0, PEC: 0 },
-        completed: { OEC: 0, PEC: 0 },
-        remaining: { OEC: 0, PEC: 0 },
-        fromNptel: { OEC: 0, PEC: 0 },
-        fromCollege: { OEC: 0, PEC: 0 },
-        warning: "Batch or regulation not assigned for this student",
-      },
-    });
-  }
-
-  // 6. Rest of your logic remains unchanged
-  const required = await RegulationCourse.findAll({
+  // 5. Academics enrolled OEC/PEC (pending + allocated are treated as enrolled)
+  const collegeEnrollments = await StudentElectiveSelection.findAll({
     where: {
-      regulationId: batch.regulationId,
-      category: { [Op.in]: ['OEC', 'PEC'] },
-      isActive: 'YES',
+      regno: student.registerNumber,
+      status: { [Op.in]: ['pending', 'allocated'] }
     },
-    attributes: ['category', [sequelize.fn('COUNT', sequelize.col('category')), 'count']],
-    group: ['category'],
-  });
-
-  const requiredMap = { OEC: 0, PEC: 0 };
-  required.forEach((r) => (requiredMap[r.category] = parseInt(r.get('count'))));
-
-  const nptel = await NptelCreditTransfer.findAll({
-    where: { regno: student.registerNumber, studentStatus: 'accepted' },
-    include: [{ model: NptelCourse, attributes: ['type'] }],
-    attributes: [[sequelize.fn('COUNT', sequelize.col('NptelCreditTransfer.transferId')), 'count']],
-    includeIgnoreAttributes: false,
-    group: ['NptelCourse.type'],
-  });
-
-  const nptelMap = { OEC: 0, PEC: 0 };
-  nptel.forEach((r) => {
-    const type = r.NptelCourse?.type;
-    if (type) nptelMap[type] = parseInt(r.get('count'));
-  });
-
-  const college = await StudentElectiveSelection.findAll({
-    where: { regno: student.registerNumber, status: 'allocated' },
     include: [{
       model: Course,
-      attributes: [],
+      attributes: ['courseCode', 'category'],
       where: { category: { [Op.in]: ['OEC', 'PEC'] } }
     }],
-    group: ['Course.category'],
-    attributes: [
-      [sequelize.col('Course.category'), 'category'],
-      [sequelize.fn('COUNT', sequelize.col('Course.category')), 'count']
-    ],
+    attributes: ['selectionId'],
   });
 
-  const collegeMap = { OEC: 0, PEC: 0 };
-  college.forEach((r) => {
-    const cat = r.get('category');
-    if (cat) collegeMap[cat] = parseInt(r.get('count'));
+  // 6. NPTEL enrolled OEC/PEC
+  const nptelEnrollments = await StudentNptelEnrollment.findAll({
+    where: { regno: student.registerNumber, isActive: 'YES' },
+    include: [{
+      model: NptelCourse,
+      attributes: ['courseCode', 'type'],
+      where: { type: { [Op.in]: ['OEC', 'PEC'] } }
+    }],
+    attributes: ['enrollmentId'],
   });
 
-  const totalOec = nptelMap.OEC + collegeMap.OEC;
-  const totalPec = nptelMap.PEC + collegeMap.PEC;
+  const collegeEnrolledMap = { OEC: 0, PEC: 0 };
+  const nptelEnrolledMap = { OEC: 0, PEC: 0 };
+  const collegeCodesByType = { OEC: new Set(), PEC: new Set() };
+  const nptelCodesByType = { OEC: new Set(), PEC: new Set() };
+
+  for (const row of collegeEnrollments) {
+    const course = row.Course;
+    const category = course?.category;
+    const courseCode = course?.courseCode;
+    if (!category || !courseCode) continue;
+    collegeEnrolledMap[category] += 1;
+    collegeCodesByType[category].add(courseCode);
+  }
+
+  for (const row of nptelEnrollments) {
+    const course = row.NptelCourse;
+    const type = course?.type;
+    const courseCode = course?.courseCode;
+    if (!type || !courseCode) continue;
+    nptelEnrolledMap[type] += 1;
+    nptelCodesByType[type].add(courseCode);
+  }
+
+  // 7. Grade completed OEC/PEC (exclude U)
+  const gradeCourseCodes = [
+    ...collegeCodesByType.OEC,
+    ...collegeCodesByType.PEC,
+    ...nptelCodesByType.OEC,
+    ...nptelCodesByType.PEC,
+  ];
+
+  const gradeCompletedCollegeMap = { OEC: 0, PEC: 0 };
+  const gradeCompletedNptelMap = { OEC: 0, PEC: 0 };
+
+  if (gradeCourseCodes.length > 0) {
+    const grades = await StudentGrade.findAll({
+      where: {
+        regno: student.registerNumber,
+        courseCode: { [Op.in]: gradeCourseCodes },
+        grade: { [Op.ne]: 'U' },
+      },
+      attributes: ['courseCode'],
+    });
+
+    const passedCodes = new Set(grades.map((g) => g.courseCode));
+
+    for (const code of collegeCodesByType.OEC) if (passedCodes.has(code)) gradeCompletedCollegeMap.OEC += 1;
+    for (const code of collegeCodesByType.PEC) if (passedCodes.has(code)) gradeCompletedCollegeMap.PEC += 1;
+    for (const code of nptelCodesByType.OEC) if (passedCodes.has(code)) gradeCompletedNptelMap.OEC += 1;
+    for (const code of nptelCodesByType.PEC) if (passedCodes.has(code)) gradeCompletedNptelMap.PEC += 1;
+  }
+
+  const enrolledTotal = {
+    OEC: collegeEnrolledMap.OEC + nptelEnrolledMap.OEC,
+    PEC: collegeEnrolledMap.PEC + nptelEnrolledMap.PEC,
+  };
+
+  const gradeCompletedTotal = {
+    OEC: gradeCompletedCollegeMap.OEC + gradeCompletedNptelMap.OEC,
+    PEC: gradeCompletedCollegeMap.PEC + gradeCompletedNptelMap.PEC,
+  };
 
   res.status(200).json({
     status: "success",
     data: {
       required: requiredMap,
-      completed: { OEC: totalOec, PEC: totalPec },
+      // Keep existing key for current UI flow (enrolled-based progress)
+      completed: enrolledTotal,
+      enrolled: enrolledTotal,
+      gradeCompleted: gradeCompletedTotal,
       remaining: {
-        OEC: Math.max(0, requiredMap.OEC - totalOec),
-        PEC: Math.max(0, requiredMap.PEC - totalPec),
+        OEC: Math.max(0, requiredMap.OEC - enrolledTotal.OEC),
+        PEC: Math.max(0, requiredMap.PEC - enrolledTotal.PEC),
       },
-      fromNptel: nptelMap,
-      fromCollege: collegeMap,
+      fromNptel: nptelEnrolledMap,
+      fromCollege: collegeEnrolledMap,
+      gradeCompletedFromNptel: gradeCompletedNptelMap,
+      gradeCompletedFromCollege: gradeCompletedCollegeMap,
     },
   });
 });

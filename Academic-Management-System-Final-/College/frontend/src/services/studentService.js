@@ -58,7 +58,16 @@ export const fetchElectiveBuckets = async (semesterId) => {
     const response = await api.get('/student/elective-buckets', {
       params: { semesterId }
     });
-    return handleResponse(response);
+    const data = handleResponse(response);
+    if (Array.isArray(data)) {
+      return {
+        buckets: data,
+        isFinalized: false,
+        canReselectNow: false,
+        reselectionRequest: null,
+      };
+    }
+    return data;
   } catch (error) {
     console.error("fetchElectiveBuckets error:", error);
     throw new Error(
@@ -200,6 +209,21 @@ export const fetchStudentAcademicIds = async () => {
     console.error("fetchStudentAcademicIds error:", error);
     throw new Error(
       error.response?.data?.message || "Failed to fetch academic IDs"
+    );
+  }
+};
+
+export const requestElectiveReselection = async (semesterId, reason) => {
+  try {
+    const response = await api.post('/student/elective-reselection-request', {
+      semesterId,
+      reason: reason || ''
+    });
+    return handleResponse(response);
+  } catch (error) {
+    console.error("requestElectiveReselection error:", error);
+    throw new Error(
+      error.response?.data?.message || "Failed to submit reselection request"
     );
   }
 };

@@ -61,6 +61,7 @@ const AdminSidebar = () => {
     { to: "/admin/cbcs-list", icon: ListChecks, label: "CBCS List" },
     { to: "/admin/nptel-courses", icon: BookA, label: "NPTEL Courses" },
     { to: "/admin/nptel-approvals", icon: ClipboardCheck, label: "NPTEL Approvals" },
+    { to: "/admin/elective-reselection-requests", icon: MessageSquarePlus, label: "Elective Reselection" },
   ];
 
   const handleLogout = async () => {

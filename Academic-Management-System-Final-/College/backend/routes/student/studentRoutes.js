@@ -11,6 +11,7 @@ import {
   getElectiveSelections,
   getStudentAcademicIds
 } from "../../controllers/studentpageController.js";
+import { requestElectiveReselection } from "../../controllers/electiveBucketController.js";
 
 import {
   getNptelCourses,
@@ -46,6 +47,7 @@ router.get("/semesters", getSemesters);
 router.get("/courses/mandatory", getMandatoryCourses);
 router.get("/elective-buckets", getElectiveBuckets);
 router.post("/allocate-electives", allocateElectives);
+router.post("/elective-reselection-request", requestElectiveReselection);
 
 // Get enrolled courses (filtered by semester if provided)
 router.get("/enrolled-courses", getStudentEnrolledCourses);
