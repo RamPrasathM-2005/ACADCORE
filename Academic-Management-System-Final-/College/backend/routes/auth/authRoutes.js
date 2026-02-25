@@ -5,6 +5,7 @@ import {
   googleLogin,
   logout,
   me,
+  refresh,
   forgotPassword,
   resetPassword,
 } from "../../controllers/auth/authController.js"; // Added .js extension
@@ -14,6 +15,7 @@ const router = express.Router();
 // Public routes
 router.post("/login", login);
 router.post("/google-login", googleLogin);
+router.post("/refresh", refresh);
 router.post("/forgot-password", forgotPassword);
 router.post("/reset-password/:token", resetPassword);
 

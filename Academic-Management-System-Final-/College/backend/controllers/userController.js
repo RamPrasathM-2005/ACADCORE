@@ -13,6 +13,13 @@ const splitNameParts = (fullName = '') => {
   return { firstName: parts[0], lastName: parts.slice(1).join(' ') };
 };
 
+const toSafeUser = (userInstance) => {
+  if (!userInstance) return null;
+  const user = userInstance.toJSON ? userInstance.toJSON() : userInstance;
+  const { password, deletedAt, ...safeUser } = user;
+  return safeUser;
+};
+
 // Get all users
 // In real usage: filter by companyId, role, status, departmentId, etc.
 export const getAllUsers = async (req, res) => {
@@ -27,7 +34,7 @@ export const getAllUsers = async (req, res) => {
         
       ]
     });
-    res.json(users);
+    res.json(users.map(toSafeUser));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -49,7 +56,7 @@ export const getUserById = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    res.json(user);
+    res.json(toSafeUser(user));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -108,7 +115,7 @@ export const createUser = async (req, res) => {
     }
 
     await transaction.commit();
-    res.status(201).json(user);
+    res.status(201).json(toSafeUser(user));
   } catch (error) {
     await transaction.rollback();
     res.status(400).json({ error: error.message });
@@ -137,7 +144,7 @@ export const updateUser = async (req, res) => {
     }
 
     const user = await User.findByPk(req.params.id);
-    res.json(user);
+    res.json(toSafeUser(user));
   } catch (error) {
     res.status(400).json({ error: error.message });
   }

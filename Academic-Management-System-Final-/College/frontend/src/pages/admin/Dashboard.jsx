@@ -20,9 +20,11 @@ import {
   ChevronRight,
   ChevronLeft
 } from 'lucide-react';
-import { api, getCurrentUser } from '../../services/authService';
+import { api } from '../../services/authService';
+import { useAuth } from '../auth/AuthContext';
 
 const AdminDashboard = () => {
+  const { user } = useAuth();
   const [scrollPosition, setScrollPosition] = useState(0);
   const [isScrolling, setIsScrolling] = useState(true);
   const [dashboardData, setDashboardData] = useState({
@@ -53,12 +55,9 @@ const AdminDashboard = () => {
 
   useEffect(() => {
     const fetchData = async () => {
-      const token = localStorage.getItem('token');
-      const user = getCurrentUser();
-      console.log(token);
       console.log(user);
-      if (!token || !user) {
-        console.log('No token or user found, redirecting to login');
+      if (!user) {
+        console.log('No user found, redirecting to login');
         navigate('/login');
         return;
       }
@@ -94,15 +93,13 @@ const AdminDashboard = () => {
         console.error('Error fetching dashboard data:', error.response?.data || error.message);
         if (error.response?.status === 401) {
           console.log('Unauthorized, redirecting to login');
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
           navigate('/login');
         }
       }
     };
 
     fetchData();
-  }, [navigate]);
+  }, [navigate, user]);
 
   useEffect(() => {
     const interval = setInterval(() => {

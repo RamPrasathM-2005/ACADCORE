@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 
 const API_BASE_URL = "http://localhost:4000";
+axios.defaults.withCredentials = true;
 
 // --- PORTAL DROPDOWN COMPONENT ---
 const PortalDropdown = ({ isOpen, onClose, rect, children }) => {
@@ -153,9 +154,6 @@ export default function AdminAttendanceGenerator() {
 
   // ================= EFFECTS =================
   useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (token) axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-    
     if (!fromDate) {
       const today = new Date();
       setFromDate(today.toISOString().split("T")[0]);

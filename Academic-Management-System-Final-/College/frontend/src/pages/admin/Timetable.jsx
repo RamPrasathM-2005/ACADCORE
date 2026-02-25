@@ -12,6 +12,7 @@ import axios from "axios";
 
 const API_BASE_URL = "http://localhost:4000";
 const ALLOCATE_URL = `${API_BASE_URL}/api/admin/timetable/allocate`;
+axios.defaults.withCredentials = true;
 
 const Timetable = () => {
   const [degrees, setDegrees] = useState([]);
@@ -62,12 +63,6 @@ const Timetable = () => {
   };
 
   // Auth
-  useEffect(() => {
-    const token = localStorage.getItem("token");
-    if (token)
-      axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
-  }, []);
-
   // Fetch basic data (unchanged)
   useEffect(() => {
     axios

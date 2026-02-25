@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { getUserRole } from '../../utils/auth';
 import { toast } from 'react-hot-toast';
 import { api } from '../../services/authService';
+import { useAuth } from '../auth/AuthContext';
 import {
   fetchStudentDetails,
   fetchSemesters,
@@ -16,6 +16,7 @@ import {
 
 const NptelSelection = () => {
   const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
   const [semesters, setSemesters] = useState([]);
   const [selectedSemester, setSelectedSemester] = useState('');
   const [availableNptel, setAvailableNptel] = useState([]);
@@ -27,7 +28,9 @@ const NptelSelection = () => {
   const [success, setSuccess] = useState(null);
 
   useEffect(() => {
-    if (getUserRole() !== 'student') {
+    if (authLoading) return;
+
+    if ((user?.role || '').toLowerCase() !== 'student') {
       navigate('/login');
       return;
     }
@@ -62,7 +65,7 @@ const NptelSelection = () => {
     };
 
     loadData();
-  }, [navigate]);
+  }, [navigate, authLoading, user?.role]);
 
   useEffect(() => {
     if (!selectedSemester) return;

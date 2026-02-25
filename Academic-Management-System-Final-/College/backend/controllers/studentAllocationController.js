@@ -19,40 +19,34 @@ const {
 export const searchStudents = catchAsync(async (req, res) => {
   const { branch, batch, semesterNumber } = req.query;
 
-  // 1. Fetch Students
-  const users = await User.findAll({
-    where: { status: 'Active', roleId: 1 },
-    attributes: ['userId', 'userName', 'userNumber'],
-    include: [{
-      model: StudentDetails,
-      as: 'studentProfile',
-      required: true,
-      where: {
-        pending: true,
-        ...(batch && { batch }),
-        ...(semesterNumber && { semester: semesterNumber })
+  // 1. Fetch Students directly from StudentDetails (users may not exist)
+  const students = await StudentDetails.findAll({
+    where: {
+      pending: true,
+      ...(batch && { batch }),
+      ...(semesterNumber && { semester: semesterNumber })
+    },
+    include: [
+      {
+        model: Department,
+        as: 'department',
+        where: branch ? { Deptacronym: branch } : {},
+        attributes: ['Deptacronym']
       },
-      include: [
-        {
-          model: Department,
-          as: 'department',
-          where: branch ? { Deptacronym: branch } : {},
-          attributes: ['Deptacronym']
-        },
-        {
-          model: StudentCourse,
-          include: [
-            { model: Course, attributes: ['courseCode'] },
-            { model: Section, attributes: ['sectionName'] }
-          ]
-        },
-        {
-          model: StudentElectiveSelection,
-          where: { status: 'allocated' },
-          required: false
-        }
-      ]
-    }]
+      {
+        model: StudentCourse,
+        include: [
+          { model: Course, attributes: ['courseCode'] },
+          { model: Section, attributes: ['sectionName'] }
+        ]
+      },
+      {
+        model: StudentElectiveSelection,
+        where: { status: 'allocated' },
+        required: false
+      }
+    ],
+    order: [['registerNumber', 'ASC']]
   });
 
   // 2. Fetch Courses and Flatten Sections into "batches"
@@ -96,9 +90,7 @@ export const searchStudents = catchAsync(async (req, res) => {
   // TRANSFORM DATA FOR FRONTEND
   
   // 3. Format Students: Include staffId in enrolledCourses so dropdown selects correctly
-  const formattedStudents = await Promise.all(users.map(async (u) => {
-    const s = u.studentProfile;
-    
+  const formattedStudents = await Promise.all(students.map(async (s) => {
     const enrolledCourses = await Promise.all((s.StudentCourses || []).map(async (sc) => {
       // Find the staff assigned to this specific student's section
       const staffAlloc = await StaffCourse.findOne({
@@ -116,8 +108,8 @@ export const searchStudents = catchAsync(async (req, res) => {
     }));
 
     return {
-      rollnumber: u.userNumber,
-      name: u.userName,
+      rollnumber: s.registerNumber,
+      name: s.studentName,
       batch: s.batch,
       semester: `Semester ${s.semester}`,
       enrolledCourses,

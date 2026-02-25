@@ -5,8 +5,9 @@ import {
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
-import { api, getCurrentUser } from '../../services/authService'; 
+import { api } from '../../services/authService'; 
 import Filters from '../admin/ManageCourses/Filters'; 
+import { useAuth } from '../auth/AuthContext';
 
 const RequestCoursesStaff = () => {
   const navigate = useNavigate();
@@ -19,7 +20,7 @@ const RequestCoursesStaff = () => {
   const [submitting, setSubmitting] = useState(false);
   const [filters, setFilters] = useState({ dept: '', branch: '', semester: '', batch: '', name: '', type: '' });
   
-  const user = getCurrentUser();
+  const { user } = useAuth();
   const courseTypes = ['THEORY', 'PRACTICAL', 'INTEGRATED', 'EXPERIENTIAL LEARNING'];
 
   // --- LOGIC: Strict Category Counting (No Overflow) ---

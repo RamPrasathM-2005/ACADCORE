@@ -17,6 +17,9 @@ export const requireAuth = (req, res, next) => {
   try {
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    if (decoded.type && decoded.type !== "access") {
+      return res.status(403).json({ status: "failure", message: "Invalid token type" });
+    }
     
     // Add user info to request object
     req.user = decoded;

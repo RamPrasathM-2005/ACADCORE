@@ -4,7 +4,6 @@ import { useNavigate } from 'react-router-dom';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
-import { getUserRole } from '../../utils/auth';
 import {
   fetchStudentDetails,
   fetchSemesters,
@@ -14,9 +13,11 @@ import {
   fetchStudentAcademicIds
 } from '../../services/studentService';
 import { api } from '../../services/authService';
+import { useAuth } from '../auth/AuthContext';
 
 const StudentDashboard = () => {
   const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
 
   // --- STATE ---
   const [semesters, setSemesters] = useState([]);
@@ -68,7 +69,9 @@ const StudentDashboard = () => {
 
   useEffect(() => {
     const loadDashboard = async () => {
-      if (!getUserRole() || getUserRole() !== 'student') {
+      if (authLoading) return;
+
+      if ((user?.role || '').toLowerCase() !== 'student') {
         navigate('/login');
         return;
       }
@@ -114,18 +117,22 @@ const StudentDashboard = () => {
     };
 
     loadDashboard();
-  }, [navigate]);
+  }, [navigate, authLoading, user?.role]);
 
   useEffect(() => {
     const loadAcademicIds = async () => {
-      if (!studentDetails?.regno) return;
+      const regno =
+        studentDetails?.regno ||
+        studentDetails?.userNumber ||
+        studentDetails?.studentProfile?.registerNumber;
+      if (!regno) return;
 
       try {
         setIdsLoading(true);
         const ids = await fetchStudentAcademicIds();
         if (ids) {
           setAcademicIds({
-            regno: ids.regno || studentDetails.regno || '',
+            regno: ids.regno || regno || '',
             batchId: ids.batchId || '',
             deptId: ids.deptId || '',
             semesterId: ids.semesterId || selectedSemester
@@ -138,7 +145,7 @@ const StudentDashboard = () => {
       }
     };
     loadAcademicIds();
-  }, [studentDetails?.regno, selectedSemester]);
+  }, [studentDetails?.regno, studentDetails?.userNumber, studentDetails?.studentProfile?.registerNumber, selectedSemester]);
 
   useEffect(() => {
     if (!selectedSemester || semesters.length === 0) return;

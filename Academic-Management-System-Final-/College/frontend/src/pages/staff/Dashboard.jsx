@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { 
+import {
   Search, 
   Filter, 
   LayoutGrid, 
@@ -12,8 +12,8 @@ import {
   Plus
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { getCurrentUser } from '../../services/authService';
 import { getMyCourses } from '../../services/staffService';
+import { useAuth } from '../auth/AuthContext';
 
 // --- Error Boundary ---
 class ErrorBoundary extends React.Component {
@@ -72,6 +72,7 @@ const getCourseTheme = (index) => {
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { user, loading: authLoading } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState('Card'); // 'Card' or 'List'
   const [statusFilter, setStatusFilter] = useState('Active');
@@ -79,10 +80,10 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const user = getCurrentUser();
-
   useEffect(() => {
     const fetchCourses = async () => {
+      if (authLoading) return;
+
       if (!user?.userId) { 
         console.warn("Dashboard: No userId found in user object", user);
         setLoading(false); 
@@ -124,7 +125,7 @@ const Dashboard = () => {
     };
 
     fetchCourses();
-  }, [user?.userId]);
+  }, [authLoading, user?.userId]);
 
   const filteredCourses = courses.filter((course) => {
     const query = searchQuery.toLowerCase();

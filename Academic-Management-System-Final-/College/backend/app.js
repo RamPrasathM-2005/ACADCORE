@@ -3,10 +3,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-//import csurf from 'csurf';
 import cookieParser from 'cookie-parser';
 import winston from 'winston';
-import { body, validationResult } from 'express-validator';
 import adminRoutes from './routes/admin/adminRoutes.js';
 import authRoutes from './routes/auth/authRoutes.js';
 import departmentRoutes from './routes/departmentRoutes.js';
@@ -20,6 +18,8 @@ import cbcsRouter from './routes/cbcsRoutes.js';
 import companyRoutes from './routes/companyRoutes.js';
 import roleRoutes from './routes/roleRoutes.js'
 import userRoutes from './routes/userRoutes.js'
+import sanitizeInput from './middleware/sanitizeInput.js';
+import csrfProtection from './middleware/csrfProtection.js';
 
 dotenv.config({ path: './config.env' });
 
@@ -85,59 +85,36 @@ app.use(cookieParser());
 app.use(express.json({ limit: '10mb', verify: (req, res, buf) => { req.rawBody = buf; } })); // Preserve raw for debugging
 app.use(express.urlencoded({ extended: true }));
 
-// // COMMENTED OUT: Global rate limiter (temporarily disabled for debugging/testing)
-// // const limiter = rateLimit({
-// //   windowMs: 15 * 60 * 1000,
-// //   max: 500, // Temporarily increase for bulk ops; implement batching later
-// //   standardHeaders: true,
-// //   legacyHeaders: false,
-// //   message: { status: 'error', message: 'Too many requests, try again later.' },
-// //   handler: (req, res, next, options) => {
-// //     // Explicitly set CORS here too
-// //     res.setHeader('Access-Control-Allow-Origin', process.env.FRONTEND_URL || 'http://localhost:5173');
-// //     res.setHeader('Access-Control-Allow-Credentials', 'true');
-// //     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, CSRF-Token');
-// //     logger.warn({ message: 'Rate limit exceeded', ip: req.ip, url: req.url }); // Log for debugging
-// //     res.status(429).json(options.message); // Use json for consistency
-// //   }
-// // });
-// // app.use(limiter);
-
-// // COMMENTED OUT: Auth-specific limiter (disabled to avoid interference during development)
-// // const authLimiter = rateLimit({
-// //   windowMs: 15 * 60 * 1000,
-// //   max: 20,
-// //   message: { status: 'error', message: 'Too many login attempts, try again later.' },
-// //   handler: (req, res, next, options) => {
-// //     res.setHeader('Access-Control-Allow-Origin', process.env.FRONTEND_URL || 'http://localhost:5173');
-// //     res.setHeader('Access-Control-Allow-Credentials', 'true');
-// //     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, CSRF-Token');
-// //     res.status(429).json(options.message);
-// //   }
-// // });
-
-// FIXED Input sanitization: Skip for JSON body fields like 'tools' to prevent object/string corruption
-// Only apply trim/escape to specific string fields if needed; here, conditional
-const sanitizeInput = [
-  // Do NOT use body('*') blindly - it stringifies objects/arrays!
-  // Instead, sanitize only expected string fields per route, or skip for bulk JSON routes
-  (req, res, next) => {
-    if (req.body && typeof req.body === 'object') {
-      // Bypass escape for complex objects (like arrays of objects in tools)
-      // Manually trim strings if needed in controllers
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        res.setHeader('Access-Control-Allow-Origin', process.env.FRONTEND_URL || 'http://localhost:5173');
-        return res.status(400).json({ status: 'error', errors: errors.array() });
-      }
-    }
-    next();
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'production' ? 700 : 5000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.path.startsWith('/api/auth/'),
+  message: { status: 'error', message: 'Too many requests, try again later.' },
+  handler: (req, res, _next, options) => {
+    logger.warn({ message: 'Rate limit exceeded', ip: req.ip, url: req.url });
+    res.status(429).json(options.message);
   }
-];
+});
+app.use(limiter);
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { status: 'error', message: 'Too many authentication attempts, try again later.' },
+});
+
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/google-login', authLimiter);
+
+app.use(csrfProtection);
 
 // Routes (apply limiter only where needed; remove from bulk routes if batching)
 // NOTE: Auth limiter commented out above, so removed from here
-app.use('/api/auth', /* authLimiter, */ sanitizeInput, authRoutes);
+app.use('/api/auth', sanitizeInput, authRoutes);
 app.use('/api/companies', sanitizeInput, companyRoutes);
 app.use('/api/roles', sanitizeInput, roleRoutes);
 app.use('/api/users', sanitizeInput, userRoutes);
