@@ -401,80 +401,179 @@ export const finalizeAndOptimizeAllocation = async (cbcs_id, createdBy = 1) => {
  * DOWNLOAD EXCEL
  */
 export const downloadCbcsExcel = async (req, res) => {
+  const { cbcs_id } = req.params;
+  if (!cbcs_id) {
+    return res.status(400).json({ success: false, error: "cbcs_id is required" });
+  }
+
   try {
-    const { cbcs_id } = req.params;
     const cbcs = await CBCS.findByPk(cbcs_id);
-    if (!cbcs) return res.status(404).json({ error: "Not found" });
+    if (!cbcs) {
+      return res.status(404).json({ success: false, error: "CBCS not found" });
+    }
 
     const workbook = new ExcelJS.Workbook();
-    const subjects = await CBCSSubject.findAll({
-      where: { cbcs_id },
-      include: [{ model: Course, attributes: ['courseCode', 'courseTitle'] }]
-    });
+    workbook.creator = "CBCS System";
+    workbook.created = new Date();
 
-    for (const subj of subjects) {
-      const sheet = workbook.addWorksheet((subj.courseCode || String(subj.courseId)).slice(0, 31));
-      
-      const sections = await CBCSSectionStaff.findAll({
-        where: { cbcs_subject_id: subj.cbcs_subject_id },
-        include: [
-          { model: User, as: 'staff', attributes: ['userName'] },
-          { model: Section, as: 'section', attributes: ['sectionId', 'sectionName'] }
-        ]
-      });
+    const colors = {
+      titleBg: "FFFFFF00",  // Yellow
+      staffBg: "FFDDEBF7",  // Light blue
+      headerBg: "FFFF7F66", // Orange
+    };
 
-      sheet.columns = [
-        { header: 'Section', key: 'sectionName', width: 12 },
-        { header: 'Staff', key: 'staffName', width: 24 },
-        { header: 'Register Number', key: 'regno', width: 22 },
-        { header: 'Student Name', key: 'studentName', width: 30 },
-      ];
+    const subjects = await sequelize.query(
+      `SELECT cs.cbcs_subject_id, cs.courseId, cs.courseCode, cs.courseTitle, c.courseCode AS courseCodeReal, c.courseTitle AS courseTitleReal
+       FROM CBCS_Subject cs
+       JOIN Course c ON c.courseId = cs.courseId
+       WHERE cs.cbcs_id = :cbcsId
+       ORDER BY c.courseCode`,
+      {
+        replacements: { cbcsId: cbcs_id },
+        type: sequelize.QueryTypes.SELECT,
+      }
+    );
 
-      sheet.addRow([`Subject: ${subj.courseCode} - ${subj.Course?.courseTitle || subj.courseTitle || ''}`]);
-      sheet.mergeCells(1, 1, 1, 4);
-      sheet.getRow(1).font = { bold: true };
-      sheet.addRow([]);
-      sheet.addRow(['Section', 'Staff', 'Register Number', 'Student Name']);
-      sheet.getRow(3).font = { bold: true };
+    for (const subject of subjects) {
+      const sheetNameRaw = subject.courseCodeReal || subject.courseCode || String(subject.courseId);
+      const sheet = workbook.addWorksheet(String(sheetNameRaw).slice(0, 31));
 
-      const students = await StudentCourse.findAll({
-        where: { courseId: subj.courseId },
-        include: [{ model: StudentDetails, attributes: ['registerNumber', 'studentName'] }],
-        order: [['sectionId', 'ASC'], ['regno', 'ASC']]
-      });
-
-      const sectionLookup = new Map(
-        sections.map((s) => [
-          s.sectionId,
-          {
-            sectionName: s.section?.sectionName || `S${s.sectionId}`,
-            staffName: s.staff?.userName || 'N/A',
-          },
-        ])
+      const sections = await sequelize.query(
+        `SELECT css.sectionId, css.staffId, u.userName AS staffName, u.userNumber AS staffNumber
+         FROM CBCS_Section_Staff css
+         LEFT JOIN users u ON u.userId = css.staffId
+         WHERE css.cbcs_subject_id = :cbcsSubjectId
+         ORDER BY css.sectionId`,
+        {
+          replacements: { cbcsSubjectId: subject.cbcs_subject_id },
+          type: sequelize.QueryTypes.SELECT,
+        }
       );
 
-      if (!students.length) {
-        sheet.addRow(['-', '-', 'No students allocated', '-']);
-      } else {
-        for (const st of students) {
-          const meta = sectionLookup.get(st.sectionId) || { sectionName: `S${st.sectionId}`, staffName: 'N/A' };
-          sheet.addRow([
-            meta.sectionName,
-            meta.staffName,
-            st.regno,
-            st.StudentDetail?.studentName || st.StudentDetails?.studentName || st.regno,
-          ]);
+      const sectionCount = sections.length;
+      if (sectionCount === 0) continue;
+      const totalColumns = sectionCount * 2;
+
+      // Title row
+      const titleText = `Subject: ${subject.courseCodeReal || subject.courseCode || subject.courseId} - ${subject.courseTitleReal || subject.courseTitle || ""}`;
+      const titleRow = sheet.addRow([titleText]);
+      sheet.mergeCells(1, 1, 1, totalColumns);
+      const titleCell = titleRow.getCell(1);
+      titleCell.font = { bold: true, size: 14, color: { argb: "FF000000" } };
+      titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: colors.titleBg } };
+      titleCell.alignment = { horizontal: "center", vertical: "middle", indent: 1 };
+
+      // Staff row
+      const staffRow = sheet.addRow([]);
+      let col = 1;
+      sections.forEach((sec) => {
+        const cell = staffRow.getCell(col);
+        cell.value = `staffNumber:${sec.staffNumber || "-"} | ${sec.staffName || "Not Assigned"}`;
+        cell.font = { bold: true, size: 11 };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: colors.staffBg } };
+        cell.alignment = { horizontal: "center", vertical: "middle" };
+        sheet.mergeCells(2, col, 2, col + 1);
+        col += 2;
+      });
+
+      // Header row
+      const headerRow = sheet.addRow([]);
+      col = 1;
+      sections.forEach(() => {
+        const regnoCell = headerRow.getCell(col);
+        regnoCell.value = "Regno";
+        regnoCell.font = { bold: true };
+        regnoCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: colors.headerBg } };
+        regnoCell.alignment = { horizontal: "center", vertical: "middle" };
+
+        const nameCell = headerRow.getCell(col + 1);
+        nameCell.value = "Student's Name";
+        nameCell.font = { bold: true };
+        nameCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: colors.headerBg } };
+        nameCell.alignment = { horizontal: "center", vertical: "middle" };
+
+        col += 2;
+      });
+
+      sheet.views = [{ state: "frozen", ySplit: 3 }];
+
+      const students = await sequelize.query(
+        `SELECT
+           sc.regno,
+           COALESCE(u.userName, sd.studentName) AS studentName,
+           sc.sectionId
+         FROM StudentCourse sc
+         JOIN student_details sd ON sd.registerNumber = sc.regno
+         LEFT JOIN users u ON u.userNumber = sd.registerNumber
+         WHERE sc.courseId = :courseId
+         ORDER BY sc.sectionId, sc.regno`,
+        {
+          replacements: { courseId: subject.courseId },
+          type: sequelize.QueryTypes.SELECT,
+        }
+      );
+
+      const studentsBySection = new Map();
+      sections.forEach((s) => studentsBySection.set(s.sectionId, []));
+      students.forEach((st) => {
+        const bucket = studentsBySection.get(st.sectionId);
+        if (bucket) bucket.push(st);
+      });
+
+      const maxRows = Math.max(...[...studentsBySection.values()].map((arr) => arr.length), 0);
+
+      for (let rowIdx = 0; rowIdx < maxRows; rowIdx++) {
+        const dataRow = sheet.addRow([]);
+        col = 1;
+        sections.forEach((sec) => {
+          const student = studentsBySection.get(sec.sectionId)?.[rowIdx];
+          if (student) {
+            dataRow.getCell(col).value = student.regno;
+            dataRow.getCell(col + 1).value = student.studentName || "—";
+          }
+          col += 2;
+        });
+      }
+
+      // Column widths
+      col = 1;
+      sections.forEach(() => {
+        sheet.getColumn(col).width = 14;
+        sheet.getColumn(col + 1).width = 36;
+        col += 2;
+      });
+
+      // Border top region (rows 1..3)
+      for (let r = 1; r <= 3; r++) {
+        for (let c = 1; c <= totalColumns; c++) {
+          sheet.getCell(r, c).border = {
+            top: { style: "thin" },
+            left: { style: "thin" },
+            bottom: { style: "thin" },
+            right: { style: "thin" },
+          };
         }
       }
     }
 
-    const tempPath = path.join(process.cwd(), 'temp', `CBCS_${cbcs_id}.xlsx`);
-    await fs.mkdir(path.dirname(tempPath), { recursive: true });
-    await workbook.xlsx.writeFile(tempPath);
+    const tempDir = path.join(process.cwd(), "temp", "cbcs");
+    await fs.mkdir(tempDir, { recursive: true });
 
-    res.download(tempPath, () => fs.unlink(tempPath));
+    const fileName = `CBCS_Allocation_${cbcs_id}.xlsx`;
+    const filePath = path.join(tempDir, fileName);
+    await workbook.xlsx.writeFile(filePath);
+
+    return res.download(filePath, fileName, async (err) => {
+      if (err) console.error("Download error:", err);
+      try {
+        await fs.unlink(filePath);
+      } catch (cleanupErr) {
+        console.error("Cleanup failed:", cleanupErr);
+      }
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("downloadCbcsExcel error:", err);
+    return res.status(500).json({ success: false, error: "Failed to generate Excel" });
   }
 };
 
