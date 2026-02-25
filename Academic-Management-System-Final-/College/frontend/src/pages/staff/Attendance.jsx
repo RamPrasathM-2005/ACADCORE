@@ -1396,7 +1396,9 @@ export default function AttendanceGenerator() {
           setNextPeriodSkippedStudents(nextSkippedRes.data.data);
       }
     } catch (err) {
-      toast.error("Error loading students");
+      const message = err?.response?.data?.message || "Error loading students";
+      console.error("Staff period student fetch error:", err?.response?.data || err);
+      toast.error(message);
     }
   };
 
@@ -1436,7 +1438,11 @@ export default function AttendanceGenerator() {
         .filter(
           (s) => !skippedStudents.some((sk) => sk.rollnumber === s.rollnumber)
         )
-        .map((s) => ({ rollnumber: s.rollnumber, status: s.status }));
+        .map((s) => ({
+          rollnumber: s.rollnumber,
+          status: s.status,
+          courseId: s.courseId || selectedCourse.courseId
+        }));
       await axios.post(
         `${API_BASE_URL}/api/staff/attendance/mark/${selectedCourse.courseId}/${selectedCourse.sectionId}/${selectedCourse.dayOfWeek}/${selectedCourse.periodNumber}`,
         { date: selectedCourse.date, attendances: payload }

@@ -21,7 +21,7 @@ router.use(requireAuth);
 router.get("/timetable", getTimetableAdmin);
 
 router.get(
-  "/students/:courseId/all/:dayOfWeek/:periodNumber",
+  "/students/:courseId/:sectionId/:dayOfWeek/:periodNumber",
   getStudentsForPeriodAdmin
 );
 

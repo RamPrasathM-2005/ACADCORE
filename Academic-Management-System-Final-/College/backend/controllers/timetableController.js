@@ -18,6 +18,69 @@ const {
   User 
 } = db;
 
+async function findStaffConflictForSlot({
+  courseIds,
+  sectionId,
+  dayOfWeek,
+  periodNumber,
+  excludeTimetableId = null,
+  transaction
+}) {
+  // Staff assigned to the new allocation candidate(s)
+  const newStaffAllocations = await StaffCourse.findAll({
+    where: {
+      courseId: { [Op.in]: courseIds },
+      ...(sectionId ? { sectionId } : {})
+    },
+    attributes: ['Userid'],
+    transaction
+  });
+
+  const staffIds = [...new Set(newStaffAllocations.map((s) => s.Userid))];
+  if (staffIds.length === 0) return null;
+
+  const excludeClause = excludeTimetableId ? 'AND t.timetableId <> :excludeTimetableId' : '';
+  const [conflicts] = await sequelize.query(
+    `
+      SELECT t.timetableId, t.courseId, t.sectionId, scExisting.Userid AS staffId
+      FROM Timetable t
+      INNER JOIN StaffCourse scExisting
+        ON scExisting.courseId = t.courseId
+       AND (t.sectionId IS NULL OR scExisting.sectionId = t.sectionId)
+      WHERE t.isActive = 'YES'
+        AND t.dayOfWeek = :dayOfWeek
+        AND t.periodNumber = :periodNumber
+        AND scExisting.Userid IN (:staffIds)
+        ${excludeClause}
+      LIMIT 1
+    `,
+    {
+      replacements: { dayOfWeek, periodNumber, staffIds, excludeTimetableId },
+      transaction
+    }
+  );
+
+  if (!conflicts?.length) return null;
+
+  const conflict = conflicts[0];
+  const [staff, conflictCourse, conflictSem] = await Promise.all([
+    User.findByPk(conflict.staffId, { attributes: ['userName'], transaction }),
+    Course.findByPk(conflict.courseId, { attributes: ['courseTitle', 'courseCode'], transaction }),
+    Timetable.findByPk(conflict.timetableId, {
+      attributes: ['semesterId'],
+      include: [{ model: Semester, include: [{ model: Batch, attributes: ['batch', 'branch'] }] }],
+      transaction
+    })
+  ]);
+
+  return {
+    staffName: staff?.userName || `Staff ${conflict.staffId}`,
+    courseTitle: conflictCourse?.courseTitle || conflictCourse?.courseCode || `Course ${conflict.courseId}`,
+    batch: conflictSem?.Semester?.Batch?.batch || 'Unknown',
+    branch: conflictSem?.Semester?.Batch?.branch || 'Unknown'
+  };
+}
+
 export const getAllTimetableDepartments = catchAsync(async (req, res) => {
   const departments = await Department.findAll({
     attributes: [['Deptid', 'Deptid'], ['Deptacronym', 'deptCode'], 'Deptname']
@@ -158,67 +221,19 @@ export const createTimetableEntry = catchAsync(async (req, res) => {
       throw new Error('No courses found to allocate.');
     }
 
-    // 2. IDENTIFY STAFF INVOLVED (to check conflicts)
-    // Find all users teaching the courses we want to allocate
-    const staffCourses = await StaffCourse.findAll({
-      where: { 
-        courseId: { [Op.in]: coursesToAllocate } 
-        // Note: You might want to add isActive check here if StaffCourse has it
-      },
-      attributes: ['Userid'],
+    // 2. STAFF CONFLICT CHECK: prevent same staff from being allocated
+    // to multiple courses in the same day+period.
+    const staffConflict = await findStaffConflictForSlot({
+      courseIds: coursesToAllocate,
+      sectionId: sectionId || null,
+      dayOfWeek,
+      periodNumber,
       transaction
     });
-
-    const staffIds = [...new Set(staffCourses.map(sc => sc.Userid))]; // Unique staff IDs
-
-    // 3. GLOBAL STAFF CONFLICT CHECK
-    if (staffIds.length > 0) {
-      // Logic: Find if any Timetable entry exists at this time...
-      // ...where the course in that timetable entry is taught by one of our staffIds.
-      
-      // First, find all courses that these staff members teach (anywhere)
-      const allCoursesTaughtByStaff = await StaffCourse.findAll({
-        where: { Userid: { [Op.in]: staffIds } },
-        attributes: ['courseId'],
-        transaction
-      });
-      
-      const potentialConflictCourseIds = allCoursesTaughtByStaff.map(x => x.courseId);
-
-      // Now query Timetable for collision
-      const staffConflict = await Timetable.findOne({
-        where: {
-          dayOfWeek,
-          periodNumber,
-          isActive: 'YES',
-          courseId: { [Op.in]: potentialConflictCourseIds }
-        },
-        include: [
-          { 
-            model: Course, 
-            attributes: ['courseTitle'],
-            include: [{
-              model: StaffCourse,
-              where: { Userid: { [Op.in]: staffIds } }, // Filter to find specifically who caused it
-              include: [{ model: User, attributes: ['username'] }]
-            }]
-          },
-          {
-            model: Semester,
-            include: [{ model: Batch, attributes: ['batch', 'branch'] }]
-          }
-        ],
-        transaction
-      });
-
-      if (staffConflict) {
-        const conflictStaffName = staffConflict.Course?.StaffCourses?.[0]?.User?.username || 'Unknown Staff';
-        const conflictCourse = staffConflict.Course?.courseTitle;
-        const conflictBatch = staffConflict.Semester?.Batch?.batch;
-        const conflictBranch = staffConflict.Semester?.Batch?.branch;
-
-        throw new Error(`STAFF CONFLICT: ${conflictStaffName} is already teaching "${conflictCourse}" for ${conflictBranch} (${conflictBatch}) in this slot.`);
-      }
+    if (staffConflict) {
+      throw new Error(
+        `STAFF CONFLICT: ${staffConflict.staffName} is already teaching "${staffConflict.courseTitle}" for ${staffConflict.branch} (${staffConflict.batch}) in this slot.`
+      );
     }
 
     // 4. BATCH SLOT CHECK (Prevent two subjects in the SAME batch's slot)
@@ -272,60 +287,20 @@ export const updateTimetableEntry = catchAsync(async (req, res) => {
     const entry = await Timetable.findByPk(timetableId, { transaction });
     if (!entry) throw new Error('Timetable entry not found');
 
-    // 1. Staff Conflict Check (Excluding current timetableId)
+    // 1. Staff Conflict Check (excluding current timetableId)
     if (courseId) {
-      // Get staff for the NEW course
-      const staffForNewCourse = await StaffCourse.findAll({
-        where: { 
-          courseId: courseId,
-          // Handle Section specific staff check if sectionId provided, else check all for course
-          ...(sectionId ? { [Op.or]: [{ sectionId: sectionId }, { sectionId: null }] } : {})
-        },
-        attributes: ['Userid'],
+      const conflict = await findStaffConflictForSlot({
+        courseIds: [courseId],
+        sectionId: sectionId || null,
+        dayOfWeek,
+        periodNumber,
+        excludeTimetableId: timetableId,
         transaction
       });
-      
-      const staffIds = staffForNewCourse.map(s => s.Userid);
-
-      if (staffIds.length > 0) {
-        // Find courses taught by these staff
-        const allCoursesTaughtByStaff = await StaffCourse.findAll({
-          where: { Userid: { [Op.in]: staffIds } },
-          attributes: ['courseId'],
-          transaction
-        });
-        const potentialConflictCourseIds = allCoursesTaughtByStaff.map(x => x.courseId);
-
-        const conflict = await Timetable.findOne({
-          where: {
-            dayOfWeek,
-            periodNumber,
-            isActive: 'YES',
-            timetableId: { [Op.ne]: timetableId }, // Exclude current record
-            courseId: { [Op.in]: potentialConflictCourseIds }
-          },
-          include: [
-            { 
-              model: Course,
-              include: [{
-                model: StaffCourse,
-                where: { Userid: { [Op.in]: staffIds } },
-                include: [{ model: User, attributes: ['username'] }]
-              }]
-            },
-            {
-              model: Semester,
-              include: [{ model: Batch, attributes: ['batch'] }]
-            }
-          ],
-          transaction
-        });
-
-        if (conflict) {
-          const conflictStaffName = conflict.Course?.StaffCourses?.[0]?.User?.username || 'Staff';
-          const conflictBatch = conflict.Semester?.Batch?.batch;
-          throw new Error(`Staff Conflict: ${conflictStaffName} is already busy with Batch ${conflictBatch}.`);
-        }
+      if (conflict) {
+        throw new Error(
+          `STAFF CONFLICT: ${conflict.staffName} is already teaching "${conflict.courseTitle}" for ${conflict.branch} (${conflict.batch}) in this slot.`
+        );
       }
     }
 

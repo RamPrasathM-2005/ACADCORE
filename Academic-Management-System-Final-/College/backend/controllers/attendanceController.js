@@ -40,11 +40,26 @@ const dayMap = {
   1: "MON", 2: "TUE", 3: "WED", 4: "THU", 5: "FRI", 6: "SAT", 7: "SUN"
 };
 
-// Helper to resolve internal PK (userId) from the staffId provided in token
-async function getInternalUser(staffId) {
-  const user = await User.findOne({ where: { userNumber: staffId } }); // Assuming userNumber stores staffId
-  if (!user) throw new Error("Staff user not found");
-  return user;
+// Resolve current staff from JWT payload (supports old/new token payload shapes)
+async function getInternalUser(authUser) {
+  if (!authUser) throw new Error("Unauthorized");
+
+  if (authUser.id) {
+    const user = await User.findByPk(authUser.id);
+    if (user) return user;
+  }
+
+  if (authUser.userId) {
+    const user = await User.findByPk(authUser.userId);
+    if (user) return user;
+  }
+
+  if (authUser.userNumber) {
+    const user = await User.findOne({ where: { userNumber: authUser.userNumber } });
+    if (user) return user;
+  }
+
+  throw new Error("Staff user not found");
 }
 
 // ==========================================
@@ -57,35 +72,33 @@ async function getInternalUser(staffId) {
 export async function getTimetable(req, res, next) {
   try {
     const { startDate, endDate } = req.query;
-    const staffIdFromToken = req.user.userNumber; // Adjust based on your JWT payload
 
     if (!startDate || !endDate) {
       return res.status(400).json({ status: "error", message: "Dates required" });
     }
 
-    const user = await getInternalUser(staffIdFromToken);
+    const user = await getInternalUser(req.user);
 
-    // Fetch periods where staff is assigned
+    // Fetch periods where staff is assigned.
+    // Timetable has no direct Sequelize association with StaffCourse, so we filter
+    // via EXISTS on StaffCourse instead of include/joining StaffCourse model.
     const periods = await Timetable.findAll({
-      where: { isActive: 'YES' },
+      where: {
+        isActive: 'YES',
+        [Op.and]: [
+          sequelize.literal(`EXISTS (
+            SELECT 1
+            FROM StaffCourse sc
+            WHERE sc.Userid = ${user.userId}
+              AND sc.courseId = Timetable.courseId
+              AND (
+                Timetable.sectionId IS NULL
+                OR Timetable.sectionId = sc.sectionId
+              )
+          )`)
+        ]
+      },
       include: [
-        {
-          model: StaffCourse,
-          as: 'teachingAssignments', // Check your User association alias
-          required: true,
-          where: { Userid: user.userId },
-          on: {
-            [Op.and]: [
-              sequelize.where(sequelize.col('Timetable.courseId'), '=', sequelize.col('StaffCourse.courseId')),
-              {
-                [Op.or]: [
-                  sequelize.where(sequelize.col('Timetable.sectionId'), '=', sequelize.col('StaffCourse.sectionId')),
-                  sequelize.where(sequelize.col('Timetable.sectionId'), { [Op.is]: null })
-                ]
-              }
-            ]
-          }
-        },
         { model: Course, required: true, where: { isActive: 'YES' } },
         { model: Section, required: false },
         { model: Department, attributes: ['Deptacronym'] },
@@ -132,13 +145,15 @@ export async function getStudentsForPeriod(req, res, next) {
   try {
     const { courseId, sectionId, dayOfWeek, periodNumber } = req.params;
     const date = req.query.date || new Date().toISOString().split("T")[0];
-    const user = await getInternalUser(req.user.userNumber);
+    const user = await getInternalUser(req.user);
+    const requestedCourseId = parseInt(courseId, 10);
+    const safeSectionId = Number.isNaN(parseInt(sectionId, 10)) ? null : parseInt(sectionId, 10);
 
-    const course = await Course.findByPk(courseId);
+    const course = await Course.findByPk(requestedCourseId);
     if (!course) return res.status(404).json({ status: "error", message: "Course not found" });
 
     const isElective = ["OEC", "PEC"].includes(course.category?.trim().toUpperCase());
-    let targetCourseIds = [parseInt(courseId)];
+    let targetCourseIds = [requestedCourseId];
 
     if (isElective) {
       const related = await Course.findAll({
@@ -152,15 +167,15 @@ export async function getStudentsForPeriod(req, res, next) {
           [Op.or]: [{ courseCode: course.courseCode }, { courseTitle: course.courseTitle }]
         }
       });
-      targetCourseIds = related.map(r => r.courseId);
+      targetCourseIds = [...new Set([requestedCourseId, ...related.map(r => r.courseId)])];
     }
 
     // Auth Check
     const isAssigned = await StaffCourse.findOne({
       where: { 
         Userid: user.userId, 
-        courseId, 
-        ...(sectionId !== 'null' && !isNaN(sectionId) ? { sectionId } : {}) 
+        courseId: requestedCourseId, 
+        ...(!isElective && safeSectionId ? { sectionId: safeSectionId } : {}) 
       }
     });
 
@@ -170,7 +185,7 @@ export async function getStudentsForPeriod(req, res, next) {
     const students = await StudentCourse.findAll({
       where: { 
         courseId: { [Op.in]: targetCourseIds },
-        ...( !isElective && !isNaN(sectionId) ? { sectionId } : {} )
+        ...(!isElective && safeSectionId ? { sectionId: safeSectionId } : {})
       },
       include: [
         { 
@@ -218,7 +233,7 @@ export async function getSkippedStudents(req, res, next) {
   try {
     const { courseId, sectionId, dayOfWeek, periodNumber } = req.params;
     const { date } = req.query;
-    const user = await getInternalUser(req.user.userNumber);
+    const user = await getInternalUser(req.user);
 
     const safeSectionId = !isNaN(parseInt(sectionId)) ? parseInt(sectionId) : null;
 
@@ -265,23 +280,39 @@ export async function markAttendance(req, res, next) {
   try {
     const { courseId, sectionId, dayOfWeek, periodNumber } = req.params;
     const { date, attendances } = req.body;
-    const user = await getInternalUser(req.user.userNumber);
+    const user = await getInternalUser(req.user);
     const deptId = user.departmentId || 1;
 
+    const requestedCourseId = parseInt(courseId, 10);
     const safeSectionId = !isNaN(parseInt(sectionId)) ? parseInt(sectionId) : null;
 
     // Auth & Timetable Checks
     const isAssigned = await StaffCourse.findOne({
-      where: { Userid: user.userId, courseId, ...(safeSectionId ? { sectionId: safeSectionId } : {}) }
+      where: { Userid: user.userId, courseId: requestedCourseId, ...(safeSectionId ? { sectionId: safeSectionId } : {}) }
     });
-    const slotExists = await Timetable.findOne({ where: { courseId, dayOfWeek, periodNumber } });
+    const slotExists = await Timetable.findOne({ where: { courseId: requestedCourseId, dayOfWeek, periodNumber } });
 
     if (!isAssigned || !slotExists) {
       throw new Error("Invalid assignment or timetable slot");
     }
 
-    const course = await Course.findByPk(courseId, { include: [Semester] });
-    const semNum = course.Semester.semesterNumber;
+    const baseCourse = await Course.findByPk(requestedCourseId, { include: [Semester] });
+    const baseSemNum = baseCourse?.Semester?.semesterNumber;
+
+    const uniqueAttendanceCourseIds = [
+      ...new Set(
+        attendances
+          .map((att) => parseInt(att.courseId, 10))
+          .filter((id) => !Number.isNaN(id))
+      ),
+      requestedCourseId
+    ];
+
+    const courseRows = await Course.findAll({
+      where: { courseId: { [Op.in]: uniqueAttendanceCourseIds } },
+      include: [{ model: Semester, required: false }]
+    });
+    const semByCourseId = new Map(courseRows.map((c) => [c.courseId, c.Semester?.semesterNumber]));
 
     const processed = [];
     const skipped = [];
@@ -292,7 +323,10 @@ export async function markAttendance(req, res, next) {
         continue;
       }
 
-      const sc = await StudentCourse.findOne({ where: { regno: att.rollnumber, courseId } });
+      const attCourseId = parseInt(att.courseId, 10);
+      const effectiveCourseId = Number.isNaN(attCourseId) ? requestedCourseId : attCourseId;
+
+      const sc = await StudentCourse.findOne({ where: { regno: att.rollnumber, courseId: effectiveCourseId } });
       if (!sc) {
         skipped.push({ rollnumber: att.rollnumber, reason: "Not enrolled" });
         continue;
@@ -306,7 +340,7 @@ export async function markAttendance(req, res, next) {
 
       // Check Admin lock
       const existing = await PeriodAttendance.findOne({
-        where: { regno: att.rollnumber, courseId, sectionId: sc.sectionId, attendanceDate: date, periodNumber }
+        where: { regno: att.rollnumber, courseId: effectiveCourseId, sectionId: sc.sectionId, attendanceDate: date, periodNumber }
       });
 
       if (existing?.updatedBy === 'admin') {
@@ -318,9 +352,9 @@ export async function markAttendance(req, res, next) {
       await PeriodAttendance.upsert({
         regno: att.rollnumber,
         staffId: user.userId,
-        courseId,
+        courseId: effectiveCourseId,
         sectionId: sc.sectionId,
-        semesterNumber: semNum,
+        semesterNumber: semByCourseId.get(effectiveCourseId) || baseSemNum,
         dayOfWeek,
         periodNumber,
         attendanceDate: date,
