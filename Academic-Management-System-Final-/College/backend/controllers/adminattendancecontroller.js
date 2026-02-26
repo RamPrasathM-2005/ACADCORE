@@ -10,6 +10,7 @@ const {
   Department, 
   Semester, 
   Batch, 
+  StaffCourse,
   StudentCourse, 
   StudentDetails, 
   User, 
@@ -200,7 +201,33 @@ export async function getStudentsForPeriodAdmin(req, res, next) {
     }
 
     let studentData = [];
+    const sectionStaffMap = new Map();
+
+    const buildSectionStaffMap = async (courseIds, sectionIdFilter = null) => {
+      if (!Array.isArray(courseIds) || courseIds.length === 0) return;
+
+      const allocations = await StaffCourse.findAll({
+        where: {
+          courseId: { [Op.in]: courseIds },
+          ...(sectionIdFilter ? { sectionId: sectionIdFilter } : {}),
+        },
+        include: [
+          { model: User, required: false, attributes: ["userName"] },
+        ],
+        attributes: ["courseId", "sectionId", "Userid"],
+      });
+
+      for (const row of allocations) {
+        const key = `${row.courseId}-${row.sectionId}`;
+        if (!sectionStaffMap.has(key)) {
+          sectionStaffMap.set(key, row.User?.userName || `Staff ${row.Userid}`);
+        }
+      }
+    };
+
     if (isElective) {
+      await buildSectionStaffMap(targetCourseIds, safeSectionId || null);
+
       const students = await StudentCourse.findAll({
         where: {
           courseId: { [Op.in]: targetCourseIds },
@@ -245,33 +272,44 @@ export async function getStudentsForPeriodAdmin(req, res, next) {
           status: attendance ? attendance.status : '',
           sectionId: sc.sectionId,
           sectionName: sc.Section?.sectionName,
-          courseId: sc.courseId
+          courseId: sc.courseId,
+          staffName: sectionStaffMap.get(`${sc.courseId}-${sc.sectionId}`) || "Not Assigned"
         };
       }));
     } else {
-      let sectionNameFilter = null;
-      if (safeSectionId) {
-        const sectionRow = await Section.findByPk(safeSectionId, { attributes: ["sectionName"] });
-        sectionNameFilter = sectionRow?.sectionName || null;
-      }
-
-      const roster = await StudentDetails.findAll({
+      await buildSectionStaffMap([requestedCourseId], safeSectionId || null);
+      const enrollments = await StudentCourse.findAll({
         where: {
-          ...(effectiveDeptId ? { departmentId: effectiveDeptId } : {}),
-          ...(effectiveSemesterId ? { semester: effectiveSemesterId } : {}),
-          ...(queryBatch ? { batch: queryBatch } : {}),
-          ...(sectionNameFilter ? { section: sectionNameFilter } : {})
+          courseId: requestedCourseId,
+          ...(safeSectionId ? { sectionId: safeSectionId } : {})
         },
-        attributes: ["registerNumber", "studentName", "section"],
-        order: [["registerNumber", "ASC"]]
+        include: [
+          {
+            model: StudentDetails,
+            required: true,
+            on: { regno: sequelize.where(sequelize.col('StudentCourse.regno'), '=', sequelize.col('StudentDetail.registerNumber')) },
+            where: {
+              ...(effectiveDeptId ? { departmentId: effectiveDeptId } : {}),
+              ...(effectiveSemesterId ? { semester: effectiveSemesterId } : {}),
+              ...(queryBatch ? { batch: queryBatch } : {})
+            },
+            attributes: ["registerNumber", "studentName", "section"]
+          },
+          {
+            model: Section,
+            required: false,
+            attributes: ["sectionId", "sectionName"]
+          }
+        ],
+        order: [[sequelize.col('StudentDetail.registerNumber'), 'ASC']]
       });
 
-      studentData = await Promise.all(roster.map(async (student) => {
+      studentData = await Promise.all(enrollments.map(async (enrollment) => {
         const attendance = await PeriodAttendance.findOne({
           where: {
-            regno: student.registerNumber,
+            regno: enrollment.regno,
             courseId: requestedCourseId,
-            ...(safeSectionId ? { sectionId: safeSectionId } : {}),
+            ...(enrollment.sectionId ? { sectionId: enrollment.sectionId } : {}),
             dayOfWeek: dayOfWeek,
             periodNumber: periodNumber,
             attendanceDate: date
@@ -279,12 +317,16 @@ export async function getStudentsForPeriodAdmin(req, res, next) {
         });
 
         return {
-          rollnumber: student.registerNumber,
-          name: student.studentName || "Unknown",
+          rollnumber: enrollment.regno,
+          name: enrollment.StudentDetail?.studentName || "Unknown",
           status: attendance ? attendance.status : "",
-          sectionId: safeSectionId,
-          sectionName: sectionNameFilter || student.section || null,
-          courseId: requestedCourseId
+          sectionId: enrollment.sectionId || safeSectionId || null,
+          sectionName: enrollment.Section?.sectionName || enrollment.StudentDetail?.section || null,
+          courseId: requestedCourseId,
+          staffName:
+            sectionStaffMap.get(
+              `${requestedCourseId}-${enrollment.sectionId || safeSectionId || ""}`
+            ) || "Not Assigned"
         };
       }));
     }
