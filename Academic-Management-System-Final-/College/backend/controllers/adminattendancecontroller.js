@@ -333,9 +333,30 @@ export async function markAttendanceAdmin(req, res, next) {
     const requestedIsElective = ["OEC", "PEC"].includes((requestedCourseInfo.category || "").trim().toUpperCase());
 
     const normalizedDeptId = parseInt(bodyDeptId, 10);
-    const effectiveDeptId = Number.isNaN(normalizedDeptId)
-      ? (requestedCourseInfo.Deptid || deptId)
-      : normalizedDeptId;
+    let effectiveDeptId = Number.isNaN(normalizedDeptId) ? adminUser.departmentId : normalizedDeptId;
+
+    if (!effectiveDeptId) {
+      const slot = await Timetable.findOne({
+        where: {
+          courseId: requestedCourseId,
+          dayOfWeek: dayOfWeek,
+          periodNumber: periodNumber,
+          isActive: "YES",
+          ...(safeSectionId ? { sectionId: safeSectionId } : {})
+        },
+        attributes: ["Deptid"]
+      });
+      effectiveDeptId = slot?.Deptid || null;
+    }
+
+    if (effectiveDeptId) {
+      const deptExists = await Department.findByPk(effectiveDeptId);
+      if (!deptExists) {
+        throw new Error(`Invalid Deptid ${effectiveDeptId}. Department not found.`);
+      }
+    } else {
+      throw new Error("Unable to resolve Deptid for attendance save. Please select a valid department.");
+    }
 
     const normalizedSemesterId = parseInt(bodySemesterId, 10);
     const effectiveSemesterId = Number.isNaN(normalizedSemesterId)
@@ -458,7 +479,67 @@ export async function markAttendanceAdmin(req, res, next) {
           skippedStudents.push({ rollnumber: att.rollnumber, reason: "Not enrolled" });
           continue;
         }
-        const resolvedSectionId = studentCourse?.sectionId || safeSectionId;
+        let resolvedSectionId = studentCourse?.sectionId || safeSectionId;
+        if (!resolvedSectionId) {
+          // Core-course fallback: derive section from student profile section name.
+          const studentProfile = await StudentDetails.findOne({
+            where: { registerNumber: att.rollnumber },
+            attributes: ["section"]
+          });
+
+          const sectionName = (studentProfile?.section || "").trim().toLowerCase();
+          if (sectionName) {
+            const sectionRows = await Section.findAll({
+              where: { courseId: effectiveCourseId },
+              attributes: ["sectionId", "sectionName"]
+            });
+            const match = sectionRows.find(
+              (row) => (row.sectionName || "").trim().toLowerCase() === sectionName
+            );
+            resolvedSectionId = match?.sectionId || null;
+          }
+        }
+
+        if (!resolvedSectionId) {
+          // Timetable fallback for this exact slot.
+          const slot = await Timetable.findOne({
+            where: {
+              courseId: effectiveCourseId,
+              dayOfWeek: dayOfWeek,
+              periodNumber: periodNumber,
+              Deptid: effectiveDeptId,
+              semesterId: effectiveSemesterId,
+              isActive: "YES",
+              sectionId: { [Op.ne]: null }
+            },
+            attributes: ["sectionId"]
+          });
+          resolvedSectionId = slot?.sectionId || null;
+        }
+
+        if (!resolvedSectionId) {
+          // Last fallback: first active section for the course.
+          const firstSection = await Section.findOne({
+            where: {
+              courseId: effectiveCourseId,
+              isActive: "YES"
+            },
+            attributes: ["sectionId"],
+            order: [["sectionId", "ASC"]]
+          });
+          resolvedSectionId = firstSection?.sectionId || null;
+        }
+
+        if (!resolvedSectionId) {
+          const existsSectionAtAll = await Section.count({
+            where: { courseId: effectiveCourseId }
+          });
+          if (!existsSectionAtAll) {
+            skippedStudents.push({ rollnumber: att.rollnumber, reason: "No sections configured for course" });
+            continue;
+          }
+        }
+
         if (!resolvedSectionId) {
           skippedStudents.push({ rollnumber: att.rollnumber, reason: "Section not found" });
           continue;
@@ -487,6 +568,12 @@ export async function markAttendanceAdmin(req, res, next) {
 
     await t.commit();
 
+    const skippedReasons = skippedStudents.reduce((acc, row) => {
+      const key = row.reason || "Unknown";
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+
     res.json({
       status: "success",
       message: fullDay
@@ -495,6 +582,7 @@ export async function markAttendanceAdmin(req, res, next) {
       data: {
         processedCount: processedStudents.length,
         skippedCount: skippedStudents.length,
+        skippedReasons,
       },
     });
   } catch (err) {
