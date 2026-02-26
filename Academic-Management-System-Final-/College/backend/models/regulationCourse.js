@@ -6,7 +6,7 @@ export default  (sequelize, DataTypes) => {
     semesterNumber: { type: DataTypes.INTEGER, allowNull: true, validate: { min: 1, max: 8 } },
     courseCode: { type: DataTypes.STRING(20), allowNull: false },
     courseTitle: { type: DataTypes.STRING(255), allowNull: false },
-    category: { type: DataTypes.ENUM('HSMC', 'BSC', 'ESC', 'PEC', 'OEC', 'EEC', 'PCC'), allowNull: false },
+    category: { type: DataTypes.ENUM('HSMC', 'BSC', 'ESC', 'PEC', 'OEC', 'EEC', 'PCC', 'MC'), allowNull: false },
     type: { type: DataTypes.ENUM('THEORY', 'INTEGRATED', 'PRACTICAL', 'EXPERIENTIAL LEARNING'), allowNull: false },
     lectureHours: { type: DataTypes.INTEGER, defaultValue: 0 },
     tutorialHours: { type: DataTypes.INTEGER, defaultValue: 0 },

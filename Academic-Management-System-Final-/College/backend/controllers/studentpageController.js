@@ -54,13 +54,33 @@ export const getStudentAcademicIds = catchAsync(async (req, res) => {
 
   const profile = student.studentProfile;
 
-  const [batchRecord, semesterRecord] = await Promise.all([
-    Batch.findOne({ where: { batch: profile.batch, isActive: 'YES' } }),
-    Semester.findOne({ 
-      where: { semesterNumber: profile.semester, isActive: 'YES' },
-      include: [{ model: Batch, where: { batch: profile.batch } }] 
-    })
-  ]);
+  const dept = profile.departmentId
+    ? await Department.findByPk(profile.departmentId, { attributes: ['Deptacronym', 'Deptname'] })
+    : null;
+
+  const batchWhere = {
+    batch: profile.batch,
+    isActive: 'YES',
+  };
+  if (dept?.Deptacronym) {
+    batchWhere.branch = dept.Deptacronym;
+  }
+
+  const batchRecord = await Batch.findOne({ where: batchWhere });
+  if (!batchRecord) {
+    return res.status(404).json({
+      status: "failure",
+      message: `No active Batch mapping for batch ${profile.batch} and department ${dept?.Deptacronym || profile.departmentId}`
+    });
+  }
+
+  const semesterRecord = await Semester.findOne({
+    where: {
+      semesterNumber: profile.semester,
+      batchId: batchRecord.batchId,
+      isActive: 'YES'
+    }
+  });
 
   res.status(200).json({
     status: "success",
@@ -574,18 +594,14 @@ export const getSemesters = catchAsync(async (req, res) => {
   const batchWhere = { batch: profile.batch, isActive: 'YES' };
   if (dept?.Deptacronym) batchWhere.branch = dept.Deptacronym;
 
-  let batches = await Batch.findAll({ where: batchWhere, attributes: ['batchId'] });
-  if (!batches.length) {
-    // Fallback for legacy data where branch may not align exactly.
-    batches = await Batch.findAll({
-      where: { batch: profile.batch, isActive: 'YES' },
-      attributes: ['batchId']
-    });
-  }
+  const batches = await Batch.findAll({ where: batchWhere, attributes: ['batchId'] });
 
   const batchIds = batches.map((b) => b.batchId);
   if (!batchIds.length) {
-    return res.status(200).json({ status: "success", data: [] });
+    return res.status(404).json({
+      status: "failure",
+      message: `No active Batch mapping for batch ${profile.batch} and department ${dept?.Deptacronym || profile.departmentId}`
+    });
   }
 
   const semesters = await Semester.findAll({
