@@ -81,14 +81,14 @@ export default db;
 
 // Named exports for your components
 export const {
-  Company, Department, User, Employee, StudentDetails,
+  Company, Department, User, Employee, StudentDetails,StudentGrade,
   Regulation, Batch, Semester, Course, RegulationCourse, Vertical,
   VerticalCourse, Section, StudentCourse, StaffCourse, CourseOutcome,
   COTool, StudentCOTool, Timetable, DayAttendance, PeriodAttendance,
   CoursePartitions, COType, ToolDetails, ElectiveBucket,
   ElectiveBucketCourse, StudentCoMarks, StudentElectiveSelection,
   NptelCourse, StudentNptelEnrollment, NptelCreditTransfer,
-  GradePoint, StudentGrade, StudentSemesterGPA, CourseRequest,
+  GradePoint, StudentSemesterGPA, CourseRequest,
   CBCS, CBCSSubject, CBCSSectionStaff, studentcourseChoices,
   studentTempChoice
 } = db;

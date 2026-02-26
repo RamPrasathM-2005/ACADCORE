@@ -25,7 +25,11 @@ export default(sequelize, DataTypes) => {
 
   StudentGrade.associate = (models) => {
     StudentGrade.belongsTo(models.StudentDetails, { foreignKey: 'regno' , targetKey: 'registerNumber'});
-    StudentGrade.belongsTo(models.Course, { foreignKey: 'courseCode', targetKey: 'courseCode' });
+    StudentGrade.belongsTo(models.Course, {
+      foreignKey: 'courseCode',
+      targetKey: 'courseCode',
+      constraints: false
+    });
     StudentGrade.belongsTo(models.GradePoint, { foreignKey: 'grade', targetKey: 'grade' });
   };
 
