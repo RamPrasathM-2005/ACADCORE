@@ -4,10 +4,13 @@ import {
   ResponsiveContainer,
   AreaChart,
   Area,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip
+  Tooltip,
+  Legend
 } from 'recharts';
 import {
   GraduationCap,
@@ -22,6 +25,7 @@ import {
   fetchSemesters,
   fetchEnrolledCourses,
   fetchAttendanceSummary,
+  fetchSubjectwiseAttendance,
   fetchOecPecProgress,
   fetchStudentAcademicIds
 } from '../../services/studentService';
@@ -46,6 +50,7 @@ const StudentDashboard = () => {
   const [gpaSelectedSem, setGpaSelectedSem] = useState('');
   const [courses, setCourses] = useState([]);
   const [attendanceSummary, setAttendanceSummary] = useState({});
+  const [subjectAttendance, setSubjectAttendance] = useState([]);
   const [progress, setProgress] = useState(null);
   const [academicIds, setAcademicIds] = useState({
     regno: '',
@@ -60,7 +65,39 @@ const StudentDashboard = () => {
       if (res.data.status !== 'success') return;
 
       const sorted = [...(res.data.data || [])].sort((a, b) => a.semesterNumber - b.semesterNumber);
-      const mapped = sorted.map((item) => ({
+
+      // Some older datasets can contain duplicate rows for the same semester.
+      // Keep one representative row per semester for chart/select rendering.
+      const bySemester = new Map();
+      for (const item of sorted) {
+        const semNo = toNumber(item.semesterNumber, 0);
+        if (!semNo) continue;
+
+        const existing = bySemester.get(semNo);
+        if (!existing) {
+          bySemester.set(semNo, item);
+          continue;
+        }
+
+        const existingScore =
+          (existing.cgpa != null ? 2 : 0) +
+          (existing.gpa != null ? 1 : 0) +
+          toNumber(existing.cumulativeEarnedCredits, 0) / 1000;
+        const nextScore =
+          (item.cgpa != null ? 2 : 0) +
+          (item.gpa != null ? 1 : 0) +
+          toNumber(item.cumulativeEarnedCredits, 0) / 1000;
+
+        if (nextScore >= existingScore) {
+          bySemester.set(semNo, item);
+        }
+      }
+
+      const uniqueSemHistory = [...bySemester.values()].sort(
+        (a, b) => toNumber(a.semesterNumber) - toNumber(b.semesterNumber)
+      );
+
+      const mapped = uniqueSemHistory.map((item) => ({
         semester: `Sem ${item.semesterNumber}`,
         semesterNumber: item.semesterNumber,
         gpaValue: toNumber(item.gpa),
@@ -106,11 +143,15 @@ const StudentDashboard = () => {
         }
 
         setSemesters(semList);
-        const active = semList
-          .filter((s) => s.isActive === 'YES')
-          .sort((a, b) => b.semesterNumber - a.semesterNumber);
-        const current = active[0] || [...semList].sort((a, b) => b.semesterNumber - a.semesterNumber)[0];
-        setSelectedSemester(String(current.semesterId));
+        const studentCurrentSem = toNumber(student?.studentProfile?.semester, 0);
+        const sortedBySem = [...semList].sort(
+          (a, b) => toNumber(a.semesterNumber) - toNumber(b.semesterNumber)
+        );
+        const current =
+          sortedBySem.find((s) => toNumber(s.semesterNumber) === studentCurrentSem) ||
+          [...sortedBySem].reverse().find((s) => toNumber(s.semesterNumber) <= studentCurrentSem) ||
+          sortedBySem[sortedBySem.length - 1];
+        if (current) setSelectedSemester(String(current.semesterId));
 
         await Promise.all([
           loadGpaHistory(),
@@ -160,11 +201,14 @@ const StudentDashboard = () => {
           fetchEnrolledCourses(selectedSemester),
           fetchAttendanceSummary(selectedSemester).catch(() => ({}))
         ]);
+        const subjectRes = await fetchSubjectwiseAttendance(selectedSemester).catch(() => []);
         setCourses(Array.isArray(coursesRes) ? coursesRes : []);
         setAttendanceSummary(attendanceRes || {});
+        setSubjectAttendance(Array.isArray(subjectRes) ? subjectRes : []);
       } catch {
         setCourses([]);
         setAttendanceSummary({});
+        setSubjectAttendance([]);
       }
     };
 
@@ -179,11 +223,46 @@ const StudentDashboard = () => {
     );
   }, [gpaHistory, gpaSelectedSem]);
 
+  const availableSemesters = useMemo(() => {
+    if (!Array.isArray(semesters) || semesters.length === 0) return [];
+
+    const currentStudentSem = toNumber(studentDetails?.studentProfile?.semester, 0);
+    const sortedAsc = [...semesters].sort(
+      (a, b) => toNumber(a.semesterNumber) - toNumber(b.semesterNumber)
+    );
+
+    // Keep one row per semester number (defensive guard for duplicate API rows)
+    const bySemNumber = new Map();
+    for (const sem of sortedAsc) {
+      const semNo = toNumber(sem.semesterNumber, 0);
+      if (!semNo || bySemNumber.has(semNo)) continue;
+      bySemNumber.set(semNo, sem);
+    }
+
+    const uniqueSemesters = [...bySemNumber.values()].sort(
+      (a, b) => toNumber(a.semesterNumber) - toNumber(b.semesterNumber)
+    );
+
+    if (!currentStudentSem) return uniqueSemesters;
+    return uniqueSemesters.filter((s) => toNumber(s.semesterNumber) <= currentStudentSem);
+  }, [semesters, studentDetails?.studentProfile?.semester]);
+
   const visibleHistory = useMemo(() => {
     const semNum = toNumber(gpaSelectedSem, 0);
     if (!semNum) return gpaHistory;
     return gpaHistory.filter((h) => h.semesterNumber <= semNum);
   }, [gpaHistory, gpaSelectedSem]);
+
+  useEffect(() => {
+    if (!selectedSemester || availableSemesters.length === 0) return;
+    const isAllowed = availableSemesters.some(
+      (s) => String(s.semesterId) === String(selectedSemester)
+    );
+    if (!isAllowed) {
+      const fallback = availableSemesters[availableSemesters.length - 1] || availableSemesters[0];
+      if (fallback) setSelectedSemester(String(fallback.semesterId));
+    }
+  }, [availableSemesters, selectedSemester]);
 
   const avgGpa = useMemo(() => {
     if (visibleHistory.length === 0) return '0.00';
@@ -222,7 +301,7 @@ const StudentDashboard = () => {
     if (!selectedHistory) {
       return {
         title: 'No Academic Data',
-        message: 'Upload/processing of semester results is pending.',
+        message: 'No GPA records found yet. Complete evaluations and grade publishing to unlock trend insights.',
         tone: 'text-slate-600'
       };
     }
@@ -230,7 +309,7 @@ const StudentDashboard = () => {
     if (selectedHistory.cgpaFrozen) {
       return {
         title: 'CGPA Frozen',
-        message: 'Clear pending arrears to unlock CGPA movement.',
+        message: 'Pending arrears are freezing CGPA progression. Clear arrears first to restart CGPA growth.',
         tone: 'text-amber-600'
       };
     }
@@ -238,7 +317,7 @@ const StudentDashboard = () => {
     if (attendancePct > 0 && attendancePct < 75) {
       return {
         title: 'Attendance Risk',
-        message: 'Low attendance can impact exam eligibility. Prioritize regular attendance.',
+        message: 'Attendance is below 75%. This can affect exam eligibility. Prioritize high-attendance subjects immediately.',
         tone: 'text-red-600'
       };
     }
@@ -248,8 +327,8 @@ const StudentDashboard = () => {
         title: trendDelta != null && trendDelta < 0 ? 'Strong but Slipping' : 'Outstanding',
         message:
           trendDelta != null && trendDelta < 0
-            ? 'You are still in top range. Tighten consistency this semester.'
-            : 'Excellent academic performance. Sustain this momentum.',
+            ? 'Performance is still excellent, but trend is declining. Stabilize internals and assignment consistency.'
+            : 'Excellent performance with stable academics. Keep the same preparation cadence.',
         tone: 'text-emerald-600'
       };
     }
@@ -259,8 +338,8 @@ const StudentDashboard = () => {
         title: trendDelta != null && trendDelta >= 0.2 ? 'Strong Uptrend' : 'Very Good',
         message:
           trendDelta != null && trendDelta >= 0.2
-            ? 'You are improving steadily. Distinction is within reach.'
-            : 'Maintain this level and focus on two weakest subjects.',
+            ? 'Your upward trend is strong. Distinction is realistic if this pace is sustained.'
+            : 'Consistent performance. Push two lowest-performing subjects to move into distinction range.',
         tone: 'text-indigo-600'
       };
     }
@@ -270,15 +349,15 @@ const StudentDashboard = () => {
         title: trendDelta != null && trendDelta >= 0 ? 'Improving' : 'Needs Consolidation',
         message:
           trendDelta != null && trendDelta >= 0
-            ? 'Recovery trend is positive. Keep the same study rhythm.'
-            : 'Stabilize fundamentals and improve internal test consistency.',
+            ? 'Recovery trend is positive. Continue the same rhythm and increase revision frequency.'
+            : 'Focus on fundamentals and test consistency. Weekly improvement targets are recommended.',
         tone: 'text-amber-600'
       };
     }
 
     return {
       title: 'Intervention Needed',
-      message: 'Build a weekly recovery plan with your faculty mentor.',
+      message: 'Immediate intervention is needed. Use a weekly mentor-led recovery plan and subject-wise tracking.',
       tone: 'text-red-600'
     };
   }, [attendancePct, score, selectedHistory, trendDelta]);
@@ -323,6 +402,20 @@ const StudentDashboard = () => {
     [courses]
   );
 
+  const normalizedSubjectAttendance = useMemo(
+    () =>
+      (subjectAttendance || [])
+        .map((row) => ({
+          name: row.courseCode || 'NA',
+          percentage: toNumber(row.percentage),
+          present: toNumber(row.presentPeriods),
+          total: toNumber(row.totalPeriods),
+          fullTitle: row.courseTitle || row.courseCode || 'Course'
+        }))
+        .sort((a, b) => b.percentage - a.percentage),
+    [subjectAttendance]
+  );
+
   const studentName =
     studentDetails?.userName ||
     studentDetails?.studentProfile?.studentName ||
@@ -338,6 +431,7 @@ const StudentDashboard = () => {
   const section =
     studentDetails?.studentProfile?.section ||
     '-';
+  const currentStudentSemester = toNumber(studentDetails?.studentProfile?.semester, 0);
 
   const handleViewCBCS = () => {
     if (!academicIds.batchId || !academicIds.deptId || !academicIds.semesterId || !academicIds.regno) return;
@@ -389,9 +483,10 @@ const StudentDashboard = () => {
                 onChange={(e) => setSelectedSemester(e.target.value)}
                 className="px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white"
               >
-                {semesters.map((sem) => (
+                {availableSemesters.map((sem) => (
                   <option key={sem.semesterId} value={String(sem.semesterId)}>
-                    Semester {sem.semesterNumber}{sem.isActive === 'YES' ? ' - Active' : ''}
+                    Semester {sem.semesterNumber}
+                    {toNumber(sem.semesterNumber, 0) === currentStudentSemester ? ' - Active' : ''}
                   </option>
                 ))}
               </select>
@@ -450,6 +545,16 @@ const StudentDashboard = () => {
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           <div className="xl:col-span-2 space-y-6">
+            <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5" />
+                <div>
+                  <h3 className={`text-sm font-semibold ${recommendation.tone}`}>{recommendation.title}</h3>
+                  <p className="text-sm text-slate-600 mt-1">{recommendation.message}</p>
+                </div>
+              </div>
+            </div>
+
             <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
               <div className="flex flex-wrap justify-between items-center gap-3 mb-5">
                 <div>
@@ -516,13 +621,34 @@ const StudentDashboard = () => {
             </div>
 
             <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-              <div className="flex items-start gap-3">
-                <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5" />
-                <div>
-                  <h3 className={`text-sm font-semibold ${recommendation.tone}`}>{recommendation.title}</h3>
-                  <p className="text-sm text-slate-600 mt-1">{recommendation.message}</p>
-                </div>
+              <div className="mb-4">
+                <h3 className="text-base font-semibold text-slate-900">Subject-wise Attendance</h3>
+                <p className="text-xs text-slate-500">Attendance percentage by subject in selected semester</p>
               </div>
+              {normalizedSubjectAttendance.length === 0 ? (
+                <p className="text-sm text-slate-500">No subject attendance data available for this semester.</p>
+              ) : (
+                <div className="h-72">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={normalizedSubjectAttendance} margin={{ top: 8, right: 8, left: 0, bottom: 20 }}>
+                      <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#e2e8f0" />
+                      <XAxis dataKey="name" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+                      <YAxis domain={[0, 100]} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+                      <Tooltip
+                        formatter={(value, key, item) =>
+                          key === 'percentage'
+                            ? [`${toNumber(value).toFixed(1)}%`, 'Attendance']
+                            : [value, key]
+                        }
+                        labelFormatter={(_, items) => items?.[0]?.payload?.fullTitle || 'Subject'}
+                        contentStyle={{ borderRadius: 10, border: '1px solid #e2e8f0' }}
+                      />
+                      <Legend />
+                      <Bar dataKey="percentage" name="Attendance %" radius={[6, 6, 0, 0]} fill="#0ea5e9" />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
             </div>
           </div>
 
@@ -624,3 +750,4 @@ const StudentDashboard = () => {
 };
 
 export default StudentDashboard;
+

@@ -6,7 +6,7 @@ const {
   User, StudentDetails, Department, Batch, Course, Semester, 
   ElectiveBucket, ElectiveBucketCourse, StudentElectiveSelection, 
   RegulationCourse, NptelCreditTransfer, NptelCourse, StudentNptelEnrollment,
-  DayAttendance, Section, StudentCourse, sequelize 
+  DayAttendance, PeriodAttendance, Section, StudentCourse, sequelize 
 } = db;
 
 // Helper to safely get user ID from req.user (handles both id and userId)
@@ -461,6 +461,66 @@ export const getAttendanceSummary = catchAsync(async (req, res) => {
   res.status(200).json({ status: "success", data: stats[0] });
 });
 
+// 6b. SUBJECT-WISE ATTENDANCE (for dashboard chart)
+export const getSubjectwiseAttendance = catchAsync(async (req, res) => {
+  const userId = getCurrentUserId(req);
+  if (!userId) {
+    return res.status(401).json({ status: "failure", message: "User not authenticated" });
+  }
+
+  const { semesterId } = req.query;
+  if (!semesterId) {
+    return res.status(400).json({ status: "failure", message: "semesterId is required" });
+  }
+
+  const user = await User.findByPk(userId, {
+    include: [{ model: StudentDetails, as: 'studentProfile' }]
+  });
+  if (!user?.studentProfile) {
+    return res.status(404).json({ status: "failure", message: "Student profile not found" });
+  }
+
+  const sem = await Semester.findByPk(semesterId, { attributes: ['semesterNumber'] });
+  if (!sem) {
+    return res.status(404).json({ status: "failure", message: "Semester not found" });
+  }
+
+  const rows = await PeriodAttendance.findAll({
+    where: {
+      regno: user.studentProfile.registerNumber,
+      semesterNumber: sem.semesterNumber
+    },
+    include: [{
+      model: Course,
+      attributes: ['courseId', 'courseCode', 'courseTitle'],
+      required: false
+    }],
+    attributes: [
+      'courseId',
+      [sequelize.fn('COUNT', sequelize.col('PeriodAttendance.periodAttendanceId')), 'totalPeriods'],
+      [sequelize.fn('SUM', sequelize.literal("CASE WHEN PeriodAttendance.status IN ('P','OD') THEN 1 ELSE 0 END")), 'presentPeriods']
+    ],
+    group: ['courseId', 'Course.courseId', 'Course.courseCode', 'Course.courseTitle'],
+    order: [[sequelize.literal('presentPeriods / NULLIF(totalPeriods, 0)'), 'DESC']]
+  });
+
+  const data = rows.map((r) => {
+    const total = Number(r.get('totalPeriods') || 0);
+    const present = Number(r.get('presentPeriods') || 0);
+    const percentage = total > 0 ? Number(((present / total) * 100).toFixed(1)) : 0;
+    return {
+      courseId: r.courseId,
+      courseCode: r.Course?.courseCode || 'NA',
+      courseTitle: r.Course?.courseTitle || 'Unknown Course',
+      totalPeriods: total,
+      presentPeriods: present,
+      percentage
+    };
+  });
+
+  res.status(200).json({ status: "success", data });
+});
+
 // 7. GET ENROLLED COURSES
 export const getStudentEnrolledCourses = catchAsync(async (req, res) => {
   const userId = getCurrentUserId(req);
@@ -493,9 +553,47 @@ export const getMandatoryCourses = catchAsync(async (req, res) => {
 });
 
 export const getSemesters = catchAsync(async (req, res) => {
-  const semesters = await Semester.findAll({ 
-    include: [{ model: Batch, where: { isActive: 'YES' } }] 
+  const userId = getCurrentUserId(req);
+  if (!userId) {
+    return res.status(401).json({ status: "failure", message: "User not authenticated" });
+  }
+
+  const user = await User.findByPk(userId, {
+    include: [{ model: StudentDetails, as: 'studentProfile', attributes: ['batch', 'departmentId'] }]
   });
+
+  if (!user?.studentProfile) {
+    return res.status(404).json({ status: "failure", message: "Student profile not found" });
+  }
+
+  const profile = user.studentProfile;
+  const dept = profile.departmentId
+    ? await Department.findByPk(profile.departmentId, { attributes: ['Deptacronym'] })
+    : null;
+
+  const batchWhere = { batch: profile.batch, isActive: 'YES' };
+  if (dept?.Deptacronym) batchWhere.branch = dept.Deptacronym;
+
+  let batches = await Batch.findAll({ where: batchWhere, attributes: ['batchId'] });
+  if (!batches.length) {
+    // Fallback for legacy data where branch may not align exactly.
+    batches = await Batch.findAll({
+      where: { batch: profile.batch, isActive: 'YES' },
+      attributes: ['batchId']
+    });
+  }
+
+  const batchIds = batches.map((b) => b.batchId);
+  if (!batchIds.length) {
+    return res.status(200).json({ status: "success", data: [] });
+  }
+
+  const semesters = await Semester.findAll({
+    where: { batchId: { [Op.in]: batchIds } },
+    include: [{ model: Batch, where: { isActive: 'YES' }, required: true }],
+    order: [['semesterNumber', 'ASC']]
+  });
+
   res.status(200).json({ status: "success", data: semesters });
 });
 
@@ -514,3 +612,4 @@ export const getElectiveSelections = catchAsync(async (req, res) => {
   });
   res.status(200).json({ status: "success", data: selections });
 });
+

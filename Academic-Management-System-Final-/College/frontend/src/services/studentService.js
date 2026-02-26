@@ -122,6 +122,20 @@ export const fetchAttendanceSummary = async (semesterId) => {
   }
 };
 
+export const fetchSubjectwiseAttendance = async (semesterId) => {
+  try {
+    const response = await api.get('/student/subject-attendance', {
+      params: { semesterId }
+    });
+    return handleResponse(response);
+  } catch (error) {
+    console.error("fetchSubjectwiseAttendance error:", error);
+    throw new Error(
+      error.response?.data?.message || "Failed to fetch subject-wise attendance"
+    );
+  }
+};
+
 export const fetchUserId = async () => {
   try {
     const response = await api.get("/student/userid");

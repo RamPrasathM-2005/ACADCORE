@@ -4,8 +4,7 @@ import {
   Space, Tag, Tooltip, Empty 
 } from 'antd';
 import { 
-  SearchOutlined, CheckCircleFilled, CloseCircleFilled, 
-  UserOutlined, AppstoreOutlined 
+  SearchOutlined, CheckOutlined, CloseOutlined, UserOutlined, AppstoreOutlined 
 } from '@ant-design/icons';
 import Swal from 'sweetalert2';
 import withReactContent from 'sweetalert2-react-content';
@@ -120,7 +119,7 @@ const StudentCourseMapping = () => {
         toast: true,
         position: 'top-end',
         icon: 'error',
-        title: 'Failed to load matrix',
+        title: 'Failed to load details',
         showConfirmButton: false,
         timer: 3000,
       });
@@ -169,9 +168,9 @@ const StudentCourseMapping = () => {
       render: (_, record) => {
         const isEnrolled = enrollmentSet.has(`${record.regno}::${course.courseId}`);
         return isEnrolled ? (
-          <CheckCircleFilled className="text-green-600 text-2xl" />
+          <CheckOutlined style={{ color: "#16a34a", fontSize: 22, fontWeight: 700 }} />
         ) : (
-          <CloseCircleFilled className="text-gray-300 text-xl" />
+          <CloseOutlined style={{ color: "#ef4444", fontSize: 22, fontWeight: 700 }} />
         );
       },
     }))
@@ -268,7 +267,7 @@ const StudentCourseMapping = () => {
                   disabled={!selectedDept || !selectedBatch || !selectedSemester}
                   size="large"
                 >
-                  Load Matrix
+                  Load Details
                 </Button>
               </div>
             </Form>
@@ -319,7 +318,7 @@ const StudentCourseMapping = () => {
               description={
                 courses.length > 0
                   ? "No students match the current search"
-                  : "Select department, batch, semester and click 'Load Matrix'"
+                  : "Select department, batch, semester and click 'Load Details'"
               }
             />
           </Card>
@@ -330,3 +329,4 @@ const StudentCourseMapping = () => {
 };
 
 export default StudentCourseMapping;
+

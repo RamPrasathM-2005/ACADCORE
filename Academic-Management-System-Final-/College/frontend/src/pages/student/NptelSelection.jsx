@@ -1,24 +1,32 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { toast } from 'react-hot-toast';
-import { api } from '../../services/authService';
-import { useAuth } from '../auth/AuthContext';
+import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { toast } from "react-hot-toast";
+import {
+  BookOpen,
+  CheckCircle2,
+  AlertCircle,
+  GraduationCap,
+  Clock3,
+  BadgeCheck,
+  XCircle
+} from "lucide-react";
+import { api } from "../../services/authService";
+import { useAuth } from "../auth/AuthContext";
 import {
   fetchStudentDetails,
   fetchSemesters,
   fetchNptelCourses,
   enrollNptelCourses,
   fetchStudentNptelEnrollments,
-  requestNptelCreditTransfer,
-
-  fetchOecPecProgress,
-} from '../../services/studentService';
+  fetchOecPecProgress
+} from "../../services/studentService";
 
 const NptelSelection = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
+
   const [semesters, setSemesters] = useState([]);
-  const [selectedSemester, setSelectedSemester] = useState('');
+  const [selectedSemester, setSelectedSemester] = useState("");
   const [availableNptel, setAvailableNptel] = useState([]);
   const [enrolledNptel, setEnrolledNptel] = useState([]);
   const [selectedIds, setSelectedIds] = useState([]);
@@ -26,38 +34,66 @@ const NptelSelection = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const [currentSemesterNumber, setCurrentSemesterNumber] = useState(0);
+
+  const getAllowedSemesters = (semesterData = [], studentSemesterNumber = 0) => {
+    const bySemNo = new Map();
+    [...semesterData]
+      .sort((a, b) => Number(a.semesterNumber) - Number(b.semesterNumber))
+      .forEach((sem) => {
+        const semNo = Number(sem.semesterNumber);
+        if (!semNo || bySemNo.has(semNo)) return;
+        bySemNo.set(semNo, sem);
+      });
+
+    const unique = [...bySemNo.values()];
+    if (!unique.length) return [];
+
+    const current =
+      unique.find((s) => Number(s.semesterNumber) === Number(studentSemesterNumber)) ||
+      unique.find((s) => s.isActive === "YES") ||
+      unique[unique.length - 1];
+
+    const currentNo = Number(current?.semesterNumber || 0);
+    return unique.filter((s) => {
+      const semNo = Number(s.semesterNumber);
+      return semNo > 0 && semNo <= currentNo;
+    });
+  };
 
   useEffect(() => {
     if (authLoading) return;
-
-    if ((user?.role || '').toLowerCase() !== 'student') {
-      navigate('/login');
+    if ((user?.role || "").toLowerCase() !== "student") {
+      navigate("/login");
       return;
     }
 
     const loadData = async () => {
       try {
         setLoading(true);
+        setError(null);
         const studentData = await fetchStudentDetails();
+        const studentSemesterNumber = Number(studentData?.studentProfile?.semester || 0);
+        setCurrentSemesterNumber(studentSemesterNumber);
         const sems = await fetchSemesters(studentData?.studentProfile?.batch);
-        setSemesters(sems);
+        const filteredSemesters = getAllowedSemesters(sems, studentSemesterNumber);
+        setSemesters(filteredSemesters);
 
-        const studentSemesterNumber = Number(studentData?.studentProfile?.semester);
-        const byStudentSemester = sems.find(
-          s => Number(s.semesterNumber) === studentSemesterNumber
-        );
-        const active = sems.find(s => s.isActive === 'YES');
-        const fallback = sems[0];
-        const defaultSemester = byStudentSemester || active || fallback;
-        setSelectedSemester(defaultSemester?.semesterId || '');
+        const defaultSemester =
+          filteredSemesters.find((s) => Number(s.semesterNumber) === studentSemesterNumber) ||
+          filteredSemesters.find((s) => s.isActive === "YES") ||
+          filteredSemesters[0];
+        setSelectedSemester(defaultSemester?.semesterId || "");
 
-        const prog = await fetchOecPecProgress();
+        const [prog, enrolls] = await Promise.all([
+          fetchOecPecProgress(),
+          fetchStudentNptelEnrollments()
+        ]);
+
         setProgress(prog);
-
-        const enrolls = await fetchStudentNptelEnrollments();
         setEnrolledNptel(enrolls);
       } catch (err) {
-        setError('Failed to load data');
+        setError("Failed to load NPTEL data.");
         console.error(err);
       } finally {
         setLoading(false);
@@ -73,235 +109,295 @@ const NptelSelection = () => {
     const loadNptel = async () => {
       try {
         const courses = await fetchNptelCourses(selectedSemester);
-        setAvailableNptel(courses);
-      } catch (err) {
-        setError('Failed to fetch NPTEL courses');
+        setAvailableNptel(Array.isArray(courses) ? courses : []);
+      } catch {
+        setError("Failed to fetch NPTEL courses.");
       }
     };
 
     loadNptel();
   }, [selectedSemester]);
 
+  const selectedCount = selectedIds.length;
+
+  const selectableCourses = useMemo(
+    () => availableNptel.filter((course) => !course.isEnrolled),
+    [availableNptel]
+  );
+
   const handleSelect = (id) => {
-    setSelectedIds(prev => 
-      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
-    );
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
   const handleEnroll = async () => {
     if (selectedIds.length === 0) return;
     try {
+      setLoading(true);
+      setError(null);
+      setSuccess(null);
       await enrollNptelCourses(selectedSemester, selectedIds);
-      setSuccess('Enrolled successfully!');
+      setSuccess("Enrolled successfully.");
       setSelectedIds([]);
-      const enrolls = await fetchStudentNptelEnrollments();
+      const [enrolls, prog] = await Promise.all([
+        fetchStudentNptelEnrollments(),
+        fetchOecPecProgress()
+      ]);
       setEnrolledNptel(enrolls);
-      const prog = await fetchOecPecProgress();
       setProgress(prog);
-    } catch (err) {
-      setError('Enrollment failed');
+    } catch {
+      setError("Enrollment failed.");
+    } finally {
+      setLoading(false);
     }
   };
 
+  const handleStudentDecision = async (enrollmentId, decision) => {
+    let remarks = "";
+    if (decision === "rejected") {
+      remarks = window.prompt("Optional reason for rejecting this credit transfer:") || "";
+    }
 
- const handleStudentDecision = async (enrollmentId, decision) => {
-  let remarks = '';
-  if (decision === 'rejected') {
-    remarks = prompt('Optional: Reason for rejecting this credit transfer?') || '';
-  }
+    try {
+      await api.post("/student/nptel-credit-transfer", {
+        enrollmentId,
+        decision,
+        remarks: remarks || ""
+      });
 
-  try {
-    // Use the existing endpoint that already works
-    await api.post('/student/nptel-credit-transfer', {
-      enrollmentId,
-      decision,        // 'accepted' or 'rejected'
-      remarks: remarks || ''
-    });
+      toast.success(
+        decision === "accepted"
+          ? "Credit transfer accepted."
+          : "Credit transfer rejected."
+      );
 
-    toast.success(
-      decision === 'accepted' 
-        ? 'Credit transfer accepted! It now counts toward your OEC/PEC.' 
-        : 'Credit transfer rejected.'
+      const [updatedEnrolls, prog] = await Promise.all([
+        fetchStudentNptelEnrollments(),
+        fetchOecPecProgress()
+      ]);
+      setEnrolledNptel(updatedEnrolls);
+      setProgress(prog);
+    } catch (err) {
+      console.error("Decision error:", err);
+      toast.error(err.response?.data?.message || "Failed to submit decision");
+    }
+  };
+
+  if (loading && semesters.length === 0) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="w-11 h-11 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+      </div>
     );
-
-    // Refresh data
-    const updatedEnrolls = await fetchStudentNptelEnrollments();
-    setEnrolledNptel(updatedEnrolls);
-    const prog = await fetchOecPecProgress();
-    setProgress(prog);
-  } catch (err) {
-    console.error('Decision error:', err);
-    toast.error(err.response?.data?.message || 'Failed to submit decision');
-  }
-};
-
-  if (loading) {
-    return <div className="text-center py-12 text-xl">Loading...</div>;
   }
 
   return (
-    <div className="container mx-auto p-6 max-w-5xl">
-      <h1 className="text-4xl font-bold text-indigo-700 mb-8">NPTEL Course Selection</h1>
-
-      {/* OEC/PEC Progress */}
-      {progress && (
-        <div className="bg-gradient-to-r from-yellow-50 to-amber-50 border border-yellow-300 rounded-xl p-6 mb-8 shadow-md">
-          <h3 className="text-2xl font-bold text-amber-800 mb-4">OEC/PEC Requirement Progress</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-white p-5 rounded-lg shadow">
-              <p className="text-xl font-semibold">OEC: <span className="text-indigo-600">{progress.completed.OEC} / {progress.required.OEC}</span></p>
-              <p className="text-lg mt-2">Remaining: <strong>{progress.remaining.OEC}</strong></p>
-              {progress.remaining.OEC === 0 && <p className="text-green-600 font-bold mt-3">✓ Fully Completed!</p>}
+    <div className="min-h-screen bg-slate-50 p-6">
+      <div className="max-w-7xl mx-auto space-y-6">
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-wide font-semibold text-slate-500">Student Portal</p>
+              <h1 className="text-2xl font-semibold text-slate-900 mt-1">NPTEL Course Selection</h1>
+              <p className="text-sm text-slate-600 mt-1">Select NPTEL courses and manage credit transfer decisions.</p>
             </div>
-            <div className="bg-white p-5 rounded-lg shadow">
-              <p className="text-xl font-semibold">PEC: <span className="text-purple-600">{progress.completed.PEC} / {progress.required.PEC}</span></p>
-              <p className="text-lg mt-2">Remaining: <strong>{progress.remaining.PEC}</strong></p>
-              {progress.remaining.PEC === 0 && <p className="text-green-600 font-bold mt-3">✓ Fully Completed!</p>}
+            <div className="flex flex-wrap items-center gap-3">
+              <select
+                value={selectedSemester}
+                onChange={(e) => setSelectedSemester(e.target.value)}
+                className="px-3 py-2 text-sm border border-slate-300 rounded-lg bg-white"
+              >
+                <option value="">Choose Semester</option>
+                {semesters.map((sem) => (
+                  <option key={sem.semesterId} value={sem.semesterId}>
+                    Semester {sem.semesterNumber} {Number(sem.semesterNumber) === currentSemesterNumber ? "- Current" : ""}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={handleEnroll}
+                disabled={selectedCount === 0 || loading}
+                className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                  selectedCount === 0 || loading
+                    ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                    : "bg-indigo-600 text-white hover:bg-indigo-700"
+                }`}
+              >
+                Enroll Selected ({selectedCount})
+              </button>
             </div>
           </div>
         </div>
-      )}
 
-      {/* Semester Selector */}
-      <div className="mb-8">
-        <label className="text-lg font-medium text-gray-700 mr-4">Select Semester:</label>
-        <select 
-          value={selectedSemester} 
-          onChange={(e) => setSelectedSemester(e.target.value)}
-          className="px-6 py-3 border border-gray-300 rounded-lg text-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-        >
-          <option value="">-- Choose Semester --</option>
-          {semesters.map(sem => (
-            <option key={sem.semesterId} value={sem.semesterId}>
-              Semester {sem.semesterNumber} {sem.isActive === 'YES' && '(Current)'}
-            </option>
-          ))}
-        </select>
-      </div>
+        {progress && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-semibold text-slate-700">OEC Progress</p>
+                <GraduationCap className="w-4 h-4 text-indigo-600" />
+              </div>
+              <p className="text-lg font-semibold text-slate-900">{progress.completed.OEC}/{progress.required.OEC}</p>
+              <p className="text-xs text-slate-500">Remaining: {progress.remaining.OEC}</p>
+            </div>
+            <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-sm font-semibold text-slate-700">PEC Progress</p>
+                <BookOpen className="w-4 h-4 text-violet-600" />
+              </div>
+              <p className="text-lg font-semibold text-slate-900">{progress.completed.PEC}/{progress.required.PEC}</p>
+              <p className="text-xs text-slate-500">Remaining: {progress.remaining.PEC}</p>
+            </div>
+          </div>
+        )}
 
-      {selectedSemester && (
-        <>
-          {/* Available Courses */}
-          <div className="bg-white rounded-xl shadow-lg p-8 mb-10">
-            <h2 className="text-2xl font-bold text-gray-800 mb-6">Available NPTEL Courses</h2>
-            {availableNptel.length === 0 ? (
-              <p className="text-gray-500 italic">No NPTEL courses available for this semester.</p>
+        {success && (
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-emerald-700 text-sm flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4" />
+            {success}
+          </div>
+        )}
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-red-700 text-sm flex items-center gap-2">
+            <AlertCircle className="w-4 h-4" />
+            {error}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+            <h2 className="text-base font-semibold text-slate-900 mb-4">Available NPTEL Courses</h2>
+            {selectedSemester && availableNptel.length === 0 ? (
+              <p className="text-sm text-slate-500">No NPTEL courses available for this semester.</p>
             ) : (
-              <div className="space-y-4">
-                {availableNptel.map(course => (
-                  <label key={course.nptelCourseId} className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 cursor-pointer">
+              <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1">
+                {availableNptel.map((course) => (
+                  <label
+                    key={course.nptelCourseId}
+                    className={`flex gap-3 items-start rounded-xl border p-3 transition ${
+                      course.isEnrolled
+                        ? "border-emerald-200 bg-emerald-50"
+                        : "border-slate-200 hover:border-indigo-200 hover:bg-indigo-50/40"
+                    }`}
+                  >
                     <input
                       type="checkbox"
+                      className="mt-1 w-4 h-4"
                       checked={selectedIds.includes(course.nptelCourseId) || course.isEnrolled}
                       onChange={() => handleSelect(course.nptelCourseId)}
                       disabled={course.isEnrolled}
-                      className="w-5 h-5 text-indigo-600 rounded focus:ring-indigo-500"
                     />
                     <div className="flex-1">
-                      <p className="font-semibold text-lg">{course.courseTitle}</p>
-                      <p className="text-sm text-gray-600">
-                        Code: {course.courseCode} • Type: <span className={`font-medium ${course.type === 'OEC' ? 'text-indigo-600' : 'text-purple-600'}`}>{course.type}</span> • Credits: {course.credits}
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-slate-900">{course.courseTitle}</p>
+                        <span
+                          className={`text-[10px] px-2 py-1 rounded-full font-semibold ${
+                            course.type === "OEC" ? "bg-indigo-100 text-indigo-700" : "bg-violet-100 text-violet-700"
+                          }`}
+                        >
+                          {course.type}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 mt-1">
+                        {course.courseCode} | Credits: {course.credits}
                       </p>
-                      {course.isEnrolled && <span className="text-green-600 font-medium text-sm">✓ Already Enrolled</span>}
+                      {course.isEnrolled && (
+                        <p className="text-xs text-emerald-700 mt-2 flex items-center gap-1">
+                          <BadgeCheck className="w-3.5 h-3.5" />
+                          Already enrolled
+                        </p>
+                      )}
                     </div>
                   </label>
                 ))}
               </div>
             )}
 
-            <button
-              onClick={handleEnroll}
-              disabled={selectedIds.length === 0}
-              className={`mt-8 px-8 py-4 rounded-lg font-bold text-white transition-all ${
-                selectedIds.length === 0 
-                  ? 'bg-gray-400 cursor-not-allowed' 
-                  : 'bg-indigo-600 hover:bg-indigo-700 shadow-lg transform hover:scale-105'
-              }`}
-            >
-              Enroll in Selected Courses ({selectedIds.length})
-            </button>
+            {selectedSemester && selectableCourses.length > 0 && (
+              <div className="mt-4 flex justify-end">
+                <button
+                  onClick={handleEnroll}
+                  disabled={selectedCount === 0 || loading}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium ${
+                    selectedCount === 0 || loading
+                      ? "bg-slate-200 text-slate-500 cursor-not-allowed"
+                      : "bg-indigo-600 text-white hover:bg-indigo-700"
+                  }`}
+                >
+                  Enroll Selected ({selectedCount})
+                </button>
+              </div>
+            )}
           </div>
 
-          {/* Enrolled NPTEL Courses */}
-<div className="bg-white rounded-xl shadow-lg p-8">
-  <h2 className="text-2xl font-bold text-gray-800 mb-6">My Enrolled NPTEL Courses</h2>
-  {enrolledNptel.length === 0 ? (
-    <p className="text-gray-500 italic py-8 text-center">No enrolled NPTEL courses yet.</p>
-  ) : (
-    <div className="space-y-6">
-      {enrolledNptel.map(enroll => (
-        <div key={enroll.enrollmentId} className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl border border-indigo-200">
-          <div className="flex justify-between items-start">
-            <div>
-              <h4 className="text-xl font-bold text-indigo-800">{enroll.courseTitle}</h4>
-              <p className="text-gray-700 mt-1">
-                Code: <span className="font-mono">{enroll.courseCode}</span> • Type: {enroll.type} • Credits: {enroll.credits}
-              </p>
-              <p className="text-sm text-gray-600 mt-2">Semester {enroll.semesterNumber}</p>
-            </div>
-          </div>
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+            <h2 className="text-base font-semibold text-slate-900 mb-4">My Enrolled NPTEL Courses</h2>
+            {enrolledNptel.length === 0 ? (
+              <p className="text-sm text-slate-500">No enrolled NPTEL courses yet.</p>
+            ) : (
+              <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1">
+                {enrolledNptel.map((enroll) => (
+                  <div key={enroll.enrollmentId} className="rounded-xl border border-slate-200 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{enroll.courseTitle}</p>
+                        <p className="text-xs text-slate-600 mt-1">
+                          {enroll.courseCode} | {enroll.type} | {enroll.credits} Credits
+                        </p>
+                        <p className="text-xs text-slate-500 mt-1 flex items-center gap-1">
+                          <Clock3 className="w-3.5 h-3.5" />
+                          Semester {enroll.semesterNumber}
+                        </p>
+                      </div>
+                      {enroll.importedGrade ? (
+                        <span className="text-xs px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 font-semibold">
+                          Grade {enroll.importedGrade}
+                        </span>
+                      ) : (
+                        <span className="text-xs px-2 py-1 rounded-full bg-amber-100 text-amber-700 font-semibold">
+                          Grade Pending
+                        </span>
+                      )}
+                    </div>
 
-          <div className="mt-6">
-            {enroll.importedGrade ? (
-              <>
-                <span className="text-2xl font-bold text-green-600">Grade: {enroll.importedGrade}</span>
+                    {enroll.importedGrade && (!enroll.studentStatus || enroll.studentStatus === "pending") && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          onClick={() => handleStudentDecision(enroll.enrollmentId, "accepted")}
+                          className="px-3 py-1.5 rounded-md text-xs font-medium bg-emerald-600 text-white hover:bg-emerald-700"
+                        >
+                          Accept Credit
+                        </button>
+                        <button
+                          onClick={() => handleStudentDecision(enroll.enrollmentId, "rejected")}
+                          className="px-3 py-1.5 rounded-md text-xs font-medium bg-red-600 text-white hover:bg-red-700"
+                        >
+                          Reject Credit
+                        </button>
+                      </div>
+                    )}
 
-                {/* Student has not decided yet */}
-                {(!enroll.studentStatus || enroll.studentStatus === 'pending') ? (
-                  <div className="mt-4 flex gap-4">
-                    <button
-                      onClick={() => handleStudentDecision(enroll.enrollmentId, 'accepted')}
-                      className="px-6 py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 shadow-lg transition"
-                    >
-                      Accept Credit Transfer
-                    </button>
-                    <button
-                      onClick={() => handleStudentDecision(enroll.enrollmentId, 'rejected')}
-                      className="px-6 py-3 bg-red-600 text-white font-bold rounded-lg hover:bg-red-700 shadow-lg transition"
-                    >
-                      Reject Credit Transfer
-                    </button>
-                  </div>
-                ) : (
-                  <div className="mt-4">
-                    <span className={`px-6 py-3 rounded-full font-bold text-lg ${
-                      enroll.studentStatus === 'accepted' 
-                        ? 'bg-green-100 text-green-800 border-2 border-green-500' 
-                        : 'bg-red-100 text-red-800 border-2 border-red-500'
-                    }`}>
-                      You have {enroll.studentStatus === 'accepted' ? 'ACCEPTED' : 'REJECTED'} this credit
-                    </span>
-                    {enroll.studentStatus === 'accepted' && (
-                      <p className="text-green-700 font-semibold mt-3">
-                        ✓ This credit is now counted toward your OEC/PEC requirement
-                      </p>
+                    {enroll.studentStatus && enroll.studentStatus !== "pending" && (
+                      <div
+                        className={`mt-3 text-xs font-semibold inline-flex items-center gap-1 px-2.5 py-1 rounded-full ${
+                          enroll.studentStatus === "accepted"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-red-100 text-red-700"
+                        }`}
+                      >
+                        {enroll.studentStatus === "accepted" ? (
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                        ) : (
+                          <XCircle className="w-3.5 h-3.5" />
+                        )}
+                        {enroll.studentStatus === "accepted" ? "Accepted" : "Rejected"}
+                      </div>
                     )}
                   </div>
-                )}
-              </>
-            ) : (
-              <span className="text-xl text-gray-500 italic">Grade pending - waiting for admin import</span>
+                ))}
+              </div>
             )}
           </div>
         </div>
-      ))}
-    </div>
-  )}
-</div>
-        </>
-      )}
-
-      {/* Messages */}
-      {success && (
-        <div className="mt-8 p-6 bg-green-100 border-2 border-green-500 rounded-xl text-green-800 font-bold text-center text-xl">
-          {success}
-        </div>
-      )}
-      {error && (
-        <div className="mt-8 p-6 bg-red-100 border-2 border-red-500 rounded-xl text-red-800 font-bold text-center text-xl">
-          {error}
-        </div>
-      )}
+      </div>
     </div>
   );
 };
