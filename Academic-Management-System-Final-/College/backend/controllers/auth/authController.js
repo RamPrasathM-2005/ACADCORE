@@ -45,6 +45,13 @@ const refreshCookieOptions = () => ({
   maxAge: REFRESH_COOKIE_MS,
 });
 
+const clearCookieOptions = () => ({
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax",
+  path: "/",
+});
+
 const createAccessToken = (payload) =>
   jwt.sign({ ...payload, type: "access" }, jwtSecret(), {
     expiresIn: ACCESS_EXPIRY,
@@ -63,8 +70,8 @@ const setAuthCookies = (res, accessToken, refreshToken) => {
 };
 
 const clearAuthCookies = (res) => {
-  res.clearCookie(ACCESS_COOKIE, accessCookieOptions());
-  res.clearCookie(REFRESH_COOKIE, refreshCookieOptions());
+  res.clearCookie(ACCESS_COOKIE, clearCookieOptions());
+  res.clearCookie(REFRESH_COOKIE, clearCookieOptions());
 };
 
 const ensureRefreshTokenStore = async () => {

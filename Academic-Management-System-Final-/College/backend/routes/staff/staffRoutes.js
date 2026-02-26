@@ -34,6 +34,8 @@ import {
   getRecentRequestHistory,
   resendRejectedRequest,
   getNotifications,
+  getCourseRequestWindowStatus,
+  setCourseRequestWindowStatus,
 } from '../../controllers/requestCourseController.js';
 
 // FIXED IMPORT: Changed 'protect' to 'requireAuth'
@@ -71,6 +73,8 @@ router.get('/marks/co/:courseCode', requireAuth, getStudentCOMarks);
 router.get('/available-courses', requireAuth, getAvailableCoursesForStaff);
 router.get('/all-courses', requireAuth, getAllCoursesForStaff); 
 router.get('/my-requests', requireAuth, getMyRequests);
+router.get('/request-window-status', requireAuth, getCourseRequestWindowStatus);
+router.put('/request-window-status', requireAuth, setCourseRequestWindowStatus);
 router.get('/recent-history', requireAuth, getRecentRequestHistory); 
 router.post('/request/:courseId', requireAuth, sendCourseRequest);
 router.delete('/request/:requestId', requireAuth, cancelCourseRequest);

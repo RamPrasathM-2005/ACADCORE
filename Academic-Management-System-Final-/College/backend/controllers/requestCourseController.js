@@ -1,10 +1,30 @@
 import models from '../models/index.js';
 const { 
   sequelize, Course, Semester, Batch, Regulation, 
-  CourseRequest, StaffCourse, User, Section, Department 
+  CourseRequest, StaffCourse, User, Section, Department, AppSetting
 } = models;
 import { Op } from 'sequelize';
 import catchAsync from '../utils/catchAsync.js';
+
+const COURSE_REQUEST_WINDOW_KEY = 'COURSE_REQUEST_WINDOW_OPEN';
+
+const isAdminRole = (role) => {
+  const normalized = String(role || '').trim().toLowerCase();
+  return normalized === 'admin' || normalized === 'super admin' || normalized === 'superadmin';
+};
+
+const getCourseRequestWindowState = async () => {
+  try {
+    const row = await AppSetting.findByPk(COURSE_REQUEST_WINDOW_KEY, {
+      attributes: ['key', 'value']
+    });
+    // Default is locked unless explicitly opened by admin.
+    return row?.value === 'true';
+  } catch (err) {
+    // If settings table is unavailable, stay safe by treating window as locked.
+    return false;
+  }
+};
 
 // Helper to normalize JWT payload vs DB fields.
 const getUserContext = async (req) => {
@@ -172,6 +192,14 @@ export const sendCourseRequest = catchAsync(async (req, res) => {
     return res.status(400).json({ status: 'error', message: 'Staff department not found' });
   }
 
+  const isWindowOpen = await getCourseRequestWindowState();
+  if (!isWindowOpen) {
+    return res.status(423).json({
+      status: 'error',
+      message: 'Course request is currently locked by admin. Please try after it is enabled.'
+    });
+  }
+
   const course = await Course.findByPk(courseId, {
     include: [{
       model: Semester,
@@ -240,6 +268,14 @@ export const resendRejectedRequest = catchAsync(async (req, res) => {
   const { userId, userNumber } = await getUserContext(req);
   if (!userId) {
     return res.status(401).json({ status: 'error', message: 'Authentication required' });
+  }
+
+  const isWindowOpen = await getCourseRequestWindowState();
+  if (!isWindowOpen) {
+    return res.status(423).json({
+      status: 'error',
+      message: 'Course request is currently locked by admin. Please try after it is enabled.'
+    });
   }
 
   const request = await CourseRequest.findOne({
@@ -476,4 +512,36 @@ export const getNotifications = catchAsync(async (req, res) => {
   });
 
   res.json({ status: 'success', data: notifications });
+});
+
+// 13. Get course request window status
+export const getCourseRequestWindowStatus = catchAsync(async (req, res) => {
+  const isOpen = await getCourseRequestWindowState();
+  res.json({ status: 'success', data: { isOpen } });
+});
+
+// 14. Admin toggles course request window
+export const setCourseRequestWindowStatus = catchAsync(async (req, res) => {
+  if (!isAdminRole(req.user?.role)) {
+    return res.status(403).json({ status: 'error', message: 'Only admin can change request lock status' });
+  }
+
+  const { isOpen } = req.body || {};
+  if (typeof isOpen !== 'boolean') {
+    return res.status(400).json({ status: 'error', message: 'isOpen (boolean) is required' });
+  }
+
+  const actor = req.user?.userNumber || req.user?.id || req.user?.userId || 'admin';
+  await AppSetting.upsert({
+    key: COURSE_REQUEST_WINDOW_KEY,
+    value: isOpen ? 'true' : 'false',
+    createdBy: String(actor),
+    updatedBy: String(actor),
+  });
+
+  res.json({
+    status: 'success',
+    message: isOpen ? 'Course request unlocked for staff' : 'Course request locked for staff',
+    data: { isOpen }
+  });
 });

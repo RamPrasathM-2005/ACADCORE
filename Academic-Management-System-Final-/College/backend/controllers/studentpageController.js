@@ -5,7 +5,7 @@ import catchAsync from "../utils/catchAsync.js";
 const { 
   User, StudentDetails, Department, Batch, Course, Semester, 
   ElectiveBucket, ElectiveBucketCourse, StudentElectiveSelection, 
-  RegulationCourse, NptelCreditTransfer, NptelCourse, StudentNptelEnrollment,
+  RegulationCourse, VerticalCourse, Vertical, NptelCreditTransfer, NptelCourse, StudentNptelEnrollment,
   DayAttendance, PeriodAttendance, Section, StudentCourse, sequelize 
 } = db;
 
@@ -292,6 +292,20 @@ export const getElectiveBuckets = catchAsync(async (req, res) => {
     .sort((a, b) => new Date(b.requestedAt || 0) - new Date(a.requestedAt || 0))[0] || null;
   const canReselectNow = latestRequest?.status === "approved" && latestRequest?.open === true;
 
+  let regulationId = user.studentProfile.regulationId || null;
+  if (!regulationId) {
+    const dept = user.studentProfile.departmentId
+      ? await Department.findByPk(user.studentProfile.departmentId, { attributes: ["Deptacronym"] })
+      : null;
+    const batchWhere = { batch: user.studentProfile.batch, isActive: "YES" };
+    if (dept?.Deptacronym) batchWhere.branch = dept.Deptacronym;
+    const batchRecord = await Batch.findOne({
+      where: batchWhere,
+      attributes: ["regulationId"],
+    });
+    regulationId = batchRecord?.regulationId || null;
+  }
+
   const formatted = buckets.map((bucket) => {
     const b = bucket.toJSON();
     const allCourses = (b.ElectiveBucketCourses || [])
@@ -302,7 +316,8 @@ export const getElectiveBuckets = catchAsync(async (req, res) => {
         courseCode: course.courseCode,
         courseTitle: course.courseTitle,
         credits: course.credits,
-        category: course.category
+        category: course.category,
+        verticalName: null
       }));
 
     const selectedCourse = selectedByBucket.get(Number(b.bucketId));
@@ -312,7 +327,8 @@ export const getElectiveBuckets = catchAsync(async (req, res) => {
           courseCode: selectedCourse.courseCode,
           courseTitle: selectedCourse.courseTitle,
           credits: selectedCourse.credits,
-          category: selectedCourse.category
+          category: selectedCourse.category,
+          verticalName: null
         }] : [])
       : allCourses;
 
@@ -325,6 +341,48 @@ export const getElectiveBuckets = catchAsync(async (req, res) => {
       courses
     };
   });
+
+  const regCourseCache = new Map();
+  const verticalCache = new Map();
+
+  const getVerticalNameByCourseCode = async (courseCode) => {
+    const code = String(courseCode || "").trim().toUpperCase();
+    if (!code) return null;
+    if (verticalCache.has(code)) return verticalCache.get(code);
+
+    let regCourse = regCourseCache.get(code);
+    if (!regCourse) {
+      regCourse = await RegulationCourse.findOne({
+        where: {
+          regulationId,
+          courseCode: code,
+          category: { [Op.in]: ["PEC", "OEC"] },
+          isActive: "YES",
+        },
+      });
+      regCourseCache.set(code, regCourse || null);
+    }
+
+    if (!regCourse) {
+      verticalCache.set(code, null);
+      return null;
+    }
+
+    const mapping = await VerticalCourse.findOne({
+      where: { regCourseId: regCourse.regCourseId },
+      include: [{ model: Vertical, attributes: ["verticalName"] }],
+    });
+
+    const verticalName = mapping?.Vertical?.verticalName || null;
+    verticalCache.set(code, verticalName);
+    return verticalName;
+  };
+
+  for (const bucket of formatted) {
+    for (const course of bucket.courses || []) {
+      course.verticalName = await getVerticalNameByCourseCode(course.courseCode);
+    }
+  }
 
   res.status(200).json({
     status: "success",

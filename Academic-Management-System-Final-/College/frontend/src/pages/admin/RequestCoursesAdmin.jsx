@@ -16,6 +16,8 @@ const RequestCoursesAdmin = () => {
   const [filters, setFilters] = useState({ dept: '', branch: '', semester: '', batch: '', name: '' });
   const [branches, setBranches] = useState([]);
   const [depts, setDepts] = useState([]);
+  const [requestWindowOpen, setRequestWindowOpen] = useState(false);
+  const [togglingWindow, setTogglingWindow] = useState(false);
   const { user } = useAuth(); // For admin
 
   const courseTypes = ['THEORY', 'PRACTICAL', 'INTEGRATED', 'EXPERIENTIAL LEARNING']; // Define for type filter to avoid undefined error
@@ -26,7 +28,8 @@ const RequestCoursesAdmin = () => {
         await Promise.all([
           fetchBranchesAndDepts(),
           fetchSemestersForFilters(),
-          fetchPendingRequests()
+          fetchPendingRequests(),
+          fetchRequestWindowStatus()
         ]);
       } catch (err) {
         console.error('Initial load error:', err);
@@ -103,6 +106,31 @@ const RequestCoursesAdmin = () => {
     }
   };
 
+  const fetchRequestWindowStatus = async () => {
+    try {
+      const res = await api.get('/staff/request-window-status');
+      setRequestWindowOpen(!!res.data?.data?.isOpen);
+    } catch (err) {
+      toast.error('Failed to fetch request lock status');
+    }
+  };
+
+  const handleToggleRequestWindow = async () => {
+    try {
+      setTogglingWindow(true);
+      const nextState = !requestWindowOpen;
+      const res = await api.put('/staff/request-window-status', { isOpen: nextState });
+      if (res.data?.status === 'success') {
+        setRequestWindowOpen(nextState);
+        toast.success(nextState ? 'Course request unlocked for staff' : 'Course request locked for staff');
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update request lock status');
+    } finally {
+      setTogglingWindow(false);
+    }
+  };
+
   const handleAcceptRequest = async (requestId) => {
     try {
       await api.post(`/staff/accept/${requestId}`);
@@ -154,6 +182,22 @@ const RequestCoursesAdmin = () => {
           <ArrowLeft size={24} />
         </button>
         <h2 className="text-2xl font-bold text-gray-900">Manage Course Requests</h2>
+        <div className="ml-auto flex items-center gap-3">
+          <span className={`px-3 py-1 rounded-full text-xs font-bold ${requestWindowOpen ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+            {requestWindowOpen ? 'Request Open' : 'Request Locked'}
+          </span>
+          <button
+            onClick={handleToggleRequestWindow}
+            disabled={togglingWindow}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-colors ${
+              requestWindowOpen
+                ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+            } ${togglingWindow ? 'opacity-60 cursor-not-allowed' : ''}`}
+          >
+            {togglingWindow ? 'Updating...' : (requestWindowOpen ? 'Lock Requests' : 'Open Requests')}
+          </button>
+        </div>
       </div>
 
       <Filters

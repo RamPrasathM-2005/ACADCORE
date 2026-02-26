@@ -303,7 +303,11 @@ export const updateCoursePartitions = async (courseCode, partitions) => {
 export const getCOsForCourse = async (courseCode) => {
   const codes = splitIds(courseCode);
   const response = await api.get(`/cos/${codes[0]}`);
-  return response.data.data || [];
+  const cos = response.data.data || [];
+  return cos.map((co) => ({
+    ...co,
+    coType: co.coType || co.COType?.coType || 'N/A',
+  }));
 };
 
 export const getToolsForCO = async (coId) => {
