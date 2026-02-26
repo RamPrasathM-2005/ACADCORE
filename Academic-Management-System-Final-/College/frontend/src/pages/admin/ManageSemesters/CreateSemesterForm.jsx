@@ -103,11 +103,6 @@ const CreateSemesterForm = ({ showCreateForm, setShowCreateForm, onRefresh }) =>
 
       {!showCreateForm ? (
         <div className="text-center py-8">
-          <div className="bg-blue-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
-            <Plus className="w-8 h-8 text-blue-600" />
-          </div>
-          <h3 className="text-lg font-medium text-gray-800 mb-2">Add New Semester</h3>
-          <p className="text-gray-600 mb-6">Create a new semester for a specific batch, degree, and branch</p>
           <button
             onClick={() => setShowCreateForm(true)}
             className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
