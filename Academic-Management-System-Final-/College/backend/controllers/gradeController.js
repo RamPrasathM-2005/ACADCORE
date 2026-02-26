@@ -334,13 +334,17 @@ const buildSemesterPerformance = async (regno, transaction) => {
   let lastValidCgpa = null;
 
   for (const sem of semesters) {
-    const gpa = sem.semEarnedCredits > 0 ? roundToTwo(sem.semPoints / sem.semEarnedCredits) : null;
+    // Compute GPA against total semester credits so failures (U) are reflected as 0-point courses.
+    const gpa = sem.semTotalCredits > 0 ? roundToTwo(sem.semPoints / sem.semTotalCredits) : null;
 
     cumulativePoints += sem.semPoints;
     cumulativeEarnedCredits += sem.semEarnedCredits;
     cumulativeTotalCredits += sem.semTotalCredits;
     hasAnyOutstandingFail = hasAnyOutstandingFail || sem.hasOutstandingFail;
 
+    // CGPA freeze policy:
+    // - If any arrear is outstanding, keep CGPA stuck at the last valid value.
+    // - Once arrears are cleared (via arrear upload), recompute from earned credits.
     let cgpa = null;
     let cgpaFrozen = false;
     if (sem.semesterNumber > 1) {
@@ -363,6 +367,57 @@ const buildSemesterPerformance = async (regno, transaction) => {
   }
 
   return semesters;
+};
+
+const validateSemesterProgressionForRegularUpload = async (records, requestedSemesterNumber, transaction) => {
+  if (!requestedSemesterNumber || requestedSemesterNumber <= 1) return null;
+
+  const regnos = [...new Set(records.map((r) => r.regno))];
+  if (!regnos.length) return null;
+
+  const rows = await StudentGrade.findAll({
+    where: { regno: { [Op.in]: regnos } },
+    include: [
+      {
+        model: Course,
+        attributes: ['courseCode'],
+        required: false,
+        include: [{ model: Semester, attributes: ['semesterNumber'], required: false }]
+      }
+    ],
+    attributes: ['regno'],
+    transaction
+  });
+
+  const completedSemsByRegno = new Map();
+  for (const row of rows) {
+    const reg = row.regno;
+    const semNo = row.Course?.Semester?.semesterNumber;
+    if (!reg || !semNo) continue;
+    if (!completedSemsByRegno.has(reg)) completedSemsByRegno.set(reg, new Set());
+    completedSemsByRegno.get(reg).add(Number(semNo));
+  }
+
+  const invalid = [];
+  for (const reg of regnos) {
+    const completed = completedSemsByRegno.get(reg) || new Set();
+    const missing = [];
+    for (let semNo = 1; semNo < requestedSemesterNumber; semNo += 1) {
+      if (!completed.has(semNo)) missing.push(semNo);
+    }
+    if (missing.length) invalid.push({ regno: reg, missing });
+  }
+
+  if (!invalid.length) return null;
+
+  const sample = invalid.slice(0, 5)
+    .map((x) => `${x.regno} (missing sem ${x.missing.join(',')})`)
+    .join('; ');
+
+  return {
+    invalidCount: invalid.length,
+    sample
+  };
 };
 
 const recalculateStudentAcademicRows = async (regno, transaction) => {
@@ -507,6 +562,23 @@ export const uploadGrades = catchAsync(async (req, res) => {
           ? 'No valid enrolled NPTEL course grades found'
           : 'No valid course grades found for selected upload type'
       });
+    }
+
+    // Constraint: block direct higher-semester upload if prior semesters are missing.
+    if (!isNptel && uploadType === 'regular') {
+      const progressionIssue = await validateSemesterProgressionForRegularUpload(
+        filteredRecords,
+        Number(existingSemester.semesterNumber),
+        transaction
+      );
+      if (progressionIssue) {
+        await transaction.rollback();
+        return res.status(400).json({
+          status: 'error',
+          message: `Cannot upload semester ${existingSemester.semesterNumber} directly. Complete grades for all previous semesters first.`,
+          details: `${progressionIssue.invalidCount} student(s) missing prior semester grades. Sample: ${progressionIssue.sample}`
+        });
+      }
     }
 
     const affectedRegnos = new Set();
