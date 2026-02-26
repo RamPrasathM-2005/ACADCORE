@@ -18,6 +18,7 @@ const RequestCoursesStaff = () => {
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [requestWindowOpen, setRequestWindowOpen] = useState(false);
   const [filters, setFilters] = useState({ dept: '', branch: '', semester: '', batch: '', name: '', type: '' });
   
   const { user } = useAuth();
@@ -46,9 +47,10 @@ const RequestCoursesStaff = () => {
   useEffect(() => {
     const init = async () => {
       try {
-        const [semRes, deptRes] = await Promise.allSettled([
+        const [semRes, deptRes, windowRes] = await Promise.allSettled([
           api.get('/admin/semesters'),
-          api.get('/departments')
+          api.get('/departments'),
+          api.get('/staff/request-window-status')
         ]);
         if (semRes.status === 'fulfilled') {
           setSemOptions(semRes.value.data.data || []);
@@ -59,6 +61,9 @@ const RequestCoursesStaff = () => {
           setDepartments(deptRes.value.data.data || []);
         } else {
           console.error('Failed to fetch departments', deptRes.reason);
+        }
+        if (windowRes?.status === 'fulfilled') {
+          setRequestWindowOpen(!!windowRes.value?.data?.data?.isOpen);
         }
         await fetchMyRequests();
         await fetchAvailableCourses();
@@ -107,6 +112,11 @@ const RequestCoursesStaff = () => {
   };
 
   const handleToggleSelect = (course) => {
+    if (!requestWindowOpen) {
+      toast.error('Course request is locked by admin');
+      return;
+    }
+
     const isSelected = selectedCourses.find(c => c.courseId === course.courseId);
     if (isSelected) {
       setSelectedCourses(selectedCourses.filter(c => c.courseId !== course.courseId));
@@ -141,6 +151,11 @@ const RequestCoursesStaff = () => {
   };
 
   const handleSubmitRequests = async () => {
+    if (!requestWindowOpen) {
+      toast.error('Course request is locked by admin');
+      return;
+    }
+
     setSubmitting(true);
     try {
       // Using Promise.all for parallel requests is faster than a for-loop
@@ -153,7 +168,7 @@ const RequestCoursesStaff = () => {
       await fetchMyRequests();
       await fetchAvailableCourses();
     } catch (err) {
-      toast.error("Failed to submit requests.");
+      toast.error(err.response?.data?.message || "Failed to submit requests.");
       console.error(err);
     } finally {
       setSubmitting(false);
@@ -182,6 +197,12 @@ const RequestCoursesStaff = () => {
         {/* Left Discovery Panel */}
         <main className="flex-1 overflow-y-auto p-8">
           <div className="max-w-4xl mx-auto">
+            {!requestWindowOpen && (
+              <div className="mb-6 p-4 rounded-2xl border border-amber-200 bg-amber-50 text-amber-800 text-sm font-bold">
+                Course request is currently locked by admin. You can view courses, but cannot request now.
+              </div>
+            )}
+
             <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-200 mb-8">
               <Filters
                 filters={filters}
@@ -207,12 +228,12 @@ const RequestCoursesStaff = () => {
                   return (
                     <div 
                       key={course.courseId}
-                      onClick={() => !isInactive && handleToggleSelect(course)}
+                      onClick={() => !isInactive && requestWindowOpen && handleToggleSelect(course)}
                       className={`group p-6 rounded-[2.5rem] border-2 transition-all cursor-pointer relative overflow-hidden ${
                         isSelected 
                         ? 'border-indigo-600 bg-indigo-50/50 shadow-xl' 
                         : 'border-white bg-white hover:border-slate-200 shadow-sm'
-                      } ${isInactive ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}
+                      } ${isInactive || !requestWindowOpen ? 'opacity-40 grayscale cursor-not-allowed' : ''}`}
                     >
                       <span className={`px-4 py-1 rounded-xl text-[10px] font-black tracking-widest border uppercase ${
                         course.category === 'PEC' ? 'bg-purple-100 text-purple-700 border-purple-200' :
@@ -283,9 +304,9 @@ const RequestCoursesStaff = () => {
           <div className="p-8 bg-white border-t">
             <button
               onClick={handleSubmitRequests}
-              disabled={selectedCourses.length === 0 || submitting}
+              disabled={selectedCourses.length === 0 || submitting || !requestWindowOpen}
               className={`w-full py-5 rounded-[2rem] font-black text-sm flex items-center justify-center gap-3 transition-all shadow-2xl ${
-                selectedCourses.length > 0 && !submitting
+                selectedCourses.length > 0 && !submitting && requestWindowOpen
                 ? 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200'
                 : 'bg-slate-100 text-slate-300 cursor-not-allowed shadow-none'
               }`}
