@@ -59,6 +59,7 @@ import DayAttendance from "./pages/admin/DayAttendance.jsx";
 import StudentCourseMapping from "./pages/admin/StudentCourseMapping.jsx";
 
 import { useAuth } from "./pages/auth/AuthContext";
+import PeriodManager from "./pages/admin/PeriodManager.jsx";
 
 // ────────────────────────────────────────────────
 //  Improved ProtectedRoute – accepts one or more allowed roles
@@ -154,6 +155,7 @@ const routes = [
       { path: 'manage-staff', element: <ManageStaff /> },
       { path: 'manage-students', element: <ManageStudents /> },
       { path: 'timetable', element: <Timetable /> },
+      {path: 'periods', element: <PeriodManager /> },
       { path: 'consolidated-marks', element: <OverallConsolidatedMarks /> },
       { path: 'subjectWise-marks', element: <SubjectWiseMarks /> },
       { path: 'course-recommendation', element: <CourseRecommendation /> },

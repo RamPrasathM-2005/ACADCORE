@@ -47,6 +47,7 @@ export default function DayAttendance() {
   const [selectedBatch, setSelectedBatch] = useState("");
   const [selectedDepartment, setSelectedDepartment] = useState("");
   const [selectedSemester, setSelectedSemester] = useState("");
+  const [periods, setPeriods] = useState([]);
 
   useEffect(() => {
     if (!fromDate) {
@@ -59,9 +60,10 @@ export default function DayAttendance() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [batchRes, deptRes] = await Promise.all([
+        const [batchRes, deptRes, periodRes] = await Promise.all([
           axios.get(`${API_BASE_URL}/api/admin/timetable/batches`),
           axios.get(`${API_BASE_URL}/api/admin/timetable/departments`),
+          axios.get(`${API_BASE_URL}/api/admin/timetable-periods`),
         ]);
 
         if (batchRes.data?.data) {
@@ -77,6 +79,15 @@ export default function DayAttendance() {
             }))
           );
         }
+
+        const periodNumbers = Array.isArray(periodRes?.data?.data)
+          ? periodRes.data.data
+              .map((p) => Number(p.id))
+              .filter((n) => Number.isInteger(n))
+              .sort((a, b) => a - b)
+          : [];
+
+        setPeriods(periodNumbers.length > 0 ? periodNumbers : [1, 2, 3, 4, 5, 6, 7, 8]);
       } catch (e) {
         console.error(e);
       }
@@ -120,8 +131,6 @@ export default function DayAttendance() {
 
     return out;
   }, [fromDate, toDate]);
-
-  const periods = [1, 2, 3, 4, 5, 6, 7, 8];
 
   const handleGenerate = async () => {
     setLoading(true);

@@ -118,6 +118,10 @@ import {
   getPendingNptelTransfers,
   approveRejectTransfer
 } from "../../controllers/nptelCourseController.js";
+import {
+  getTimetablePeriods,
+  saveTimetablePeriods,
+} from "../../controllers/periodController.js";
 
 const upload = multer({ dest: 'tmp/' });
 const router = express.Router();
@@ -194,6 +198,8 @@ router.get("/timetable/batches", requireAuth, getAllTimetableBatches);
 router.get("/timetable/departments", requireAuth, getAllTimetableDepartments);
 router.get("/timetable/by-filters", requireAuth, getTimetableByFilters);
 router.get("/timetable/semester/:semesterId", requireAuth, getTimetable);
+router.get("/timetable-periods", requireAuth, getTimetablePeriods);
+router.post("/timetable-periods", requireAuth, saveTimetablePeriods);
 router.post("/timetable/entry", requireAuth, createTimetableEntry);
 router.put("/timetable/entry/:timetableId", requireAuth, updateTimetableEntry);
 router.delete("/timetable/entry/:timetableId", requireAuth, deleteTimetableEntry);

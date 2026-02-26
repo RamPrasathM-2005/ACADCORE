@@ -1222,6 +1222,7 @@ export default function AttendanceGenerator() {
   );
   const [appendPeriods, setAppendPeriods] = useState({});
   const [isAppendMode, setIsAppendMode] = useState(false);
+  const [periodSlots, setPeriodSlots] = useState([]);
 
   useEffect(() => {
     if (!fromDate) {
@@ -1231,6 +1232,44 @@ export default function AttendanceGenerator() {
       nextWeek.setDate(today.getDate() + 6);
       setToDate(nextWeek.toISOString().split("T")[0]);
     }
+  }, []);
+
+  useEffect(() => {
+    const fetchPeriods = async () => {
+      try {
+        const res = await axios.get(`${API_BASE_URL}/api/admin/timetable-periods`);
+        const slots = Array.isArray(res?.data?.data)
+          ? res.data.data
+              .map((p) => ({
+                periodNumber: Number(p.id),
+                time:
+                  p.startTime && p.endTime
+                    ? `${p.startTime} - ${p.endTime}`
+                    : "Time not set",
+              }))
+              .filter((p) => Number.isInteger(p.periodNumber))
+              .sort((a, b) => a.periodNumber - b.periodNumber)
+          : [];
+
+        setPeriodSlots(
+          slots.length > 0
+            ? slots
+            : Array.from({ length: 8 }, (_, i) => ({
+                periodNumber: i + 1,
+                time: "Time not set",
+              }))
+        );
+      } catch {
+        setPeriodSlots(
+          Array.from({ length: 8 }, (_, i) => ({
+            periodNumber: i + 1,
+            time: "Time not set",
+          }))
+        );
+      }
+    };
+
+    fetchPeriods();
   }, []);
 
   useEffect(() => {
@@ -1290,7 +1329,7 @@ export default function AttendanceGenerator() {
     return dates;
   };
 
-  const generateTimeSlots = () => [
+  const generateTimeSlots = () => (periodSlots.length > 0 ? periodSlots : [
     { periodNumber: 1, time: "9:00–10:00" },
     { periodNumber: 2, time: "10:00–11:00" },
     { periodNumber: 3, time: "11:00–12:00" },
@@ -1299,7 +1338,7 @@ export default function AttendanceGenerator() {
     { periodNumber: 6, time: "2:30–3:30" },
     { periodNumber: 7, time: "3:30–4:30" },
     { periodNumber: 8, time: "4:30–5:30" },
-  ];
+  ]);
 
   const handleGenerate = async () => {
     setError(null);
