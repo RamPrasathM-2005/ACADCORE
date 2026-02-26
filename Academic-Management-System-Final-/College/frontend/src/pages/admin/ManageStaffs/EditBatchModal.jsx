@@ -1,6 +1,7 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, Layers, User, Check, AlertCircle } from 'lucide-react';
+import manageStaffService from '../../../services/manageStaffService';
 
 // --- Reusable Modern Modal Wrapper ---
 const ModalWrapper = ({ title, children, onClose, onSave, saveText = "Save", saveDisabled = false, width = "max-w-md" }) => {
@@ -68,8 +69,35 @@ const EditBatchModal = ({
   courses,
   operationLoading,
 }) => {
-  
+  const [sections, setSections] = useState([]);
+  const [loadingSections, setLoadingSections] = useState(false);
   const course = courses.find(c => c.code === selectedStaffCourse.courseCode);
+
+  useEffect(() => {
+    const fetchSections = async () => {
+      if (!course?.courseId) {
+        setSections([]);
+        return;
+      }
+      setLoadingSections(true);
+      try {
+        const rows = await manageStaffService.getCourseSections(course.courseId);
+        setSections(
+          (rows || []).map((section) => ({
+            sectionId: section.sectionId || 0,
+            sectionName: section.sectionName
+              ? (section.sectionName.startsWith('Batch') ? section.sectionName : `Batch${section.sectionName}`)
+              : 'N/A',
+          }))
+        );
+      } catch (err) {
+        setSections([]);
+      } finally {
+        setLoadingSections(false);
+      }
+    };
+    fetchSections();
+  }, [course?.courseId]);
 
   const handleClose = () => {
     setShowEditBatchModal(false);
@@ -127,8 +155,8 @@ const EditBatchModal = ({
           </label>
           
           <div className="grid grid-cols-2 gap-3 max-h-[200px] overflow-y-auto custom-scrollbar p-1">
-            {course && course.sections.length > 0 ? (
-              course.sections.map(section => {
+            {!loadingSections && sections.length > 0 ? (
+              sections.map(section => {
                 const isSelected = selectedSectionId === section.sectionId;
                 return (
                   <button
@@ -149,7 +177,7 @@ const EditBatchModal = ({
             ) : (
               <div className="col-span-2 text-center py-8 bg-slate-50 rounded-xl border border-dashed border-slate-200">
                  <AlertCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                 <p className="text-slate-500 text-sm">No sections available.</p>
+                 <p className="text-slate-500 text-sm">{loadingSections ? 'Loading sections...' : 'No sections available.'}</p>
               </div>
             )}
           </div>

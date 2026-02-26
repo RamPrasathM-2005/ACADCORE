@@ -54,10 +54,15 @@ const AddBucketModal = ({
         `/admin/regulations/${regulationId}/electives/${semesterNumber}`
       );
       if (res.data.status === 'success') {
-        // Filter only unassigned OEC
-        const unassigned = res.data.data.filter(
-          c => c.verticalId === null && c.category === 'OEC' && !assignedCourses.includes(c.courseCode)
-        );
+        const unassigned = res.data.data
+          .map((c) => {
+            const firstMapping = Array.isArray(c.VerticalCourses) ? c.VerticalCourses[0] : null;
+            const resolvedVerticalId = c.verticalId ?? firstMapping?.verticalId ?? null;
+            return { ...c, verticalId: resolvedVerticalId };
+          })
+          .filter(
+            c => c.verticalId === null && c.category === 'OEC' && !assignedCourses.includes(c.courseCode)
+          );
         setUnassignedOEC(unassigned);
       }
     } catch (err) {

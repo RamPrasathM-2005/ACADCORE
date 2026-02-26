@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Users } from 'lucide-react';
 import { ClipLoader } from 'react-spinners'; // Import the spinner
 import Filters from './Filters';
@@ -13,6 +13,9 @@ import useManageStaffFilters from './hooks/useManageStaffFilters';
 import useManageStaffHandlers from './hooks/useManageStaffHandlers';
 
 const ManageStaff = () => {
+  const [staffPage, setStaffPage] = useState(1);
+  const STAFFS_PER_PAGE = 9;
+
   const {
     staffList,
     courses,
@@ -96,6 +99,10 @@ const ManageStaff = () => {
     fetchData,
   });
 
+  useEffect(() => {
+    setStaffPage(1);
+  }, [filters, nameSearch, sortBy, sortOrder, staffList.length]);
+
   // Updated Loading State
   if (loading) {
     return (
@@ -107,6 +114,14 @@ const ManageStaff = () => {
   }
 
   if (error) return <div className="p-6 text-center text-red-500">{error}</div>;
+
+  const filteredStaff = getFilteredStaff();
+  const totalStaffPages = Math.max(1, Math.ceil(filteredStaff.length / STAFFS_PER_PAGE));
+  const safeStaffPage = Math.min(staffPage, totalStaffPages);
+  const paginatedStaff = filteredStaff.slice(
+    (safeStaffPage - 1) * STAFFS_PER_PAGE,
+    safeStaffPage * STAFFS_PER_PAGE
+  );
 
   return (
     <div className="p-6 bg-gray-100 min-h-screen flex flex-col items-center">
@@ -126,7 +141,7 @@ const ManageStaff = () => {
         />
       </div>
       <div className="w-full max-w-7xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {getFilteredStaff().map(staff => (
+        {paginatedStaff.map(staff => (
           <StaffCard
             key={staff.staffId}
             staff={staff}
@@ -146,7 +161,35 @@ const ManageStaff = () => {
           />
         ))}
       </div>
-      {getFilteredStaff().length === 0 && (
+
+      {filteredStaff.length > 0 && (
+        <div className="w-full max-w-7xl mt-6 flex items-center justify-between">
+          <p className="text-sm text-gray-600">
+            Showing {(safeStaffPage - 1) * STAFFS_PER_PAGE + 1}-{Math.min(safeStaffPage * STAFFS_PER_PAGE, filteredStaff.length)} of {filteredStaff.length}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setStaffPage(prev => Math.max(1, prev - 1))}
+              disabled={safeStaffPage === 1}
+              className="px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+            >
+              Previous
+            </button>
+            <span className="text-sm font-medium text-gray-700">
+              Page {safeStaffPage} of {totalStaffPages}
+            </span>
+            <button
+              onClick={() => setStaffPage(prev => Math.min(totalStaffPages, prev + 1))}
+              disabled={safeStaffPage === totalStaffPages}
+              className="px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
+
+      {filteredStaff.length === 0 && (
         <div className="text-center py-12">
           <Users size={48} className="mx-auto text-gray-400 mb-4" />
           <h3 className="text-lg font-semibold text-gray-900 mb-2">No staff found</h3>

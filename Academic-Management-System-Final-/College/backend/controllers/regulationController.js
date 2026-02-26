@@ -347,7 +347,24 @@ export const getElectivesForSemester = async (req, res) => {
       order: [['courseCode', 'ASC']]
     });
 
-    res.json({ status: 'success', data: rows });
+    const formatted = rows.map((row) => {
+      const json = row.toJSON();
+      const mapping = Array.isArray(json.VerticalCourses) && json.VerticalCourses.length > 0
+        ? json.VerticalCourses[0]
+        : null;
+
+      return {
+        courseId: json.regCourseId,
+        courseCode: json.courseCode,
+        courseTitle: json.courseTitle,
+        category: json.category,
+        semesterNumber: json.semesterNumber,
+        verticalId: mapping?.verticalId ?? null,
+        verticalName: mapping?.Vertical?.verticalName ?? null,
+      };
+    });
+
+    res.json({ status: 'success', data: formatted });
   } catch (err) {
     res.status(500).json({ status: 'failure', message: err.message });
   }

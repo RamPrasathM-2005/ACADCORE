@@ -177,7 +177,14 @@ const useManageStaffHandlers = ({
       showErrorToast('Validation Error', `Course ${selectedStaffCourse.courseCode} not found`);
       return;
     }
-    const section = course.sections.find(s => s.sectionId === selectedSectionId);
+    const fetchedSections = await manageStaffService.getCourseSections(course.courseId);
+    const normalizedSections = (fetchedSections || []).map((s) => ({
+      sectionId: s.sectionId,
+      sectionName: s.sectionName
+        ? (s.sectionName.startsWith('Batch') ? s.sectionName : `Batch${s.sectionName}`)
+        : 'N/A',
+    }));
+    const section = normalizedSections.find(s => s.sectionId === selectedSectionId);
     if (!section) {
       showErrorToast('Validation Error', `Section ID ${selectedSectionId} not found`);
       return;

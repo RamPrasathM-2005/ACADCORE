@@ -95,11 +95,22 @@ export const getElectiveBuckets = catchAsync(async (req, res) => {
                 model: RegulationCourse,
                 where: {
                   courseCode: course.courseCode,
-                  semesterNumber: course.Semester.semesterNumber,
+                  [Op.or]: [
+                    { semesterNumber: course.Semester.semesterNumber },
+                    { semesterNumber: null },
+                  ],
                   regulationId: course.Semester.Batch.regulationId,
                 },
               },
               { model: Vertical },
+            ],
+            order: [
+              [
+                sequelize.literal(
+                  `CASE WHEN RegulationCourse.semesterNumber = ${Number(course.Semester.semesterNumber)} THEN 0 ELSE 1 END`
+                ),
+                "ASC",
+              ],
             ],
           });
 

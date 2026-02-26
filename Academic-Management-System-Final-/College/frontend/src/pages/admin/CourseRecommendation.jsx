@@ -150,11 +150,16 @@ const CourseRecommendation = () => {
           `/admin/regulations/${selectedRegulationId}/electives/${selectedSemesterNumber}`
         );
         if (electivesRes.data.status === 'success') {
-          const formattedElectives = electivesRes.data.data.map(course => ({
-            ...course,
-            verticalId: course.verticalId || null,
-            verticalName: course.verticalName || 'Unassigned'
-          }));
+          const formattedElectives = electivesRes.data.data.map(course => {
+            const firstMapping = Array.isArray(course.VerticalCourses) ? course.VerticalCourses[0] : null;
+            const resolvedVerticalId = course.verticalId ?? firstMapping?.verticalId ?? null;
+            const resolvedVerticalName = course.verticalName ?? firstMapping?.Vertical?.verticalName ?? 'Unassigned';
+            return {
+              ...course,
+              verticalId: resolvedVerticalId,
+              verticalName: resolvedVerticalName,
+            };
+          });
           setElectives(formattedElectives);
           console.log('✅ All electives loaded (assigned + unassigned OEC):', formattedElectives);
         } else {
@@ -413,7 +418,7 @@ const CourseRecommendation = () => {
           style={{ width: '100%', marginBottom: 16 }}
           value={selectedVerticalPerBucket[bucket.bucketId]}
           onChange={value => handleVerticalSelect(bucket.bucketId, value)}
-          disabled={loading || verticals.length === 0}
+          disabled={loading}
         >
           <Option value={null}>📌 Unassigned (OEC only)</Option>
           {verticals.map(v => (

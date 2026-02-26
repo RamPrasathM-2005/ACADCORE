@@ -58,7 +58,6 @@ const AllocateStaffModal = ({
   setShowAllocateStaffModal,
   setShowCourseDetailsModal,
 }) => {
-
   const handleClose = () => {
     setShowAllocateStaffModal(false);
     setStaffSearch('');

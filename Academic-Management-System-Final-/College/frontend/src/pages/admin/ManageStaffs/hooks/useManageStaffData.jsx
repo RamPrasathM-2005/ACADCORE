@@ -83,29 +83,24 @@ const useManageStaffData = () => {
         index === self.findIndex(s => s.id === staff.id)
       ));
 
-      // 3. Process Courses & Sections
-      const coursesWithDetails = await Promise.all(
-        Array.isArray(coursesData) ? coursesData.map(async course => {
-          const sections = await manageStaffService.getCourseSections(course.courseId);
-          const semester = semestersData.find(s => s.semesterId === course.semesterId) || {};
-          const batch = batchesData.find(b => b.batchId === semester.batchId) || {};
-          
-          return {
-            ...course,
-            courseId: course.courseId || 0,
-            name: course.courseTitle || '',
-            code: course.courseCode || '',
-            department: batch.branch || '',
-            semester: semester.semesterNumber ? String(semester.semesterNumber) : '',
-            batchYears: semester.batchYears || '',
-            batch: batch.batch || '',
-            sections: sections.map(section => ({
-              sectionId: section.sectionId || 0,
-              sectionName: section.sectionName ? (section.sectionName.startsWith('Batch') ? section.sectionName : `Batch${section.sectionName}`) : 'N/A',
-            })),
-          };
-        }) : []
-      );
+      // 3. Process Courses (sections are loaded lazily in modals when needed)
+      const coursesWithDetails = Array.isArray(coursesData)
+        ? coursesData.map(course => {
+            const semester = semestersData.find(s => s.semesterId === course.semesterId) || {};
+            const batch = batchesData.find(b => b.batchId === semester.batchId) || {};
+            return {
+              ...course,
+              courseId: course.courseId || 0,
+              name: course.courseTitle || '',
+              code: course.courseCode || '',
+              department: batch.branch || '',
+              semester: semester.semesterNumber ? String(semester.semesterNumber) : '',
+              batchYears: semester.batchYears || '',
+              batch: batch.batch || '',
+              sections: [],
+            };
+          })
+        : [];
       setCourses(coursesWithDetails);
 
     } catch (err) {

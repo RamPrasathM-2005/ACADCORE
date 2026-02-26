@@ -43,12 +43,18 @@ const ManageCourses = () => {
   const [selectedSemesterId, setSelectedSemesterId] = useState('');
   const [newBatchForm, setNewBatchForm] = useState({ numberOfBatches: 1 });
   const [updateKey, setUpdateKey] = useState(0);
+  const [coursePage, setCoursePage] = useState(1);
+  const COURSES_PER_PAGE = 9;
 
   const courseTypes = ['THEORY', 'PRACTICAL', 'INTEGRATED', 'EXPERIENTIAL LEARNING'];
 
   useEffect(() => {
     fetchData();
   }, []);
+
+  useEffect(() => {
+    setCoursePage(1);
+  }, [filters, courses.length]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -78,46 +84,8 @@ const ManageCourses = () => {
       }
       allCourses.sort((a, b) => b.courseId - a.courseId);
       setCourses(allCourses);
-
-      const sectionsData = {};
-      for (const course of allCourses) {
-        try {
-          const sectionRes = await api.get(`${API_BASE}/courses/${course.courseId}/sections`);
-          if (sectionRes.data?.status === 'success' && Array.isArray(sectionRes.data.data)) {
-            const batches = sectionRes.data.data.reduce((acc, section) => {
-              if (section.sectionName) {
-                const normalizedName = section.sectionName.replace('BatchBatch', 'Batch');
-                acc[normalizedName] = [];
-              }
-              return acc;
-            }, {});
-
-            const staffRes = await api.get(`${API_BASE}/courses/${course.courseId}/staff`);
-            if (staffRes.data?.status === 'success' && Array.isArray(staffRes.data.data)) {
-              staffRes.data.data.forEach(alloc => {
-                const normalizedName = alloc.sectionName.replace('BatchBatch', 'Batch');
-                if (batches[normalizedName]) {
-                  batches[normalizedName].push({
-                    staffId: alloc.Userid,
-                    staffName: alloc.staffName,
-                    staffCourseId: alloc.staffCourseId,
-                    sectionId: alloc.sectionId,
-                    sectionName: normalizedName,
-                    departmentId: alloc.departmentId,
-                    departmentName: alloc.departmentName || deptNameMap[alloc.departmentId] || 'Unknown',
-                  });
-                }
-              });
-            }
-            sectionsData[String(course.courseId)] = batches;
-          } else {
-            sectionsData[String(course.courseId)] = {};
-          }
-        } catch (err) {
-          sectionsData[String(course.courseId)] = {};
-        }
-      }
-      setSections(sectionsData);
+      // Sections/staff allocations are fetched lazily when a course card is opened.
+      setSections({});
 
       const usersRes = await api.get(`${API_BASE}/users`);
       let staffData = usersRes.data.data.filter(user => user.departmentId);
@@ -475,6 +443,12 @@ const ManageCourses = () => {
   });
 
   const displayCourses = Object.keys(filters).some(key => filters[key]) ? filteredCourses : courses;
+  const totalCoursePages = Math.max(1, Math.ceil(displayCourses.length / COURSES_PER_PAGE));
+  const safeCoursePage = Math.min(coursePage, totalCoursePages);
+  const paginatedCourses = displayCourses.slice(
+    (safeCoursePage - 1) * COURSES_PER_PAGE,
+    safeCoursePage * COURSES_PER_PAGE
+  );
 
   return (
     <div className="p-6 bg-gray-50 min-h-screen flex flex-col items-center" key={updateKey}>
@@ -511,7 +485,7 @@ const ManageCourses = () => {
 
       {/* Grid with key to force re-render when updateKey changes */}
       <div className="w-full max-w-7xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" key={updateKey}>
-        {displayCourses.map(course => (
+        {paginatedCourses.map(course => (
           <CourseCard
             key={course.courseId}
             course={course}
@@ -523,6 +497,33 @@ const ManageCourses = () => {
           />
         ))}
       </div>
+
+      {displayCourses.length > 0 && (
+        <div className="w-full max-w-7xl mt-6 flex items-center justify-between">
+          <p className="text-sm text-gray-600">
+            Showing {(safeCoursePage - 1) * COURSES_PER_PAGE + 1}-{Math.min(safeCoursePage * COURSES_PER_PAGE, displayCourses.length)} of {displayCourses.length}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCoursePage(prev => Math.max(1, prev - 1))}
+              disabled={safeCoursePage === 1}
+              className="px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+            >
+              Previous
+            </button>
+            <span className="text-sm font-medium text-gray-700">
+              Page {safeCoursePage} of {totalCoursePages}
+            </span>
+            <button
+              onClick={() => setCoursePage(prev => Math.min(totalCoursePages, prev + 1))}
+              disabled={safeCoursePage === totalCoursePages}
+              className="px-3 py-2 rounded-lg border border-gray-300 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
       {displayCourses.length === 0 && (
         <div className="text-center py-12">

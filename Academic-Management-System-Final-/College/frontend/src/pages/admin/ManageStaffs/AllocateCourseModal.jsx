@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { X, BookOpen, Plus, Trash2, Search, Filter, Layers, Check } from 'lucide-react';
+import manageStaffService from '../../../services/manageStaffService';
 
 // --- Reusable Modern Modal Wrapper ---
 const ModalWrapper = ({ title, children, onClose, onSave, saveText = "Save", saveDisabled = false, width = "max-w-2xl" }) => {
@@ -77,6 +78,31 @@ const AllocateCourseModal = React.memo(({
   handleRemoveCourse,
   courseRefreshKey,
 }) => {
+  const [loadingSectionsForCourseId, setLoadingSectionsForCourseId] = useState(null);
+
+  const normalizeSections = (sections) =>
+    (sections || []).map((section) => ({
+      sectionId: section.sectionId || 0,
+      sectionName: section.sectionName
+        ? (section.sectionName.startsWith('Batch') ? section.sectionName : `Batch${section.sectionName}`)
+        : 'N/A',
+    }));
+
+  const loadSectionsForCourse = async (course) => {
+    if (!course?.courseId) return [];
+    if (Array.isArray(course.sections) && course.sections.length > 0) return course.sections;
+
+    setLoadingSectionsForCourseId(course.courseId);
+    try {
+      const sections = await manageStaffService.getCourseSections(course.courseId);
+      return normalizeSections(sections);
+    } catch (err) {
+      return [];
+    } finally {
+      setLoadingSectionsForCourseId(null);
+    }
+  };
+
   const semesterOptions = [...new Set(semesters.map(sem => String(sem.semesterNumber)))].filter(sem => sem).sort((a, b) => a - b);
   const batchOptions = [...new Set(semesters.map(sem => sem.batchYears))].filter(batch => batch).sort();
 
@@ -84,7 +110,11 @@ const AllocateCourseModal = React.memo(({
     if (selectedCourse) {
       const updatedCourse = getFilteredCourses.find(c => c.courseId === selectedCourse.courseId);
       if (updatedCourse) {
-        setSelectedCourse(updatedCourse);
+        const preservedSections =
+          Array.isArray(selectedCourse.sections) && selectedCourse.sections.length > 0
+            ? selectedCourse.sections
+            : updatedCourse.sections;
+        setSelectedCourse({ ...updatedCourse, sections: preservedSections || [] });
         setSelectedSectionId(updatedCourse.isAllocated ? selectedStaff.allocatedCourses.find(c => c.courseCode === updatedCourse.code)?.sectionId || '' : '');
       } else {
         setSelectedCourse(null);
@@ -210,8 +240,14 @@ const AllocateCourseModal = React.memo(({
                     } ${operationLoading ? 'opacity-50 pointer-events-none' : ''}`}
                   onClick={() => {
                     if (!operationLoading) {
-                      setSelectedCourse(course);
-                      setSelectedSectionId(course.isAllocated ? selectedStaff.allocatedCourses.find(c => c.courseCode === course.code)?.sectionId || '' : '');
+                      loadSectionsForCourse(course).then((sections) => {
+                        setSelectedCourse({ ...course, sections });
+                        setSelectedSectionId(
+                          course.isAllocated
+                            ? selectedStaff.allocatedCourses.find(c => c.courseCode === course.code)?.sectionId || ''
+                            : ''
+                        );
+                      });
                     }
                   }}
                 >
@@ -236,7 +272,14 @@ const AllocateCourseModal = React.memo(({
                      <span className="text-xs text-slate-500 bg-slate-50 px-2 py-1 rounded border border-slate-100">{course.department || '?'}</span>
                   </div>
 
-                  <p className="text-xs text-slate-400 mt-1">Available Sections: <span className="text-slate-600 font-medium">{course.sections.length > 0 ? course.sections.map(s => s.sectionName).join(', ') : 'None'}</span></p>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Available Sections:{' '}
+                    <span className="text-slate-600 font-medium">
+                      {loadingSectionsForCourseId === course.courseId
+                        ? 'Loading...'
+                        : (course.sections.length > 0 ? course.sections.map(s => s.sectionName).join(', ') : 'Click to load')}
+                    </span>
+                  </p>
 
                   {course.isAllocated && (
                     <div className="mt-2 pt-2 border-t border-slate-100 flex justify-between items-center">
