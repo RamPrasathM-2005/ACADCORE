@@ -7,6 +7,7 @@ import {
   allocateElectives,
   getStudentEnrolledCourses,
   getAttendanceSummary,
+  getSubjectwiseAttendance,
   getUserId,
   getElectiveSelections,
   getStudentAcademicIds
@@ -54,6 +55,7 @@ router.get("/enrolled-courses", getStudentEnrolledCourses);
 
 // Get attendance summary for a semester
 router.get("/attendance-summary", getAttendanceSummary);
+router.get("/subject-attendance", getSubjectwiseAttendance);
 
 // FIXED: Changed protect to requireAuth
 router.get('/elective-selections', requireAuth, getElectiveSelections);

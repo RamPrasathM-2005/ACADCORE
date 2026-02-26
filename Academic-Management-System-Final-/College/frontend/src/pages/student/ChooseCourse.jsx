@@ -39,6 +39,32 @@ const ChooseCourse = () => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(null);
+  const currentStudentSemester = Number(studentDetails?.studentProfile?.semester || 0);
+
+  const getAllowedSemesters = (semesterData = [], studentSemesterNumber = 0) => {
+    const bySemNo = new Map();
+    [...semesterData]
+      .sort((a, b) => Number(a.semesterNumber) - Number(b.semesterNumber))
+      .forEach((sem) => {
+        const semNo = Number(sem.semesterNumber);
+        if (!semNo || bySemNo.has(semNo)) return;
+        bySemNo.set(semNo, sem);
+      });
+
+    const unique = [...bySemNo.values()];
+    if (!unique.length) return [];
+
+    const current =
+      unique.find((s) => Number(s.semesterNumber) === Number(studentSemesterNumber)) ||
+      unique.find((s) => s.isActive === 'YES') ||
+      unique[unique.length - 1];
+
+    const currentNo = Number(current?.semesterNumber || 0);
+    return unique.filter((s) => {
+      const semNo = Number(s.semesterNumber);
+      return semNo > 0 && semNo <= currentNo;
+    });
+  };
 
   // --- INITIAL DATA FETCH ---
   useEffect(() => {
@@ -56,15 +82,15 @@ const ChooseCourse = () => {
         setStudentDetails(studentData);
 
         const batchYear = studentData?.studentProfile?.batch;
-        const semesterData = await fetchSemesters(batchYear ? String(batchYear) : undefined);
-        setSemesters(semesterData);
-
         const studentSemesterNumber = Number(studentData?.studentProfile?.semester);
-        const byStudentSemester = semesterData.find(
-          (sem) => Number(sem.semesterNumber) === studentSemesterNumber
-        );
-        const activeSemester = semesterData.find((sem) => sem.isActive === 'YES');
-        const defaultSemester = byStudentSemester || activeSemester || semesterData[0];
+        const semesterData = await fetchSemesters(batchYear ? String(batchYear) : undefined);
+        const filteredSemesters = getAllowedSemesters(semesterData, studentSemesterNumber);
+        setSemesters(filteredSemesters);
+
+        const defaultSemester =
+          filteredSemesters.find((sem) => Number(sem.semesterNumber) === studentSemesterNumber) ||
+          filteredSemesters.find((sem) => sem.isActive === 'YES') ||
+          filteredSemesters[0];
         if (defaultSemester) {
           setSelectedSemester(defaultSemester.semesterId.toString());
         }
@@ -423,7 +449,7 @@ const ChooseCourse = () => {
                             <option value="">Select Semester</option>
                             {semesters.map(sem => (
                                 <option key={sem.semesterId} value={sem.semesterId.toString()}>
-                                    Semester {sem.semesterNumber} {sem.isActive === 'YES' ? '• Active' : ''}
+                                    Semester {sem.semesterNumber} {Number(sem.semesterNumber) === currentStudentSemester ? '• Active' : ''}
                                 </option>
                             ))}
                         </select>

@@ -5,20 +5,13 @@ import {
   BookOpen,
   GraduationCap,
   Calendar,
-  Plus,
   Settings,
-  BarChart3,
-  Clock,
   UserPlus,
   BookPlus,
   CalendarPlus,
   UserCog,
-  FileText,
-  TrendingUp,
   Eye,
-  Edit,
-  ChevronRight,
-  ChevronLeft
+  Edit
 } from 'lucide-react';
 import { api } from '../../services/authService';
 import { useAuth } from '../auth/AuthContext';
@@ -37,18 +30,18 @@ const AdminDashboard = () => {
   });
 
   const allActions = [
-    { name: "Create Semester", icon: <CalendarPlus className="w-4 h-4" />, action: () => navigateTo("manage-semesters") },
-    { name: "View Semesters", icon: <Eye className="w-4 h-4" />, action: () => navigateTo("manage-semesters") },
-    { name: "Edit Semester", icon: <Edit className="w-4 h-4" />, action: () => navigateTo("manage-semesters") },
-    { name: "Create Course", icon: <BookPlus className="w-4 h-4" />, action: () => navigateTo("manage-courses") },
-    { name: "View Courses", icon: <Eye className="w-4 h-4" />, action: () => navigateTo("manage-courses") },
-    { name: "Allocate Course", icon: <Settings className="w-4 h-4" />, action: () => navigateTo("manage-courses") },
+    { name: "New Sem", icon: <CalendarPlus className="w-4 h-4" />, action: () => navigateTo("manage-semesters") },
+    { name: "Sem List", icon: <Eye className="w-4 h-4" />, action: () => navigateTo("manage-semesters") },
+    { name: "Edit Sem", icon: <Edit className="w-4 h-4" />, action: () => navigateTo("manage-semesters") },
+    { name: "New Course", icon: <BookPlus className="w-4 h-4" />, action: () => navigateTo("manage-courses") },
+    { name: "Courses", icon: <Eye className="w-4 h-4" />, action: () => navigateTo("manage-courses") },
+    { name: "Map Course", icon: <Settings className="w-4 h-4" />, action: () => navigateTo("manage-courses") },
     { name: "Add Staff", icon: <UserPlus className="w-4 h-4" />, action: () => navigateTo("manage-staff") },
-    { name: "View Staff", icon: <Eye className="w-4 h-4" />, action: () => navigateTo("manage-staff") },
-    { name: "Allocate Staff", icon: <UserCog className="w-4 h-4" />, action: () => navigateTo("manage-staff") },
+    { name: "Staff List", icon: <Eye className="w-4 h-4" />, action: () => navigateTo("manage-staff") },
+    { name: "Map Staff", icon: <UserCog className="w-4 h-4" />, action: () => navigateTo("manage-staff") },
     { name: "Add Student", icon: <UserPlus className="w-4 h-4" />, action: () => navigateTo("manage-students") },
-    { name: "View Students", icon: <Eye className="w-4 h-4" />, action: () => navigateTo("manage-students") },
-    { name: "Allocate Students", icon: <Settings className="w-4 h-4" />, action: () => navigateTo("manage-students") }
+    { name: "Students", icon: <Eye className="w-4 h-4" />, action: () => navigateTo("manage-students") },
+    { name: "Map Student", icon: <Settings className="w-4 h-4" />, action: () => navigateTo("manage-students") }
   ];
 
   const navigate = useNavigate();
@@ -66,12 +59,34 @@ const AdminDashboard = () => {
         const semestersResponse = await api.get('/admin/semesters');
         const semesters = semestersResponse.data.data || [];
 
-        const sortedSemesters = semesters.sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
-        const recentSemesters = sortedSemesters.slice(0, 3).map(sem => ({
-          id: sem.semesterId,
-          name: `${sem.degree} ${sem.branch} Sem ${sem.semesterNumber}`,
-          batch: sem.batch
-        }));
+        const sortedSemesters = [...semesters].sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
+        const recentSemesters = sortedSemesters.slice(0, 3).map(sem => {
+          const deptName =
+            sem.Batch?.branch ||
+            sem.branch ||
+            sem.Deptacronym ||
+            sem.department ||
+            sem.Deptname ||
+            "Department";
+
+          const degreeName = sem.Batch?.degree || sem.degree || "";
+          const displayName = [degreeName, deptName].filter(Boolean).join(" ").trim();
+
+          const batchValue =
+            sem.Batch?.batch ||
+            sem.batch ||
+            sem.Batch?.batchYears ||
+            sem.batchYears ||
+            sem.batchYear ||
+            "-";
+
+          return {
+            id: sem.semesterId,
+            name: displayName,
+            semesterNumber: sem.semesterNumber ?? "-",
+            batch: batchValue
+          };
+        });
 
         const coursesResponse = await api.get('/admin/courses');
         const courses = coursesResponse.data.data || [];
@@ -214,51 +229,57 @@ const AdminDashboard = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-lg shadow-sm p-6">
-          <h3 className="text-lg font-semibold text-gray-800 mb-4">Quick Actions</h3>
-          <div className="grid grid-cols-2 gap-3">
-            <button
-              onClick={() => navigateTo("manage-semesters")}
-              className="flex items-center justify-center p-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <CalendarPlus className="w-5 h-5 mr-2" />
-              <span className="text-sm font-medium">New Semester</span>
-            </button>
-            <button
-              onClick={() => navigateTo("manage-courses")}
-              className="flex items-center justify-center p-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              <BookPlus className="w-5 h-5 mr-2" />
-              <span className="text-sm font-medium">New Course</span>
-            </button>
-            <button
-              onClick={() => navigateTo("manage-staff")}
-              className="flex items-center justify-center p-4 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors"
-            >
-              <UserCog className="w-5 h-5 mr-2" />
-              <span className="text-sm font-medium">Staff Allocation</span>
-            </button>
-            <button
-              onClick={() => navigateTo("manage-students")}
-              className="flex items-center justify-center p-4 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
-            >
-              <UserPlus className="w-5 h-5 mr-2" />
-              <span className="text-sm font-medium">Student Allocation</span>
-            </button>
-            <button
-              onClick={() => navigateTo("timetable")}
-              className="flex items-center justify-center p-4 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
-            >
-              <Clock className="w-5 h-5 mr-2" />
-              <span className="text-sm font-medium">Timetable</span>
-            </button>
-            <button
-              onClick={() => navigateTo("reports")}
-              className="flex items-center justify-center p-4 bg-slate-500 text-white rounded-lg hover:bg-slate-600 transition-colors"
-            >
-              <BarChart3 className="w-5 h-5 mr-2" />
-              <span className="text-sm font-medium">Reports</span>
-            </button>
+        <div className="space-y-4 self-start">
+          <div className="bg-white rounded-lg shadow-sm p-6">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Quick Actions</h3>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={() => navigateTo("manage-semesters")}
+                className="flex items-center justify-center p-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <CalendarPlus className="w-5 h-5 mr-2" />
+                <span className="text-sm font-medium">New Semester</span>
+              </button>
+              <button
+                onClick={() => navigateTo("manage-courses")}
+                className="flex items-center justify-center p-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <BookPlus className="w-5 h-5 mr-2" />
+                <span className="text-sm font-medium">New Course</span>
+              </button>
+              <button
+                onClick={() => navigateTo("manage-staff")}
+                className="flex items-center justify-center p-3 bg-slate-600 text-white rounded-lg hover:bg-slate-700 transition-colors"
+              >
+                <UserCog className="w-5 h-5 mr-2" />
+                <span className="text-sm font-medium">Staff</span>
+              </button>
+              <button
+                onClick={() => navigateTo("manage-students")}
+                className="flex items-center justify-center p-3 bg-gray-600 text-white rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                <UserPlus className="w-5 h-5 mr-2" />
+                <span className="text-sm font-medium">Students</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg shadow-sm p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-md font-semibold text-gray-800">Recent Courses</h4>
+            </div>
+            <div className="space-y-2">
+              {dashboardData.recentCourses.map((course) => (
+                <div key={course.id} className="p-2 bg-gray-50 rounded border border-gray-200">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <p className="font-medium text-gray-800 text-xs">{course.name}</p>
+                      <span className="text-xs text-blue-600">{course.code}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -272,25 +293,8 @@ const AdminDashboard = () => {
                 <div key={semester.id} className="p-2 bg-blue-50 rounded border border-blue-100">
                   <div className="flex justify-between items-center">
                     <div>
-                      <p className="font-medium text-gray-800 text-xs">{semester.name}</p>
-                      <span className="text-xs text-gray-600">{semester.batch}</span>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="bg-white rounded-lg shadow-sm p-4">
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-md font-semibold text-gray-800">Recent Courses</h4>
-            </div>
-            <div className="space-y-2">
-              {dashboardData.recentCourses.map((course) => (
-                <div key={course.id} className="p-2 bg-gray-50 rounded border border-gray-200">
-                  <div className="flex justify-between items-center">
-                    <div>
-                      <p className="font-medium text-gray-800 text-xs">{course.name}</p>
-                      <span className="text-xs text-blue-600">{course.code}</span>
+                      <p className="font-medium text-gray-800 text-xs">{semester.name} - Sem {semester.semesterNumber}</p>
+                      <span className="text-xs text-gray-600">Batch {semester.batch}</span>
                     </div>
                   </div>
                 </div>
