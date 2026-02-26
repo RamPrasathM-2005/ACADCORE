@@ -2,49 +2,29 @@ import React, { useState, useEffect, useMemo } from "react";
 import axios from "axios";
 import { toast, ToastContainer } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
-import {
-  Loader2,
-  Search,
-  Calendar,
-  CheckCircle2,
-  Minimize2,
-  Users,
-  Clock,
-  AlertCircle
-} from "lucide-react";
+import { Loader2, Search, Calendar } from "lucide-react";
 
-const API_BASE_URL = "http://localhost:4000"; // Update if needed
+const API_BASE_URL = "http://localhost:4000";
 axios.defaults.withCredentials = true;
 
-// --- PERIOD CELL COMPONENT ---
 const PeriodCell = ({ date, periodNumber, courses, selectedSlot, onSelect }) => {
   if (!courses || courses.length === 0) {
-    return (
-      <div className="h-full w-full flex items-center justify-center bg-slate-50 border-r border-slate-100">
-        <div className="w-1.5 h-1.5 rounded-full bg-slate-200"></div>
-      </div>
-    );
+    return <div className="flex h-full w-full items-center justify-center text-slate-300">-</div>;
   }
 
   const isSelected = selectedSlot?.date === date && selectedSlot?.periodNumber === periodNumber;
-  
+
   return (
     <button
       onClick={() => onSelect(courses, date, periodNumber)}
-      className={`
-        w-full h-full flex flex-col items-center justify-center transition-all border-r border-b border-slate-200 relative group
-        ${isSelected 
-          ? "bg-slate-800 text-white shadow-inner" 
-          : "bg-white hover:bg-indigo-50 text-slate-500 hover:text-indigo-600"
-        }
-      `}
+      className={`h-full w-full rounded-lg border px-2 py-3 text-center text-xs font-semibold transition ${
+        isSelected
+          ? "border-slate-900 bg-slate-900 text-white"
+          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+      }`}
     >
-      <span className={`text-xs font-bold ${isSelected ? 'text-white' : 'text-slate-700 group-hover:text-indigo-700'}`}>
-        P{periodNumber}
-      </span>
-      {courses.length > 1 && (
-        <span className="absolute bottom-1 right-1 w-1.5 h-1.5 bg-amber-400 rounded-full" title="Multiple Sections/Electives"></span>
-      )}
+      <div>P{periodNumber}</div>
+      {courses.length > 1 && <div className={`mt-1 text-[10px] ${isSelected ? "text-slate-300" : "text-amber-500"}`}>Multi</div>}
     </button>
   );
 };
@@ -56,7 +36,6 @@ export default function DayAttendance() {
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  
   const [selectedSlot, setSelectedSlot] = useState(null);
 
   const [degrees, setDegrees] = useState([]);
@@ -69,70 +48,79 @@ export default function DayAttendance() {
   const [selectedDepartment, setSelectedDepartment] = useState("");
   const [selectedSemester, setSelectedSemester] = useState("");
 
-  // Initial Date Setup
   useEffect(() => {
     if (!fromDate) {
-      const today = new Date();
-      setFromDate(today.toISOString().split("T")[0]);
-      setToDate(today.toISOString().split("T")[0]);
+      const today = new Date().toISOString().split("T")[0];
+      setFromDate(today);
+      setToDate(today);
     }
   }, [fromDate]);
 
-  // Load Filters
   useEffect(() => {
     const fetchData = async () => {
-        try {
-            const [batchRes, deptRes] = await Promise.all([
-                axios.get(`${API_BASE_URL}/api/admin/timetable/batches`),
-                axios.get(`${API_BASE_URL}/api/admin/timetable/departments`)
-            ]);
-            
-            if (batchRes.data?.data) {
-                setDegrees([...new Set(batchRes.data.data.map(b => b.degree))]);
-                setBatches(batchRes.data.data);
-            }
-            if (deptRes.data?.data) {
-                setDepartments(deptRes.data.data.map(d => ({
-                    departmentId: d.Deptid,
-                    departmentName: d.Deptname
-                })));
-            }
-        } catch(e) { console.error(e); }
+      try {
+        const [batchRes, deptRes] = await Promise.all([
+          axios.get(`${API_BASE_URL}/api/admin/timetable/batches`),
+          axios.get(`${API_BASE_URL}/api/admin/timetable/departments`),
+        ]);
+
+        if (batchRes.data?.data) {
+          setDegrees([...new Set(batchRes.data.data.map((b) => b.degree))]);
+          setBatches(batchRes.data.data);
+        }
+
+        if (deptRes.data?.data) {
+          setDepartments(
+            deptRes.data.data.map((d) => ({
+              departmentId: d.Deptid,
+              departmentName: d.Deptname,
+            }))
+          );
+        }
+      } catch (e) {
+        console.error(e);
+      }
     };
+
     fetchData();
   }, []);
 
-  // Load Semesters
   useEffect(() => {
     if (selectedDegree && selectedBatch && selectedDepartment) {
       const fetchSemesters = async () => {
-        const batchData = batches.find((b) => b.batchId === parseInt(selectedBatch));
+        const batchData = batches.find((b) => b.batchId === parseInt(selectedBatch, 10));
         if (!batchData) return;
+
         try {
           const res = await axios.get(`${API_BASE_URL}/api/admin/semesters/by-batch-branch`, {
-              params: { degree: selectedDegree, batch: batchData.batch, branch: batchData.branch },
+            params: { degree: selectedDegree, batch: batchData.batch, branch: batchData.branch },
           });
           if (res.data?.status === "success") setSemesters(res.data.data);
-        } catch (err) {}
+        } catch {
+          setSemesters([]);
+        }
       };
+
       fetchSemesters();
     } else {
       setSemesters([]);
     }
   }, [selectedDegree, selectedBatch, selectedDepartment, batches]);
 
-  const generateDates = () => {
+  const dates = useMemo(() => {
     if (!fromDate || !toDate) return [];
-    const dates = [];
+    const out = [];
     let current = new Date(fromDate);
     const end = new Date(toDate);
+
     while (current <= end) {
-      dates.push(current.toISOString().split("T")[0]);
+      out.push(current.toISOString().split("T")[0]);
       current.setDate(current.getDate() + 1);
     }
-    return dates;
-  };
-  const dates = generateDates();
+
+    return out;
+  }, [fromDate, toDate]);
+
   const periods = [1, 2, 3, 4, 5, 6, 7, 8];
 
   const handleGenerate = async () => {
@@ -142,313 +130,361 @@ export default function DayAttendance() {
     setStudents([]);
 
     try {
-      const batchData = batches.find((b) => b.batchId === parseInt(selectedBatch));
-      if (!batchData) return toast.error("Please select a batch");
+      const batchData = batches.find((b) => b.batchId === parseInt(selectedBatch, 10));
+      if (!batchData) {
+        toast.error("Please select a batch");
+        return;
+      }
 
       const res = await axios.get(`${API_BASE_URL}/api/admin/attendance/timetable`, {
         params: {
-          startDate: fromDate, endDate: toDate, degree: selectedDegree,
-          batch: batchData.batch, branch: batchData.branch, Deptid: selectedDepartment, semesterId: selectedSemester,
+          startDate: fromDate,
+          endDate: toDate,
+          degree: selectedDegree,
+          batch: batchData.batch,
+          branch: batchData.branch,
+          Deptid: selectedDepartment,
+          semesterId: selectedSemester,
         },
       });
+
       if (res.data.data?.timetable) setTimetable(res.data.data.timetable);
       else toast.info("No timetable data found");
-    } catch (err) { toast.error("Error loading timetable"); } 
-    finally { setLoading(false); }
-  };
-
-  // --- UPDATED: HANDLER FOR PERIOD SELECTION ---
-  const handlePeriodSelect = async (courses, date, periodNumber) => {
-    if (!courses || courses.length === 0) return;
-
-    // Use selected slot's primary course/section for enrolled-student fetch.
-    const primaryCourse = courses[0]; 
-    const { courseId, sectionId, courseTitle, courseCode } = primaryCourse;
-
-    try {
-        const dayOfWeek = new Date(date).toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
-
-        // Fetch only students enrolled in this course/section (electives handled in backend).
-        const res = await axios.get(
-            `${API_BASE_URL}/api/admin/attendance/students/${courseId}/${sectionId || 'all'}/${dayOfWeek}/${periodNumber}`,
-            { params: { date } }
-        );
-        
-        if (res.data.data) {
-            setStudents(res.data.data.map((s) => ({ ...s, status: s.status || "P" })));
-            
-            setSelectedSlot({ 
-                date, 
-                periodNumber,
-                courseId,
-                sectionId: sectionId || 'all', // Store for save
-                courseCode,
-                courseTitle,
-                isElective: courses.length > 1,
-            });
-        }
-    } catch (err) { 
-        console.error("DayAttendance fetch error:", err?.response?.data || err);
-        toast.error(err?.response?.data?.message || "Could not fetch student list"); 
+    } catch {
+      toast.error("Error loading timetable");
+    } finally {
+      setLoading(false);
     }
   };
 
-  // --- UPDATED: HANDLER FOR SAVING ---
+  const handlePeriodSelect = async (courses, date, periodNumber) => {
+    if (!courses || courses.length === 0) return;
+
+    const primaryCourse = courses[0];
+    const { courseId, sectionId, courseTitle, courseCode } = primaryCourse;
+
+    try {
+      const dayOfWeek = new Date(date).toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
+      const res = await axios.get(
+        `${API_BASE_URL}/api/admin/attendance/students/${courseId}/${sectionId || "all"}/${dayOfWeek}/${periodNumber}`,
+        { params: { date } }
+      );
+
+      if (res.data.data) {
+        setStudents(res.data.data.map((s) => ({ ...s, status: s.status || "P" })));
+        setSelectedSlot({
+          date,
+          periodNumber,
+          courseId,
+          sectionId: sectionId || "all",
+          courseCode,
+          courseTitle,
+          isElective: courses.length > 1,
+        });
+      }
+    } catch (err) {
+      console.error("DayAttendance fetch error:", err?.response?.data || err);
+      toast.error(err?.response?.data?.message || "Could not fetch student list");
+    }
+  };
+
   const handleSave = async () => {
     if (!selectedSlot) return;
+
     setSaving(true);
     try {
       const attendances = students.map((s) => ({
         rollnumber: s.rollnumber,
         status: s.status,
-        courseId: s.courseId || selectedSlot.courseId
+        courseId: s.courseId || selectedSlot.courseId,
       }));
+
       const dayOfWeek = new Date(selectedSlot.date).toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
-      
-      // Matches Route: /mark/:courseId/:sectionId/:dayOfWeek/:periodNumber
       await axios.post(
-          `${API_BASE_URL}/api/admin/attendance/mark/${selectedSlot.courseId}/${selectedSlot.sectionId}/${dayOfWeek}/${selectedSlot.periodNumber}`, 
-          {
-            date: selectedSlot.date,
-            attendances,
-            fullDay: true,
-            Deptid: selectedDepartment,
-            semesterId: selectedSemester
-          }
+        `${API_BASE_URL}/api/admin/attendance/mark/${selectedSlot.courseId}/${selectedSlot.sectionId}/${dayOfWeek}/${selectedSlot.periodNumber}`,
+        {
+          date: selectedSlot.date,
+          attendances,
+          fullDay: true,
+          Deptid: selectedDepartment,
+          semesterId: selectedSemester,
+        }
       );
-      
-      toast.success(`Attendance saved for the full day`);
+
+      toast.success("Attendance saved for the full day");
       setSelectedSlot(null);
       setStudents([]);
-    } catch (err) { 
-        console.error(err);
-        toast.error("Save failed"); 
-    } 
-    finally { setSaving(false); }
+    } catch {
+      toast.error("Save failed");
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const updateStatus = (roll, status) => setStudents(prev => prev.map(s => s.rollnumber === roll ? {...s, status} : s));
-  const markAllAs = (status) => setStudents(prev => prev.map(s => ({...s, status})));
-  
-  const stats = useMemo(() => {
-      return { 
-          P: students.filter(s => s.status === 'P').length, 
-          A: students.filter(s => s.status === 'A').length, 
-          OD: students.filter(s => s.status === 'OD').length 
-      };
-  }, [students]);
+  const updateStatus = (roll, status) => {
+    setStudents((prev) => prev.map((s) => (s.rollnumber === roll ? { ...s, status } : s)));
+  };
+
+  const markAllAs = (status) => {
+    setStudents((prev) => prev.map((s) => ({ ...s, status })));
+  };
+
+  const stats = useMemo(
+    () => ({
+      P: students.filter((s) => s.status === "P").length,
+      A: students.filter((s) => s.status === "A").length,
+      OD: students.filter((s) => s.status === "OD").length,
+    }),
+    [students]
+  );
 
   return (
-    <div className="flex flex-col h-screen w-full bg-slate-50 font-sans text-slate-900 overflow-hidden">
-      
-      {/* 1. HEADER */}
-      <div className="bg-white border-b border-slate-200 px-6 py-4 shadow-sm z-20 shrink-0">
-            <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 bg-indigo-600 text-white rounded shadow-lg shadow-indigo-200">
-                    <Clock size={20} />
-                </div>
-                <div>
-                    <h1 className="text-lg font-bold uppercase tracking-tight text-slate-900 leading-none">Day Attendance Manager</h1>
-                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Department View</span>
-                </div>
-            </div>
-            
-            <div className="flex flex-wrap items-end gap-2">
-                 <FilterSelect label="Degree" value={selectedDegree} onChange={setSelectedDegree} options={degrees} />
-                 <FilterSelect label="Batch" value={selectedBatch} onChange={setSelectedBatch} options={batches.filter(b => b.degree === selectedDegree).map(b => ({id: b.batchId, label: b.batch}))} valueKey="id" labelKey="label" />
-                 <FilterSelect label="Dept" value={selectedDepartment} onChange={setSelectedDepartment} options={departments} valueKey="departmentId" labelKey="departmentName" className="flex-[2] min-w-[200px]" />
-                 <FilterSelect label="Sem" value={selectedSemester} onChange={setSelectedSemester} options={semesters} valueKey="semesterId" labelKey="semesterNumber" className="w-20" />
-                 
-                 <div className="flex gap-2 items-end ml-auto">
-                    <DateInput label="From" value={fromDate} onChange={setFromDate} />
-                    <DateInput label="To" value={toDate} onChange={setToDate} />
-                    <button onClick={handleGenerate} disabled={loading} className="h-9 px-6 bg-slate-900 text-white rounded font-bold uppercase text-xs hover:bg-black disabled:opacity-50 transition-all flex items-center gap-2 shadow-lg shadow-slate-200">
-                        {loading ? <Loader2 className="animate-spin" size={14}/> : <Search size={14} />}
-                        <span>Load Grid</span>
-                    </button>
-                 </div>
-            </div>
-      </div>
+    <div className="min-h-screen bg-slate-100 px-4 py-6 md:px-8">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mb-5">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Day Attendance</h1>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Admin Attendance</p>
+          </div>
 
-      {/* 2. GRID */}
-      <div className="flex-1 overflow-auto bg-slate-100 p-4">
-            {Object.keys(timetable).length > 0 ? (
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden min-w-[800px]"> 
-                    <table className="w-full table-fixed border-collapse">
-                        <thead className="bg-slate-50 sticky top-0 z-10 shadow-sm text-slate-500">
-                            <tr>
-                                <th className="w-32 p-4 border-r border-slate-200 text-[10px] font-bold uppercase tracking-wider text-left bg-slate-50 text-slate-400">Date / Day</th>
-                                {periods.map(p => (
-                                    <th key={p} className="p-2 border-r border-slate-200 text-center bg-slate-50">
-                                        <div className="text-slate-800 text-xs font-bold">Period {p}</div>
-                                    </th>
-                                ))}
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {dates.map(date => (
-                                <tr key={date} className="hover:bg-slate-50/50 h-20"> 
-                                    <td className="p-4 border-r border-slate-200 font-medium text-xs text-slate-700 bg-white group cursor-default">
-                                        <div className="text-base font-bold text-slate-800">{new Date(date).toLocaleDateString("en-US", { day: '2-digit' })}</div>
-                                        <div className="text-[10px] text-indigo-500 font-bold uppercase tracking-wide">{new Date(date).toLocaleDateString("en-US", { month: 'short', weekday: 'short' })}</div>
-                                    </td>
-                                    {periods.map(pNum => {
-                                        const coursesInSlot = (timetable[date] || []).filter(item => item.periodNumber === pNum);
-                                        return (
-                                            <td key={pNum} className="p-0 border-r border-slate-200 align-middle h-20">
-                                                <PeriodCell 
-                                                    date={date}
-                                                    periodNumber={pNum}
-                                                    courses={coursesInSlot}
-                                                    selectedSlot={selectedSlot}
-                                                    onSelect={handlePeriodSelect}
-                                                />
-                                            </td>
-                                        );
-                                    })}
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            ) : (
-                <div className="flex flex-col items-center justify-center h-full text-slate-400 opacity-60">
-                    <Calendar size={64} strokeWidth={1} />
-                    <p className="mt-4 text-sm font-medium">Select filters to load the attendance grid</p>
-                </div>
-            )}
-      </div>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-4 xl:grid-cols-8">
+            <FilterField label="Degree" value={selectedDegree} onChange={setSelectedDegree} className="xl:col-span-1">
+              <option value="">Select</option>
+              {degrees.map((d) => (
+                <option key={d} value={d}>
+                  {d}
+                </option>
+              ))}
+            </FilterField>
 
-      {/* 3. STUDENT PANEL */}
-      {selectedSlot && (
-         <div className="h-[450px] bg-white border-t-4 border-slate-800 shrink-0 flex flex-col shadow-[0_-10px_40px_rgba(0,0,0,0.15)] z-30 animate-in slide-in-from-bottom-10 duration-200">
-            
-            <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center shrink-0">
-                <div className="flex items-center gap-6">
-                    <div>
-                        <h2 className="text-lg font-bold uppercase tracking-wide flex items-center gap-2">
-                             <span className="text-indigo-400">Period {selectedSlot.periodNumber}</span> 
-                             <span className="text-slate-500">|</span> 
-                             {new Date(selectedSlot.date).toLocaleDateString("en-US", { weekday: 'short', day: '2-digit', month: 'short' })}
-                        </h2>
-                        <div className="text-[10px] text-slate-400 flex gap-2 items-center mt-1">
-                             {selectedSlot.isElective ? (
-                                <span className="flex items-center gap-1 text-amber-400"><AlertCircle size={10}/> Multiple Subjects (Electives) - Showing All Students</span>
-                             ) : (
-                                <span>Subject: {selectedSlot.courseTitle} ({selectedSlot.courseCode})</span>
-                             )}
+            <FilterField label="Batch" value={selectedBatch} onChange={setSelectedBatch} className="xl:col-span-1">
+              <option value="">Select</option>
+              {batches
+                .filter((b) => b.degree === selectedDegree)
+                .map((b) => (
+                  <option key={b.batchId} value={b.batchId}>
+                    {b.batch}
+                  </option>
+                ))}
+            </FilterField>
+
+            <FilterField label="Department" value={selectedDepartment} onChange={setSelectedDepartment} className="xl:col-span-2">
+              <option value="">Select</option>
+              {departments.map((d) => (
+                <option key={d.departmentId} value={d.departmentId}>
+                  {d.departmentName}
+                </option>
+              ))}
+            </FilterField>
+
+            <FilterField label="Semester" value={selectedSemester} onChange={setSelectedSemester} className="xl:col-span-1">
+              <option value="">Select</option>
+              {semesters.map((s) => (
+                <option key={s.semesterId} value={s.semesterId}>
+                  {s.semesterNumber}
+                </option>
+              ))}
+            </FilterField>
+
+            <div className="xl:col-span-1">
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">From</label>
+              <input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-300"
+              />
+            </div>
+
+            <div className="xl:col-span-1">
+              <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">To</label>
+              <input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-300"
+              />
+            </div>
+
+            <div className="flex items-end xl:col-span-1">
+              <button
+                onClick={handleGenerate}
+                disabled={loading}
+                className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-slate-900 px-5 text-xs font-bold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800 disabled:opacity-60"
+              >
+                {loading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />}
+                {loading ? "Loading" : "Load Grid"}
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-6 py-4">
+            <h2 className="text-lg font-semibold text-slate-900">Timetable</h2>
+            <p className="text-xs text-slate-500">Click a period cell to open students.</p>
+          </div>
+
+          {Object.keys(timetable).length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[920px] border-collapse">
+                <thead className="bg-slate-50">
+                  <tr>
+                    <th className="border-b border-r border-slate-200 px-6 py-4 text-left text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Date</th>
+                    {periods.map((p) => (
+                      <th key={p} className="border-b border-r border-slate-200 px-2 py-4 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+                        P{p}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {dates.map((date) => (
+                    <tr key={date} className="border-b border-slate-100">
+                      <td className="border-r border-slate-200 px-6 py-4">
+                        <div className="text-sm font-semibold text-slate-900">{date}</div>
+                        <div className="text-xs uppercase tracking-[0.12em] text-slate-400">
+                          {new Date(date).toLocaleDateString("en-US", { weekday: "long" })}
                         </div>
-                    </div>
-                    <div className="flex gap-4 text-xs font-bold uppercase ml-6 bg-slate-800 p-2 px-4 rounded-lg border border-slate-700">
-                        <div className="flex flex-col items-center leading-none gap-1"><span className="text-[9px] text-slate-500">Present</span><span className="text-green-400 text-lg">{stats.P}</span></div>
-                        <div className="w-px bg-slate-700 mx-1"></div>
-                        <div className="flex flex-col items-center leading-none gap-1"><span className="text-[9px] text-slate-500">Absent</span><span className="text-red-400 text-lg">{stats.A}</span></div>
-                        <div className="w-px bg-slate-700 mx-1"></div>
-                        <div className="flex flex-col items-center leading-none gap-1"><span className="text-[9px] text-slate-500">OD</span><span className="text-blue-400 text-lg">{stats.OD}</span></div>
-                    </div>
-                </div>
+                      </td>
 
-                <div className="flex gap-2 items-center">
-                     <div className="mr-4 flex gap-1 bg-slate-800 p-1 rounded">
-                        <button onClick={() => markAllAs("P")} className="px-3 py-1.5 hover:bg-green-600 hover:text-white text-green-500 rounded text-[10px] font-bold uppercase transition-colors">Mark All P</button>
-                        <button onClick={() => markAllAs("A")} className="px-3 py-1.5 hover:bg-red-600 hover:text-white text-red-500 rounded text-[10px] font-bold uppercase transition-colors">Mark All A</button>
-                     </div>
-                     <button onClick={() => setSelectedSlot(null)} className="p-2 hover:bg-slate-700 rounded-full transition-colors text-slate-400 hover:text-white"><Minimize2 size={20}/></button>
-                </div>
+                      {periods.map((pNum) => {
+                        const coursesInSlot = (timetable[date] || []).filter((item) => item.periodNumber === pNum);
+                        return (
+                          <td key={pNum} className="h-16 border-r border-slate-200 p-2 align-middle">
+                            <PeriodCell
+                              date={date}
+                              periodNumber={pNum}
+                              courses={coursesInSlot}
+                              selectedSlot={selectedSlot}
+                              onSelect={handlePeriodSelect}
+                            />
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="flex h-56 flex-col items-center justify-center text-slate-400">
+              <Calendar size={42} strokeWidth={1.3} />
+              <p className="mt-3 text-sm">Select filters to load the timetable.</p>
+            </div>
+          )}
+        </section>
+
+        {selectedSlot && (
+          <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex flex-col gap-3 border-b border-slate-100 px-6 py-4 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">
+                  {selectedSlot.courseCode} - Period {selectedSlot.periodNumber}
+                </h2>
+                <p className="text-xs uppercase tracking-[0.12em] text-slate-500">
+                  {selectedSlot.date} {selectedSlot.courseTitle ? `- ${selectedSlot.courseTitle}` : ""}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <button onClick={() => markAllAs("P")} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                  All P
+                </button>
+                <button onClick={() => markAllAs("A")} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                  All A
+                </button>
+                <button onClick={() => markAllAs("OD")} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                  All OD
+                </button>
+                <button onClick={() => setSelectedSlot(null)} className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+                  Close
+                </button>
+              </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto bg-slate-50 p-0 relative">
-                <table className="w-full text-left border-collapse">
-                    <thead className="bg-white text-slate-500 sticky top-0 z-10 shadow-sm text-[10px] font-bold uppercase tracking-wider">
-                        <tr>
-                            <th className="p-4 border-b border-slate-100 w-40">Roll Number</th>
-                            <th className="p-4 border-b border-slate-100">Student Name</th>
-                            <th className="p-4 border-b border-slate-100 text-center w-80">Attendance Status</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white">
-                        {students.map((s) => (
-                            <tr key={s.rollnumber} className={`group transition-colors ${
-                                s.status === 'A' ? 'bg-red-50/50' : 
-                                s.status === 'OD' ? 'bg-blue-50/50' : 'hover:bg-slate-50'
-                            }`}>
-                                <td className="p-3 px-4 text-xs font-bold font-mono text-slate-600">{s.rollnumber}</td>
-                                <td className="p-3 px-4 text-sm font-semibold text-slate-800">{s.name}</td>
-                                <td className="p-2 px-4 text-center">
-                                    <div className="flex justify-center gap-1">
-                                        {['P','A','OD'].map(st => (
-                                            <button 
-                                                key={st} 
-                                                onClick={() => updateStatus(s.rollnumber, st)}
-                                                className={`
-                                                    w-10 h-8 rounded-md text-[10px] font-bold transition-all border flex items-center justify-center
-                                                    ${s.status === st 
-                                                        ? st==='P' ? 'bg-green-500 border-green-500 text-white shadow-md scale-105' 
-                                                        : st==='A' ? 'bg-red-500 border-red-500 text-white shadow-md scale-105' 
-                                                        : 'bg-blue-500 border-blue-500 text-white shadow-md scale-105'
-                                                        : 'bg-white border-slate-200 text-slate-300 hover:border-slate-300 hover:text-slate-500'
-                                                    }
-                                                `}
-                                            >{st}</button>
-                                        ))}
-                                    </div>
-                                </td>
-                            </tr>
-                        ))}
-                        {students.length === 0 && (
-                            <tr>
-                                <td colSpan="3" className="p-12 text-center text-slate-400 flex flex-col items-center justify-center">
-                                    <Users size={32} className="mb-2 opacity-20"/>
-                                    <span className="text-sm font-medium">No students found.</span>
-                                </td>
-                            </tr>
-                        )}
-                    </tbody>
-                </table>
+            <div className="max-h-[500px] overflow-y-auto">
+              <table className="w-full border-collapse text-left">
+                <thead className="sticky top-0 z-10 bg-slate-50">
+                  <tr>
+                    <th className="border-b border-slate-200 px-6 py-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Register No</th>
+                    <th className="border-b border-slate-200 px-6 py-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Student Name</th>
+                    <th className="border-b border-slate-200 px-6 py-4 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {students.map((s) => (
+                    <tr key={s.rollnumber} className="border-b border-slate-100 hover:bg-slate-50">
+                      <td className="px-6 py-4 text-sm font-semibold text-slate-700">{s.rollnumber}</td>
+                      <td className="px-6 py-4 text-sm text-slate-900">{s.name}</td>
+                      <td className="px-6 py-4 text-center">
+                        <div className="flex justify-center gap-2">
+                          {[
+                            { key: "P", active: "bg-emerald-500 border-emerald-500 text-white" },
+                            { key: "A", active: "bg-rose-500 border-rose-500 text-white" },
+                            { key: "OD", active: "bg-sky-500 border-sky-500 text-white" },
+                          ].map((st) => (
+                            <button
+                              key={st.key}
+                              onClick={() => updateStatus(s.rollnumber, st.key)}
+                              className={`h-9 min-w-[42px] rounded-lg border text-xs font-semibold transition ${
+                                s.status === st.key
+                                  ? st.active
+                                  : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700"
+                              }`}
+                            >
+                              {st.key}
+                            </button>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+
+                  {students.length === 0 && (
+                    <tr>
+                      <td colSpan="3" className="px-6 py-12 text-center text-sm text-slate-400">
+                        No students found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
 
-            <div className="bg-white border-t border-slate-200 p-3 flex justify-between items-center px-6 shrink-0 z-20">
-                 <div className="text-xs text-slate-400 flex items-center gap-2">
-                    <CheckCircle2 size={14} className="text-green-500"/>
-                    Changes are not saved until you click the button.
-                 </div>
-                 <button 
-                    onClick={handleSave} 
-                    disabled={saving || students.length === 0} 
-                    className="bg-indigo-600 text-white px-8 py-3 rounded-lg font-bold uppercase text-xs hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-2 shadow-lg shadow-indigo-100 transition-all active:scale-95"
-                 >
-                    {saving && <Loader2 className="animate-spin" size={14} />}
-                    Save Attendance
-                 </button>
+            <div className="flex flex-col gap-3 border-t border-slate-200 px-6 py-4 md:flex-row md:items-center md:justify-between">
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-700">
+                Present: <span className="text-slate-900">{stats.P}</span> | Absent: <span className="text-slate-900">{stats.A}</span> | OD: <span className="text-slate-900">{stats.OD}</span>
+              </div>
+
+              <button
+                onClick={handleSave}
+                disabled={saving || students.length === 0}
+                className="inline-flex h-11 items-center rounded-xl bg-slate-900 px-6 text-xs font-bold uppercase tracking-[0.14em] text-white transition hover:bg-slate-800 disabled:opacity-60"
+              >
+                {saving ? "Saving..." : "Save Attendance"}
+              </button>
             </div>
-         </div>
-      )}
+          </section>
+        )}
+      </div>
 
       <ToastContainer position="bottom-right" theme="colored" autoClose={2000} />
     </div>
   );
 }
 
-// Sub-components
-const FilterSelect = ({ label, value, onChange, options, valueKey="id", labelKey="label", className="flex-1 min-w-[120px]" }) => (
+function FilterField({ label, value, onChange, children, className = "" }) {
+  return (
     <div className={className}>
-        <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">{label}</label>
-        <div className="relative">
-            <select value={value} onChange={e => onChange(e.target.value)} className="w-full h-10 border border-slate-200 rounded-lg px-3 text-xs font-medium bg-slate-50 focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer appearance-none">
-                <option value="">Select...</option>
-                {typeof options[0] === 'string' 
-                    ? options.map(o => <option key={o} value={o}>{o}</option>)
-                    : options.map(o => <option key={o[valueKey]} value={o[valueKey]}>{o[labelKey]}</option>)
-                }
-            </select>
-            <div className="absolute right-3 top-3 pointer-events-none opacity-50"><svg width="10" height="6" viewBox="0 0 10 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 1L5 5L9 1"/></svg></div>
-        </div>
+      <label className="mb-1 block text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</label>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition focus:border-slate-300"
+      >
+        {children}
+      </select>
     </div>
-);
-
-const DateInput = ({ label, value, onChange }) => (
-    <div className="w-32">
-        <label className="block text-[10px] font-bold uppercase text-slate-400 mb-1">{label}</label>
-        <input type="date" value={value} onChange={e => onChange(e.target.value)} className="w-full h-10 border border-slate-200 rounded-lg px-3 text-xs font-medium bg-slate-50 focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer" />
-    </div>
-);
+  );
+}

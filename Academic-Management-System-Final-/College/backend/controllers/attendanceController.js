@@ -182,7 +182,7 @@ export async function getStudentsForPeriod(req, res, next) {
     if (!isAssigned) return res.status(403).json({ status: "error", message: "Unauthorized" });
 
     // Fetch Students
-    const students = await StudentCourse.findAll({
+    let students = await StudentCourse.findAll({
       where: { 
         courseId: { [Op.in]: targetCourseIds },
         ...(!isElective && safeSectionId ? { sectionId: safeSectionId } : {})
@@ -209,6 +209,69 @@ export async function getStudentsForPeriod(req, res, next) {
       ],
       order: [[sequelize.col('StudentDetail.registerNumber'), 'ASC']]
     });
+
+    // Core-course fallback:
+    // If StudentCourse mapping is missing, build roster from StudentDetails by dept/sem/section.
+    if (!isElective && students.length === 0) {
+      const slot = await Timetable.findOne({
+        where: {
+          courseId: requestedCourseId,
+          dayOfWeek,
+          periodNumber,
+          ...(safeSectionId ? { sectionId: safeSectionId } : {})
+        },
+        include: [
+          { model: Semester, required: true, attributes: ['semesterNumber'] },
+          { model: Section, required: false, attributes: ['sectionName'] }
+        ],
+        attributes: ['Deptid', 'sectionId', 'semesterId']
+      });
+
+      const semesterNumber = slot?.Semester?.semesterNumber;
+      let sectionName = slot?.Section?.sectionName || null;
+
+      if (!sectionName && safeSectionId) {
+        const sectionRow = await Section.findByPk(safeSectionId, { attributes: ['sectionName'] });
+        sectionName = sectionRow?.sectionName || null;
+      }
+
+      if (slot?.Deptid && semesterNumber) {
+        const roster = await StudentDetails.findAll({
+          where: {
+            departmentId: slot.Deptid,
+            semester: String(semesterNumber),
+            ...(sectionName ? { section: sectionName } : {})
+          },
+          attributes: ['registerNumber', 'studentName'],
+          order: [['registerNumber', 'ASC']]
+        });
+
+        const mapped = await Promise.all(
+          roster.map(async (stu) => {
+            const attendance = await PeriodAttendance.findOne({
+              where: {
+                regno: stu.registerNumber,
+                courseId: requestedCourseId,
+                ...(safeSectionId ? { sectionId: safeSectionId } : {}),
+                dayOfWeek,
+                periodNumber,
+                attendanceDate: date
+              },
+              order: [['periodAttendanceId', 'DESC']]
+            });
+
+            return {
+              regno: stu.registerNumber,
+              StudentDetail: { studentName: stu.studentName },
+              PeriodAttendances: attendance ? [attendance] : [],
+              sectionId: safeSectionId || null,
+              courseId: requestedCourseId
+            };
+          })
+        );
+        students = mapped;
+      }
+    }
 
     res.json({
       status: "success",
@@ -297,6 +360,7 @@ export async function markAttendance(req, res, next) {
     }
 
     const baseCourse = await Course.findByPk(requestedCourseId, { include: [Semester] });
+    const requestedIsElective = ["OEC", "PEC"].includes((baseCourse?.category || "").trim().toUpperCase());
     const baseSemNum = baseCourse?.Semester?.semesterNumber;
 
     const uniqueAttendanceCourseIds = [
@@ -327,20 +391,42 @@ export async function markAttendance(req, res, next) {
       const effectiveCourseId = Number.isNaN(attCourseId) ? requestedCourseId : attCourseId;
 
       const sc = await StudentCourse.findOne({ where: { regno: att.rollnumber, courseId: effectiveCourseId } });
-      if (!sc) {
+      let resolvedSectionId = sc?.sectionId || safeSectionId;
+
+      if (!sc && requestedIsElective) {
         skipped.push({ rollnumber: att.rollnumber, reason: "Not enrolled" });
         continue;
       }
 
+      if (!resolvedSectionId) {
+        const stu = await StudentDetails.findOne({
+          where: { registerNumber: att.rollnumber },
+          attributes: ['section']
+        });
+        const secName = (stu?.section || "").trim();
+        if (secName) {
+          const sec = await Section.findOne({
+            where: { courseId: effectiveCourseId, sectionName: secName },
+            attributes: ['sectionId']
+          });
+          resolvedSectionId = sec?.sectionId || null;
+        }
+      }
+
+      if (!resolvedSectionId) {
+        skipped.push({ rollnumber: att.rollnumber, reason: "Section not found" });
+        continue;
+      }
+
       // Section check
-      if (safeSectionId && safeSectionId !== sc.sectionId) {
+      if (sc && safeSectionId && safeSectionId !== sc.sectionId) {
         skipped.push({ rollnumber: att.rollnumber, reason: "Section mismatch" });
         continue;
       }
 
       // Check Admin lock
       const existing = await PeriodAttendance.findOne({
-        where: { regno: att.rollnumber, courseId: effectiveCourseId, sectionId: sc.sectionId, attendanceDate: date, periodNumber }
+        where: { regno: att.rollnumber, courseId: effectiveCourseId, sectionId: resolvedSectionId, attendanceDate: date, periodNumber }
       });
 
       if (existing?.updatedBy === 'admin') {
@@ -353,7 +439,7 @@ export async function markAttendance(req, res, next) {
         regno: att.rollnumber,
         staffId: user.userId,
         courseId: effectiveCourseId,
-        sectionId: sc.sectionId,
+        sectionId: resolvedSectionId,
         semesterNumber: semByCourseId.get(effectiveCourseId) || baseSemNum,
         dayOfWeek,
         periodNumber,

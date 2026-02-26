@@ -50,6 +50,16 @@ const CreateCBCS = () => {
   const [loadingDepts, setLoadingDepts] = useState(false);
   const [loadingSemesters, setLoadingSemesters] = useState(false);
 
+  const selectedDeptObj = departments.find(
+    (d) => d.id?.toString() === filters.deptId?.toString()
+  );
+
+  const filteredBatches = batches.filter((batch) => {
+    const degreeMatch = !filters.degree || String(batch.degree || '').toUpperCase() === String(filters.degree).toUpperCase();
+    const branchMatch = !selectedDeptObj?.acronym || String(batch.branch || '').toUpperCase() === String(selectedDeptObj.acronym).toUpperCase();
+    return degreeMatch && branchMatch;
+  });
+
   // CBCS Type options
   const cbcsTypes = [
     { id: 'FCFS', name: 'First Come First Serve (FCFS)', icon: Zap, description: 'Students select courses on first-come-first-serve basis' },
@@ -126,6 +136,12 @@ const CreateCBCS = () => {
         const selectedBatchObj = batches.find(b => (b.batchId || b.id).toString() === filters.batchId.toString());
         const selectedDeptObj = departments.find(d => d.id.toString() === filters.deptId.toString());
 
+        if (!selectedBatchObj || !selectedDeptObj) {
+          setError('Invalid batch or department selection');
+          setSemesters([]);
+          return;
+        }
+
         // Using api instance with the specific string parameters the backend requires
         const response = await api.get('/admin/semesters/by-batch-branch', {
           params: {
@@ -153,6 +169,17 @@ const CreateCBCS = () => {
     
     fetchSemesters();
   }, [filters.batchId, filters.deptId, filters.degree, batches, departments]);
+
+  // Ensure stale/invalid batch selection is cleared when degree/department changes.
+  useEffect(() => {
+    if (!filters.batchId) return;
+    const exists = filteredBatches.some(
+      (b) => String(b.batchId || b.id) === String(filters.batchId)
+    );
+    if (!exists) {
+      setFilters((prev) => ({ ...prev, batchId: '', semesterId: '' }));
+    }
+  }, [filters.batchId, filteredBatches]);
 
   // Fetch courses based on filters
   const fetchCourses = async () => {
@@ -303,6 +330,25 @@ const CreateCBCS = () => {
     setError('');
     setSuccess('');
     try {
+      const selectedBatchObj = batches.find((b) => String(b.batchId || b.id) === String(filters.batchId));
+      const selectedDeptObj = departments.find((d) => String(d.id) === String(filters.deptId));
+      const batchDegree = String(selectedBatchObj?.degree || '').toUpperCase();
+      const filterDegree = String(filters.degree || '').toUpperCase();
+      const batchBranch = String(selectedBatchObj?.branch || '').toUpperCase();
+      const deptAcronym = String(selectedDeptObj?.acronym || '').toUpperCase();
+
+      if (!selectedBatchObj || !selectedDeptObj) {
+        setError('Invalid batch or department selection');
+        setLoading(false);
+        return;
+      }
+
+      if ((filterDegree && batchDegree !== filterDegree) || (deptAcronym && batchBranch !== deptAcronym)) {
+        setError(`Selected batch does not match Degree (${filters.degree}) and Department (${selectedDeptObj?.name}). Please reselect Batch.`);
+        setLoading(false);
+        return;
+      }
+
       const payload = {
         Deptid: parseInt(filters.deptId),
         batchId: parseInt(filters.batchId),
@@ -404,7 +450,7 @@ const CreateCBCS = () => {
               </label>
               <select
                 value={filters.degree}
-                onChange={(e) => setFilters({ ...filters, degree: e.target.value, semesterId: '' })}
+                onChange={(e) => setFilters({ ...filters, degree: e.target.value, batchId: '', semesterId: '' })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 transition-colors"
               >
                 <option value="">Select Degree</option>
@@ -427,9 +473,9 @@ const CreateCBCS = () => {
                 disabled={loadingBatches}
               >
                 <option value="">{loadingBatches ? 'Loading...' : 'Select Batch'}</option>
-                {batches.map(batch => (
+                {filteredBatches.map(batch => (
                   <option key={batch.batchId || batch.id} value={batch.batchId || batch.id}>
-                    {batch.batch || batch.name}
+                    {`${batch.batch || batch.name} - ${batch.branch || ''} (${batch.batchYears || ''})`}
                   </option>
                 ))}
               </select>
@@ -443,7 +489,7 @@ const CreateCBCS = () => {
               </label>
               <select
                 value={filters.deptId}
-                onChange={(e) => setFilters({ ...filters, deptId: e.target.value, semesterId: '' })}
+                onChange={(e) => setFilters({ ...filters, deptId: e.target.value, batchId: '', semesterId: '' })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 transition-colors"
                 disabled={loadingDepts}
               >

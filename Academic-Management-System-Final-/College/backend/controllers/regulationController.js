@@ -92,7 +92,7 @@ export const importRegulationCourses = async (req, res) => {
   const validRows = [];
   const allowedCategories =
     RegulationCourse?.getAttributes?.()?.category?.values ||
-    ['HSMC', 'BSC', 'ESC', 'PEC', 'OEC', 'EEC', 'PCC'];
+    ['HSMC', 'BSC', 'ESC', 'PEC', 'OEC', 'EEC', 'PCC', 'MC'];
 
   for (const [index, rawCourse] of courses.entries()) {
     const row = index + 2;

@@ -8,7 +8,7 @@ const { sequelize, Course, Semester, Batch } = db;
 
 // Valid enum values
 const validTypes = ['THEORY', 'INTEGRATED', 'PRACTICAL', 'EXPERIENTIAL LEARNING'];
-const validCategories = ['HSMC', 'BSC', 'ESC', 'PEC', 'OEC', 'EEC', 'PCC'];
+const validCategories = ['HSMC', 'BSC', 'ESC', 'PEC', 'OEC', 'EEC', 'PCC', 'MC'];
 const validIsActive = ['YES', 'NO'];
 
 const addCourseSchema = Joi.object({

@@ -98,6 +98,26 @@ export const createCbcs = async (req, res) => {
   try {
     const { Deptid, batchId, semesterId, createdBy, subjects, total_students, type } = req.body;
 
+    const dept = await Department.findByPk(Deptid, { transaction: t });
+    const batch = await Batch.findByPk(batchId, { transaction: t });
+    const semester = await Semester.findByPk(semesterId, { transaction: t });
+
+    if (!dept) throw new Error(`Invalid department id: ${Deptid}`);
+    if (!batch || batch.isActive !== 'YES') throw new Error(`Invalid/inactive batch id: ${batchId}`);
+    if (!semester || semester.isActive !== 'YES') throw new Error(`Invalid/inactive semester id: ${semesterId}`);
+
+    if (Number(semester.batchId) !== Number(batch.batchId)) {
+      throw new Error(`Semester ${semesterId} does not belong to batch ${batchId}`);
+    }
+
+    // Batch.branch must correspond to the selected department.
+    const batchBranch = String(batch.branch || '').trim().toUpperCase();
+    const deptAcr = String(dept.Deptacronym || '').trim().toUpperCase();
+    const deptName = String(dept.Deptname || '').trim().toUpperCase();
+    if (batchBranch !== deptAcr && batchBranch !== deptName) {
+      throw new Error(`Batch ${batchId} does not belong to department ${Deptid}`);
+    }
+
     const cbcs = await CBCS.create({
       batchId, Deptid, semesterId, 
       total_students: total_students || 0, 
