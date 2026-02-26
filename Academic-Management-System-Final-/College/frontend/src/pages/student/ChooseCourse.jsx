@@ -360,7 +360,7 @@ const ChooseCourse = () => {
                                             <option value="">Select a Course...</option>
                                             {bucket.courses.map((course) => (
                                                 <option key={course.courseId} value={course.courseId}>
-                                                    {course.courseCode} — {course.courseTitle} ({course.credits} Credits)
+                                                    {course.courseCode} — {course.courseTitle} ({course.credits} Credits){course.verticalName ? ` - ${course.verticalName}` : ''}
                                                 </option>
                                             ))}
                                         </select>
@@ -388,7 +388,7 @@ const ChooseCourse = () => {
                             <div key={bucket.bucketId}>
                               <span className="font-semibold">{bucket.bucketName}:</span>{' '}
                               {selectedCourse
-                                ? `${selectedCourse.courseCode} - ${selectedCourse.courseTitle}`
+                                ? `${selectedCourse.courseCode} - ${selectedCourse.courseTitle}${selectedCourse.verticalName ? ` (${selectedCourse.verticalName})` : ''}`
                                 : 'Not selected'}
                             </div>
                           );
