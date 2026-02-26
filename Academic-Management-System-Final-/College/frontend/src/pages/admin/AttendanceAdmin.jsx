@@ -121,6 +121,7 @@ export default function AdminAttendanceGenerator() {
   const [selectedBatch, setSelectedBatch] = useState("");
   const [selectedDepartment, setSelectedDepartment] = useState("");
   const [selectedSemester, setSelectedSemester] = useState("");
+  const [timeSlots, setTimeSlots] = useState([]);
 
   useEffect(() => {
     if (!fromDate) {
@@ -133,9 +134,10 @@ export default function AdminAttendanceGenerator() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [batchRes, deptRes] = await Promise.all([
+        const [batchRes, deptRes, periodRes] = await Promise.all([
           axios.get(`${API_BASE_URL}/api/admin/timetable/batches`),
           axios.get(`${API_BASE_URL}/api/admin/timetable/departments`),
+          axios.get(`${API_BASE_URL}/api/admin/timetable-periods`),
         ]);
 
         if (batchRes.data?.data) {
@@ -151,6 +153,25 @@ export default function AdminAttendanceGenerator() {
             }))
           );
         }
+
+        const periods = Array.isArray(periodRes?.data?.data)
+          ? periodRes.data.data
+              .map((p) => ({
+                periodNumber: Number(p.id),
+                time: p.startTime && p.endTime ? `${p.startTime} - ${p.endTime}` : "Time not set",
+              }))
+              .filter((p) => Number.isInteger(p.periodNumber))
+              .sort((a, b) => a.periodNumber - b.periodNumber)
+          : [];
+
+        setTimeSlots(
+          periods.length > 0
+            ? periods
+            : Array.from({ length: 8 }, (_, i) => ({
+                periodNumber: i + 1,
+                time: "Time not set",
+              }))
+        );
       } catch (e) {
         console.error(e);
       }
@@ -197,17 +218,6 @@ export default function AdminAttendanceGenerator() {
   };
 
   const dates = generateDates();
-
-  const timeSlots = [
-    { periodNumber: 1, time: "09:00 - 10:00" },
-    { periodNumber: 2, time: "10:00 - 11:00" },
-    { periodNumber: 3, time: "11:00 - 12:00" },
-    { periodNumber: 4, time: "12:00 - 01:00" },
-    { periodNumber: 5, time: "01:30 - 02:30" },
-    { periodNumber: 6, time: "02:30 - 03:30" },
-    { periodNumber: 7, time: "03:30 - 04:30" },
-    { periodNumber: 8, time: "04:30 - 05:30" },
-  ];
 
   const handleGenerate = async () => {
     setLoading(true);

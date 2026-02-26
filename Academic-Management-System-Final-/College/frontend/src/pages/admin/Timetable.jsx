@@ -5,8 +5,6 @@ import {
   Edit,
   X,
   Clock,
-  Coffee,
-  UtensilsCrossed,
 } from "lucide-react";
 import axios from "axios";
 
@@ -32,35 +30,19 @@ const Timetable = () => {
   const [customCourseInput, setCustomCourseInput] = useState("");
   const [selectedBucketId, setSelectedBucketId] = useState("");
   const [error, setError] = useState(null);
+  const [timetablePeriods, setTimetablePeriods] = useState([]);
 
   // Bucket states
   const [electiveBuckets, setElectiveBuckets] = useState([]);
   const [bucketCourses, setBucketCourses] = useState([]);
 
   const days = ["MON", "TUE", "WED", "THU", "FRI"];
-  const periods = [
-    { id: 1, name: "Period 1", time: "9:15-10:05", type: "class" },
-    { id: 2, name: "Period 2", time: "10:05-10:55", type: "class" },
-    { id: 3, name: "Short Break", time: "10:55-11:10", type: "break" },
-    { id: 4, name: "Period 3", time: "11:10-12:00", type: "class" },
-    { id: 5, name: "Period 4", time: "12:00-12:50", type: "class" },
-    { id: 6, name: "Lunch Break", time: "12:50-1:50", type: "lunch" },
-    { id: 7, name: "Period 5", time: "1:50-2:40", type: "class" },
-    { id: 8, name: "Period 6", time: "2:40-3:30", type: "class" },
-    { id: 9, name: "Short Break", time: "3:30-3:45", type: "break" },
-    { id: 10, name: "Period 7", time: "3:45-4:30", type: "class" },
-    { id: 11, name: "Period 8", time: "4:30-5:15", type: "class" },
-  ];
-
-  const getBackendPeriod = (frontendId) => {
-    const mapping = { 1: 1, 2: 2, 4: 3, 5: 4, 7: 5, 8: 6, 10: 7, 11: 8 };
-    return mapping[frontendId] || null;
-  };
-
-  const getFrontendId = (backendPeriod) => {
-    const mapping = { 1: 1, 2: 2, 3: 4, 4: 5, 5: 7, 6: 8, 7: 10, 8: 11 };
-    return mapping[backendPeriod] || null;
-  };
+  const fallbackPeriods = Array.from({ length: 8 }, (_, i) => ({
+    periodNumber: i + 1,
+    startTime: "",
+    endTime: "",
+  }));
+  const periods = timetablePeriods.length > 0 ? timetablePeriods : fallbackPeriods;
 
   // Auth
   // Fetch basic data (unchanged)
@@ -85,6 +67,30 @@ const Timetable = () => {
         })),
       );
     });
+  }, []);
+
+  useEffect(() => {
+    const fetchPeriods = async () => {
+      try {
+        const res = await axios.get(`${API_BASE_URL}/api/admin/timetable-periods`);
+        const periodData = Array.isArray(res?.data?.data) ? res.data.data : [];
+        setTimetablePeriods(
+          periodData
+            .map((p) => ({
+              periodNumber: Number(p.id),
+              startTime: p.startTime || "",
+              endTime: p.endTime || "",
+            }))
+            .filter((p) => Number.isInteger(p.periodNumber))
+            .sort((a, b) => a.periodNumber - b.periodNumber),
+        );
+      } catch (err) {
+        console.error("Failed to load timetable periods", err);
+        setTimetablePeriods([]);
+      }
+    };
+
+    fetchPeriods();
   }, []);
 
   useEffect(() => {
@@ -113,9 +119,9 @@ const Timetable = () => {
 
   useEffect(() => {
     if (selectedSem) {
-      axios
-        .get(`${API_BASE_URL}/api/admin/timetable/semester/${selectedSem}`)
-        .then((res) => setTimetableData(res.data.data || []));
+      refreshTimetable(selectedSem);
+    } else {
+      setTimetableData([]);
     }
   }, [selectedSem]);
 
@@ -160,26 +166,33 @@ const Timetable = () => {
     fetchBuckets();
   }, [selectedSem]);
 
-  const handleCellClick = (day, periodId, type) => {
-    if (type !== "class" || !editMode || !selectedSem) return;
+  const handleCellClick = (day, periodNumber) => {
+    if (!editMode || !selectedSem) return;
 
-    setSelectedCell({ day, periodId });
+    setSelectedCell({ day, periodNumber });
     setAllocationMode(""); // reset mode
     setCustomCourseInput(""); // reset input
     setSelectedBucketId(""); // reset bucket
     setShowCourseModal(true); // open modal
   };
 
+  const refreshTimetable = async (semesterId = selectedSem) => {
+    if (!semesterId) return;
+    const res = await axios.get(
+      `${API_BASE_URL}/api/admin/timetable/semester/${semesterId}`,
+    );
+    setTimetableData(res.data.data || []);
+  };
+
   // Assign regular/manual course
   // 1. Handle Regular Course
   const handleCourseAssign = async (value) => {
     if (!selectedCell || !value) return;
-    const backendPeriod = getBackendPeriod(selectedCell.periodId);
 
     try {
       const payload = {
         dayOfWeek: selectedCell.day,
-        periodNumber: backendPeriod,
+        periodNumber: selectedCell.periodNumber,
         semesterId: +selectedSem,
         Deptid: +selectedDept,
         // If regular, send courseId. If manual, we handle differently or send null.
@@ -190,11 +203,11 @@ const Timetable = () => {
       // Point this to the new allocate API
       await axios.post(`${API_BASE_URL}/api/admin/timetable/entry`, payload);
 
-      refreshTimetable(); // Helper to reload data
+      await refreshTimetable(); // reload grid
       setShowCourseModal(false);
       alert("Assignment successful!");
     } catch (err) {
-      alert(err.response?.data?.message || "Conflict detected!");
+      alert(err.response?.data?.message || err.message || "Assignment failed");
     }
   };
 
@@ -202,13 +215,10 @@ const Timetable = () => {
   const handleAssignBucket = async () => {
     if (!selectedBucketId) return alert("Please select a bucket");
 
-    const backendPeriod = getBackendPeriod(selectedCell.periodId);
-    if (!backendPeriod) return alert("Invalid period");
-
     try {
       const payload = {
         dayOfWeek: selectedCell.day,
-        periodNumber: backendPeriod,
+        periodNumber: selectedCell.periodNumber,
         semesterId: +selectedSem,
         Deptid: +selectedDept,
         bucketId: +selectedBucketId,
@@ -216,10 +226,7 @@ const Timetable = () => {
 
       await axios.post(ALLOCATE_URL, payload);
 
-      const res = await axios.get(
-        `${API_BASE_URL}/api/admin/timetable/semester/${selectedSem}`,
-      );
-      setTimetableData(res.data.data || []);
+      await refreshTimetable();
       setShowCourseModal(false);
       alert("All courses from the bucket assigned successfully!");
     } catch (err) {
@@ -229,14 +236,9 @@ const Timetable = () => {
   };
 
   // Delete all entries in a cell (soft delete)
-  const handleRemoveCourses = async (day, periodId) => {
-    const frontendPeriod = periodId;
-    const backendPeriod = getBackendPeriod(frontendPeriod);
-
-    if (!backendPeriod) return alert("Invalid period");
-
+  const handleRemoveCourses = async (day, periodNumber) => {
     const entriesToDelete = timetableData.filter(
-      (e) => e.dayOfWeek === day && e.periodNumber === backendPeriod,
+      (e) => e.dayOfWeek === day && e.periodNumber === periodNumber,
     );
 
     if (entriesToDelete.length === 0) return;
@@ -266,40 +268,31 @@ const Timetable = () => {
   };
 
   // Render period header and cell
-  const renderPeriodHeader = (period) => {
-    const icons = {
-      break: <Coffee className="w-4 h-4" />,
-      lunch: <UtensilsCrossed className="w-4 h-4" />,
-      class: <Clock className="w-4 h-4" />,
-    };
+  const formatTime = (startTime, endTime) => {
+    if (!startTime || !endTime) return "Time not set";
+    return `${startTime} - ${endTime}`;
+  };
 
+  const renderPeriodHeader = (period) => {
     return (
       <div className="p-2 text-center font-medium border-r bg-gray-50 text-gray-500 min-h-[96px] flex flex-col justify-center">
         <div className="flex items-center justify-center gap-1 mb-1">
-          {icons[period.type]}
-          <span className="text-xs">{period.name}</span>
+          <Clock className="w-4 h-4" />
+          <span className="text-xs">{`Period ${period.periodNumber}`}</span>
         </div>
-        <div className="text-xs">{period.time}</div>
+        <div className="text-xs">{formatTime(period.startTime, period.endTime)}</div>
       </div>
     );
   };
 
   const renderCell = (day, period) => {
-    if (period.type !== "class") {
-      return (
-        <div className="p-2 h-24 bg-gray-100 text-center text-gray-500 border-r flex items-center justify-center">
-          {period.type === "break" ? "Coffee" : "Food"}
-        </div>
-      );
-    }
-
     // Find ALL entries for this day + period
     const entries = timetableData.filter(
-      (e) => e.dayOfWeek === day && getFrontendId(e.periodNumber) === period.id,
+      (e) => e.dayOfWeek === day && e.periodNumber === period.periodNumber,
     );
 
     const selected =
-      selectedCell?.day === day && selectedCell?.periodId === period.id;
+      selectedCell?.day === day && selectedCell?.periodNumber === period.periodNumber;
 
     return (
       <div
@@ -308,7 +301,7 @@ const Timetable = () => {
         } ${selected ? "bg-indigo-100 ring-2 ring-indigo-500" : ""} ${
           entries.length > 0 ? "bg-white" : "bg-gray-50"
         }`}
-        onClick={() => handleCellClick(day, period.id, period.type)}
+        onClick={() => handleCellClick(day, period.periodNumber)}
       >
         {entries.length > 0 ? (
           <div className="h-full flex flex-col justify-between">
@@ -338,7 +331,7 @@ const Timetable = () => {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleRemoveCourses(day, period.id);
+                  handleRemoveCourses(day, period.periodNumber);
                 }}
                 className="absolute top-1 right-1 p-1 rounded-full bg-red-100 text-red-600 hover:bg-red-200"
               >
@@ -499,13 +492,19 @@ const Timetable = () => {
             </h2>
           </div>
           <div className="overflow-x-auto">
-            <div className="grid grid-cols-[140px_repeat(11,minmax(140px,1fr))] min-w-[1600px]">
+            <div
+              className="grid"
+              style={{
+                gridTemplateColumns: `140px repeat(${periods.length}, minmax(140px, 1fr))`,
+                minWidth: `${Math.max(980, 140 + periods.length * 140)}px`,
+              }}
+            >
               <div className="sticky top-0 left-0 bg-gray-100 z-30 p-4 font-bold border-r border-b">
                 Day/Period
               </div>
               {periods.map((p) => (
                 <div
-                  key={p.id}
+                  key={p.periodNumber}
                   className="sticky top-0 bg-gray-50 z-20 border-b border-r"
                 >
                   {renderPeriodHeader(p)}
@@ -517,7 +516,7 @@ const Timetable = () => {
                     {day}
                   </div>
                   {periods.map((p) => (
-                    <div key={`${day}-${p.id}`} className="border-b border-r">
+                    <div key={`${day}-${p.periodNumber}`} className="border-b border-r">
                       {renderCell(day, p)}
                     </div>
                   ))}
@@ -552,7 +551,7 @@ const Timetable = () => {
               Assigning:{" "}
               <strong>
                 {selectedCell?.day} •{" "}
-                {periods.find((p) => p.id === selectedCell?.periodId)?.name}
+                {selectedCell?.periodNumber ? `Period ${selectedCell.periodNumber}` : ""}
               </strong>
             </p>
 
@@ -681,6 +680,6 @@ const Timetable = () => {
       )}
     </div>
   );
-};;
+};
 
 export default Timetable;

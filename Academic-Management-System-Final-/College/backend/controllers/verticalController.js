@@ -90,8 +90,8 @@ export const allocateTimetableSlot = catchAsync(async (req, res) => {
     return res.status(400).json({ status: "error", message: "Invalid dayOfWeek" });
   }
 
-  if (periodNumber < 1 || periodNumber > 8) {
-    return res.status(400).json({ status: "error", message: "Period must be 1-8" });
+  if (periodNumber < 1 || periodNumber > 12) {
+    return res.status(400).json({ status: "error", message: "Period must be 1-12" });
   }
 
   const transaction = await sequelize.transaction();
