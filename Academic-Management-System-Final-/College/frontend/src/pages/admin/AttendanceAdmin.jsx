@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import axios from "axios";
 import { toast, ToastContainer } from "react-toastify";
@@ -339,6 +339,31 @@ export default function AdminAttendanceGenerator() {
     OD: students.filter((s) => s.status === "OD").length,
   };
 
+  const groupedStudents = useMemo(() => {
+    const groups = students.reduce((acc, student) => {
+      const sectionName = student.sectionName || "Unassigned";
+      if (!acc[sectionName]) {
+        acc[sectionName] = {
+          sectionName,
+          staffName: student.staffName || "Not Assigned",
+          students: [],
+        };
+      }
+      if (!acc[sectionName].staffName || acc[sectionName].staffName === "Not Assigned") {
+        acc[sectionName].staffName = student.staffName || acc[sectionName].staffName;
+      }
+      acc[sectionName].students.push(student);
+      return acc;
+    }, {});
+
+    return Object.values(groups)
+      .sort((a, b) => a.sectionName.localeCompare(b.sectionName))
+      .map((group) => ({
+        ...group,
+        students: [...group.students].sort((x, y) => (x.rollnumber || "").localeCompare(y.rollnumber || "")),
+      }));
+  }, [students]);
+
   return (
     <div className="min-h-screen bg-slate-100 px-4 py-6 md:px-8">
       <div className="mx-auto max-w-7xl space-y-6">
@@ -523,32 +548,41 @@ export default function AdminAttendanceGenerator() {
                   </tr>
                 </thead>
                 <tbody>
-                  {students.map((s) => (
-                    <tr key={s.rollnumber} className="border-b border-slate-100 hover:bg-slate-50">
-                      <td className="px-6 py-4 text-sm font-semibold text-slate-700">{s.rollnumber}</td>
-                      <td className="px-6 py-4 text-sm text-slate-900">{s.name}</td>
-                      <td className="px-6 py-4 text-center">
-                        <div className="flex justify-center gap-2">
-                          {[
-                            { key: "P", active: "bg-emerald-500 border-emerald-500 text-white" },
-                            { key: "A", active: "bg-rose-500 border-rose-500 text-white" },
-                            { key: "OD", active: "bg-sky-500 border-sky-500 text-white" },
-                          ].map((st) => (
-                            <button
-                              key={st.key}
-                              onClick={() => updateStatus(s.rollnumber, st.key)}
-                              className={`h-9 min-w-[42px] rounded-lg border text-xs font-semibold transition ${
-                                s.status === st.key
-                                  ? st.active
-                                  : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700"
-                              }`}
-                            >
-                              {st.key}
-                            </button>
-                          ))}
-                        </div>
-                      </td>
-                    </tr>
+                  {groupedStudents.map((group) => (
+                    <React.Fragment key={group.sectionName}>
+                      <tr className="bg-slate-50">
+                        <td colSpan="3" className="px-6 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+                          Section: {group.sectionName} | Staff: {group.staffName || "Not Assigned"}
+                        </td>
+                      </tr>
+                      {group.students.map((s) => (
+                        <tr key={s.rollnumber} className="border-b border-slate-100 hover:bg-slate-50">
+                          <td className="px-6 py-4 text-sm font-semibold text-slate-700">{s.rollnumber}</td>
+                          <td className="px-6 py-4 text-sm text-slate-900">{s.name}</td>
+                          <td className="px-6 py-4 text-center">
+                            <div className="flex justify-center gap-2">
+                              {[
+                                { key: "P", active: "bg-emerald-500 border-emerald-500 text-white" },
+                                { key: "A", active: "bg-rose-500 border-rose-500 text-white" },
+                                { key: "OD", active: "bg-sky-500 border-sky-500 text-white" },
+                              ].map((st) => (
+                                <button
+                                  key={st.key}
+                                  onClick={() => updateStatus(s.rollnumber, st.key)}
+                                  className={`h-9 min-w-[42px] rounded-lg border text-xs font-semibold transition ${
+                                    s.status === st.key
+                                      ? st.active
+                                      : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700"
+                                  }`}
+                                >
+                                  {st.key}
+                                </button>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </React.Fragment>
                   ))}
 
                   {students.length === 0 && (

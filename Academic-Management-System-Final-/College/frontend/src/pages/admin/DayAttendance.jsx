@@ -168,6 +168,10 @@ export default function DayAttendance() {
 
   const handlePeriodSelect = async (courses, date, periodNumber) => {
     if (!courses || courses.length === 0) return;
+    if (!selectedDepartment || !selectedSemester) {
+      toast.error("Please select department and semester");
+      return;
+    }
 
     const primaryCourse = courses[0];
     const { courseId, sectionId, courseTitle, courseCode } = primaryCourse;
@@ -175,12 +179,24 @@ export default function DayAttendance() {
     try {
       const dayOfWeek = new Date(date).toLocaleDateString("en-US", { weekday: "short" }).toUpperCase();
       const res = await axios.get(
-        `${API_BASE_URL}/api/admin/attendance/students/${courseId}/${sectionId || "all"}/${dayOfWeek}/${periodNumber}`,
-        { params: { date } }
+        `${API_BASE_URL}/api/admin/attendance/department-view/${dayOfWeek}/${periodNumber}`,
+        {
+          params: {
+            date,
+            Deptid: selectedDepartment,
+            semesterId: selectedSemester,
+          },
+        }
       );
 
       if (res.data.data) {
-        setStudents(res.data.data.map((s) => ({ ...s, status: s.status || "P" })));
+        setStudents(
+          res.data.data.map((s) => ({
+            ...s,
+            courseId: s.markedCourseId || courseId,
+            status: s.status || "P",
+          }))
+        );
         setSelectedSlot({
           date,
           periodNumber,
