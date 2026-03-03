@@ -1,6 +1,7 @@
 import db from "../models/index.js";
 import catchAsync from "../utils/catchAsync.js";
 import { Op } from "sequelize";
+import { getOrSetCache, makeCacheKey, ttl } from "../utils/cache.js";
 
 const { 
   StudentDetails, 
@@ -14,6 +15,7 @@ const {
   Department,
   sequelize 
 } = db;
+const markCache = (res) => (status) => res.set("X-Cache", status);
 
 // Helper to safely get current user ID (handles both 'id' from JWT and 'userId' naming)
 const getCurrentUserId = (req) => req.user?.id || req.user?.userId;
@@ -166,11 +168,17 @@ export const getStudentEnrolledCourses = catchAsync(async (req, res) => {
  * Distinct list of branches from Batch table
  */
 export const getBranches = catchAsync(async (req, res) => {
-  const branches = await Batch.findAll({
-    attributes: [[sequelize.fn('DISTINCT', sequelize.col('branch')), 'branch']],
-    where: { isActive: 'YES' },
-    raw: true
-  });
+  const key = makeCacheKey("filters:student:branches", { query: req.query || {} });
+  const branches = await getOrSetCache(
+    key,
+    () =>
+      Batch.findAll({
+        attributes: [[sequelize.fn("DISTINCT", sequelize.col("branch")), "branch"]],
+        where: { isActive: "YES" },
+        raw: true,
+      }),
+    { ttlSeconds: ttl.medium, onStatus: markCache(res) }
+  );
   res.status(200).json({ status: "success", data: branches.map(b => b.branch) });
 });
 
@@ -178,12 +186,18 @@ export const getBranches = catchAsync(async (req, res) => {
  * Distinct list of semesters
  */
 export const getSemesters = catchAsync(async (req, res) => {
-  const semesters = await Semester.findAll({
-    attributes: [[sequelize.fn('DISTINCT', sequelize.col('semesterNumber')), 'semesterNumber']],
-    where: { isActive: 'YES' },
-    order: [['semesterNumber', 'ASC']],
-    raw: true
-  });
+  const key = makeCacheKey("filters:student:semesters", { query: req.query || {} });
+  const semesters = await getOrSetCache(
+    key,
+    () =>
+      Semester.findAll({
+        attributes: [[sequelize.fn("DISTINCT", sequelize.col("semesterNumber")), "semesterNumber"]],
+        where: { isActive: "YES" },
+        order: [["semesterNumber", "ASC"]],
+        raw: true,
+      }),
+    { ttlSeconds: ttl.medium, onStatus: markCache(res) }
+  );
   res.status(200).json({ status: "success", data: semesters.map(s => `Semester ${s.semesterNumber}`) });
 });
 
@@ -217,7 +231,12 @@ export const getBatches = catchAsync(async (req, res) => {
   const filter = { isActive: 'YES' };
   if (branch) filter.branch = branch;
 
-  const batches = await Batch.findAll({ where: filter });
+  const key = makeCacheKey("filters:student:batches", { branch: branch || null });
+  const batches = await getOrSetCache(
+    key,
+    () => Batch.findAll({ where: filter }),
+    { ttlSeconds: ttl.medium, onStatus: markCache(res) }
+  );
   res.status(200).json({ status: "success", data: batches });
 });
 

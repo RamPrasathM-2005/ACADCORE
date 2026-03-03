@@ -2,6 +2,7 @@
 import db from '../models/index.js';
 import catchAsync from '../utils/catchAsync.js';
 import { Op } from 'sequelize';
+import { getOrSetCache, invalidateCachePrefixes, makeCacheKey, ttl } from "../utils/cache.js";
 
 // Destructure models from db object
 const { 
@@ -17,6 +18,7 @@ const {
   StaffCourse, 
   User 
 } = db;
+const markCache = (res) => (status) => res.set("X-Cache", status);
 
 async function findStaffConflictForSlot({
   courseIds,
@@ -82,9 +84,15 @@ async function findStaffConflictForSlot({
 }
 
 export const getAllTimetableDepartments = catchAsync(async (req, res) => {
-  const departments = await Department.findAll({
-    attributes: [['Deptid', 'Deptid'], ['Deptacronym', 'deptCode'], 'Deptname']
-  });
+  const key = makeCacheKey("filters:timetable:departments", { query: req.query || {} });
+  const departments = await getOrSetCache(
+    key,
+    () =>
+      Department.findAll({
+        attributes: [["Deptid", "Deptid"], ["Deptacronym", "deptCode"], "Deptname"],
+      }),
+    { ttlSeconds: ttl.medium, onStatus: markCache(res) }
+  );
 
   res.status(200).json({
     status: 'success',
@@ -93,10 +101,16 @@ export const getAllTimetableDepartments = catchAsync(async (req, res) => {
 });
 
 export const getAllTimetableBatches = catchAsync(async (req, res) => {
-  const batches = await Batch.findAll({
-    where: { isActive: 'YES' },
-    attributes: ['batchId', 'degree', 'branch', 'batch', 'batchYears']
-  });
+  const key = makeCacheKey("filters:timetable:batches", { query: req.query || {} });
+  const batches = await getOrSetCache(
+    key,
+    () =>
+      Batch.findAll({
+        where: { isActive: "YES" },
+        attributes: ["batchId", "degree", "branch", "batch", "batchYears"],
+      }),
+    { ttlSeconds: ttl.medium, onStatus: markCache(res) }
+  );
 
   res.status(200).json({
     status: 'success',
@@ -269,6 +283,7 @@ export const createTimetableEntry = catchAsync(async (req, res) => {
     }
 
     await transaction.commit();
+    await invalidateCachePrefixes(["filters:timetable", "attendanceReports"]);
     res.status(201).json({ status: 'success', message: 'Allocation successful', data: createdEntries });
 
   } catch (error) {
@@ -316,6 +331,7 @@ export const updateTimetableEntry = catchAsync(async (req, res) => {
     }, { transaction });
 
     await transaction.commit();
+    await invalidateCachePrefixes(["filters:timetable", "attendanceReports"]);
     res.status(200).json({ status: 'success', message: 'Updated successfully' });
 
   } catch (error) {
@@ -339,6 +355,7 @@ export const deleteTimetableEntry = catchAsync(async (req, res) => {
     isActive: 'NO', 
     updatedBy: userEmail 
   });
+  await invalidateCachePrefixes(["filters:timetable", "attendanceReports"]);
 
   res.status(200).json({ status: 'success', message: 'Timetable entry deleted' });
 });
@@ -350,11 +367,17 @@ export const deleteTimetableEntry = catchAsync(async (req, res) => {
 export const getElectiveBucketsBySemester = catchAsync(async (req, res) => {
   const { semesterId } = req.params;
 
-  const buckets = await ElectiveBucket.findAll({
-    where: { semesterId },
-    attributes: ['bucketId', 'bucketNumber', 'bucketName', 'semesterId'],
-    order: [['bucketNumber', 'ASC']]
-  });
+  const key = makeCacheKey("filters:timetable:electiveBucketsBySemester", { semesterId });
+  const buckets = await getOrSetCache(
+    key,
+    () =>
+      ElectiveBucket.findAll({
+        where: { semesterId },
+        attributes: ["bucketId", "bucketNumber", "bucketName", "semesterId"],
+        order: [["bucketNumber", "ASC"]],
+      }),
+    { ttlSeconds: ttl.medium, onStatus: markCache(res) }
+  );
 
   res.status(200).json({ status: "success", data: buckets });
 });

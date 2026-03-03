@@ -1,10 +1,12 @@
 // controllers/departmentController.js
 import db from '../models/index.js';
+import { getOrSetCache, invalidateCachePrefixes, makeCacheKey, ttl } from "../utils/cache.js";
 
 // NOTE: If you renamed the define() name in your model to 'Department', use that.
 // If you kept it as 'Department', change the variable below.
 const Department = db.Department || db.Department;
 const { Company } = db;
+const markCache = (res) => (status) => res.set("X-Cache", status);
 
 /**
  * Helper: Normalize status string
@@ -35,10 +37,16 @@ const formatSequelizeError = (error) => {
  */
 export const getDepartments = async (req, res) => {
   try {
-    const rows = await Department.findAll({
-      attributes: ['Deptid', 'Deptname', 'Deptacronym'],
-      where: { status: 'Active' }
-    });
+    const key = makeCacheKey("departments:simple", { query: req.query || {} });
+    const rows = await getOrSetCache(
+      key,
+      () =>
+        Department.findAll({
+          attributes: ["Deptid", "Deptname", "Deptacronym"],
+          where: { status: "Active" },
+        }),
+      { ttlSeconds: ttl.medium, onStatus: markCache(res) }
+    );
 
     res.status(200).json({
       status: 'success',
@@ -58,17 +66,23 @@ export const getAllDepartments = async (req, res) => {
     const where = {};
     if (req.query.companyId) where.companyId = req.query.companyId;
 
-    const departments = await Department.findAll({
-      where,
-      attributes: ['Deptid', 'companyId', 'Deptname', 'Deptacronym'],
-      include: [
-        { 
-          model: Company, 
-          as: 'company',
-          attributes: ['companyId', 'companyName', 'companyAcr']
-        }
-      ]
-    });
+    const key = makeCacheKey("departments:all", { where });
+    const departments = await getOrSetCache(
+      key,
+      () =>
+        Department.findAll({
+          where,
+          attributes: ["Deptid", "companyId", "Deptname", "Deptacronym"],
+          include: [
+            {
+              model: Company,
+              as: "company",
+              attributes: ["companyId", "companyName", "companyAcr"],
+            },
+          ],
+        }),
+      { ttlSeconds: ttl.medium, onStatus: markCache(res) }
+    );
     res.json(departments);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch departments', details: error.message });
@@ -80,9 +94,15 @@ export const getAllDepartments = async (req, res) => {
  */
 export const getDepartmentById = async (req, res) => {
   try {
-    const department = await Department.findByPk(req.params.id, {
-      include: [{ model: Company, as: 'company' }]
-    });
+    const key = makeCacheKey("departments:byId", { id: req.params.id });
+    const department = await getOrSetCache(
+      key,
+      () =>
+        Department.findByPk(req.params.id, {
+          include: [{ model: Company, as: "company" }],
+        }),
+      { ttlSeconds: ttl.medium, onStatus: markCache(res) }
+    );
 
     if (!department) return res.status(404).json({ error: 'Department not found' });
     res.status(200).json(department);
@@ -110,6 +130,7 @@ export const createDepartment = async (req, res) => {
     };
     
     const department = await Department.create(payload);
+    await invalidateCachePrefixes(["departments", "attendanceReports", "filters"]);
     res.status(201).json(department);
   } catch (error) {
     const statusCode = error.name?.startsWith('Sequelize') ? 400 : 500;
@@ -139,6 +160,7 @@ export const updateDepartment = async (req, res) => {
     }
 
     const updatedDepartment = await Department.findByPk(req.params.id);
+    await invalidateCachePrefixes(["departments", "attendanceReports", "filters"]);
     res.status(200).json(updatedDepartment);
   } catch (error) {
     const statusCode = error.name?.startsWith('Sequelize') ? 400 : 500;
@@ -158,6 +180,7 @@ export const deleteDepartment = async (req, res) => {
       status: 'Inactive',
       updatedBy: req.body?.updatedBy || null,
     });
+    await invalidateCachePrefixes(["departments", "attendanceReports", "filters"]);
 
     res.json({ message: 'Department marked as inactive successfully' });
   } catch (error) {
