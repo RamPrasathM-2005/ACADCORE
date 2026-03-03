@@ -68,7 +68,7 @@ export const getDepartments = async (req, res) => {
         Deptacronym: batch.branch
       },
       attributes: [
-        ['Deptid', 'departmentId'], 
+        'departmentId',
         ['Deptname', 'departmentName'], 
         ['Deptacronym', 'departmentCode']
       ]
@@ -146,7 +146,7 @@ export const getSubjectWiseAttendance = async (req, res) => {
     const timetableCourseRows = await Timetable.findAll({
       where: {
         semesterId,
-        Deptid: normalizedDeptId,
+        departmentId: normalizedDeptId,
         isActive: 'YES',
         courseId: { [Op.ne]: null }
       },
@@ -171,7 +171,7 @@ export const getSubjectWiseAttendance = async (req, res) => {
     const timetableSlotRows = await Timetable.findAll({
       where: {
         semesterId,
-        Deptid: normalizedDeptId,
+        departmentId: normalizedDeptId,
         courseId: { [Op.in]: orderedCourseIds },
         isActive: 'YES'
       },
@@ -309,10 +309,10 @@ export const getUnmarkedAttendanceReport = async (req, res) => {
       where: {
         semesterId,
         courseId: { [Op.in]: courseIds },
-        ...(normalizedDeptId ? { Deptid: normalizedDeptId } : {}),
+        ...(normalizedDeptId ? { departmentId: normalizedDeptId } : {}),
         isActive: 'YES'
       },
-      attributes: ['courseId', 'sectionId', 'Deptid', 'dayOfWeek', 'periodNumber'],
+      attributes: ['courseId', 'sectionId', 'departmentId', 'dayOfWeek', 'periodNumber'],
       include: [
         { model: Section, required: false, attributes: ['sectionId', 'sectionName'] }
       ]
@@ -357,9 +357,9 @@ export const getUnmarkedAttendanceReport = async (req, res) => {
     const teacherAssignments = await StaffCourse.findAll({
       where: {
         courseId: { [Op.in]: courseIds },
-        ...(normalizedDeptId ? { Deptid: normalizedDeptId } : {})
+        ...(normalizedDeptId ? { departmentId: normalizedDeptId } : {})
       },
-      attributes: ['Userid', 'courseId', 'sectionId', 'Deptid'],
+      attributes: ['Userid', 'courseId', 'sectionId', 'departmentId'],
       include: [
         { model: User, required: false, attributes: ['userId', 'userName', 'userNumber'] },
         { model: Section, required: false, attributes: ['sectionId', 'sectionName'] }
@@ -439,7 +439,7 @@ export const getUnmarkedAttendanceReport = async (req, res) => {
             Section: teacher.sectionName || sectionName,
             StaffName: teacher.staffName,
             StaffNumber: teacher.staffNumber,
-            Deptid: slot.Deptid
+            departmentId: slot.departmentId
           });
         }
       }
@@ -457,3 +457,4 @@ export const getUnmarkedAttendanceReport = async (req, res) => {
     res.status(500).json({ success: false, error: "Internal server error" });
   }
 };
+

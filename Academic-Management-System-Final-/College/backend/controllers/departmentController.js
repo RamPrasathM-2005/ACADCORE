@@ -36,7 +36,7 @@ const formatSequelizeError = (error) => {
 export const getDepartments = async (req, res) => {
   try {
     const rows = await Department.findAll({
-      attributes: ['Deptid', 'Deptname', 'Deptacronym'],
+      attributes: ['departmentId', 'Deptname', 'Deptacronym'],
       where: { status: 'Active' }
     });
 
@@ -60,7 +60,7 @@ export const getAllDepartments = async (req, res) => {
 
     const departments = await Department.findAll({
       where,
-      attributes: ['Deptid', 'companyId', 'Deptname', 'Deptacronym'],
+      attributes: ['departmentId', 'companyId', 'Deptname', 'Deptacronym'],
       include: [
         { 
           model: Company, 
@@ -98,8 +98,8 @@ export const getDepartmentById = async (req, res) => {
 export const createDepartment = async (req, res) => {
   try {
     const payload = {
-      // Map JSON "departmentId" to DB "Deptid"
-      Deptid: req.body.departmentId,      
+      // Map JSON "departmentId" to DB "departmentId"
+      departmentId: req.body.departmentId,      
       // Map JSON "departmentName" to DB "Deptname"
       Deptname: req.body.departmentName,  
       // Map JSON "departmentAcr" to DB "Deptacronym"
@@ -131,7 +131,7 @@ export const updateDepartment = async (req, res) => {
     };
 
     const [affectedCount] = await Department.update(payload, {
-      where: { Deptid: req.params.id } 
+      where: { departmentId: req.params.id } 
     });
 
     if (affectedCount === 0) {

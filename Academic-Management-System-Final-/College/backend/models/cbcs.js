@@ -3,7 +3,7 @@ export default (sequelize, DataTypes) => {
   const CBCS = sequelize.define('CBCS', {
     cbcs_id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
     batchId: { type: DataTypes.INTEGER, allowNull: false },
-    Deptid: { type: DataTypes.INTEGER, allowNull: false },
+    departmentId: { type: DataTypes.INTEGER, allowNull: false },
     semesterId: { type: DataTypes.INTEGER, allowNull: false },
   }, { tableName: 'CBCS', timestamps: true });
 
@@ -22,7 +22,7 @@ export default (sequelize, DataTypes) => {
     }
     
     if (models.Department) {
-      CBCS.belongsTo(models.Department, { foreignKey: 'Deptid' });
+      CBCS.belongsTo(models.Department, { foreignKey: 'departmentId' });
     }
     
     if (models.Semester) {

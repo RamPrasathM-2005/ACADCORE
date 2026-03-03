@@ -29,7 +29,7 @@ SELECT
   b.batchId
 FROM student_details sd
 JOIN departments d
-  ON d.Deptid = sd.departmentId
+  ON d.departmentId = sd.departmentId
 JOIN Batch b
   ON CAST(b.batch AS UNSIGNED) = sd.batch
  AND UPPER(CONVERT(b.branch USING utf8mb4)) COLLATE utf8mb4_unicode_ci =

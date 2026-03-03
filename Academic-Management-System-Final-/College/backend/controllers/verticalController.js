@@ -10,19 +10,19 @@ const {
 
 // GET regulation for a batch + department
 export const getRegulationByBatchAndDept = catchAsync(async (req, res) => {
-  const { batchId, Deptid } = req.query;
+  const { batchId, departmentId } = req.query;
 
-  if (!batchId || !Deptid) {
-    return res.status(400).json({ status: "error", message: "batchId and Deptid are required" });
+  if (!batchId || !departmentId) {
+    return res.status(400).json({ status: "error", message: "batchId and departmentId are required" });
   }
 
   const batch = await Batch.findOne({
     where: { batchId },
     include: [{
       model: Regulation,
-      where: { Deptid, isActive: 'YES' },
+      where: { departmentId, isActive: 'YES' },
       required: true,
-      attributes: ['regulationId', 'regulationYear', 'Deptid']
+      attributes: ['regulationId', 'regulationYear', 'departmentId']
     }]
   });
 
@@ -77,11 +77,11 @@ export const getVerticalCourses = catchAsync(async (req, res) => {
 
 // Allocate Slot (Complex Logic)
 export const allocateTimetableSlot = catchAsync(async (req, res) => {
-  const { dayOfWeek, periodNumber, course, bucketId, semesterId, Deptid } = req.body;
+  const { dayOfWeek, periodNumber, course, bucketId, semesterId, departmentId } = req.body;
   const userName = req.user?.userName || 'admin';
 
   // 1. Basic Validation
-  if (!dayOfWeek || !periodNumber || !semesterId || !Deptid) {
+  if (!dayOfWeek || !periodNumber || !semesterId || !departmentId) {
     return res.status(400).json({ status: "error", message: "Required fields missing" });
   }
 
@@ -101,7 +101,7 @@ export const allocateTimetableSlot = catchAsync(async (req, res) => {
     await Timetable.destroy({
       where: {
         semesterId,
-        Deptid,
+        departmentId,
         dayOfWeek: dayOfWeek.toUpperCase(),
         periodNumber
       },
@@ -129,7 +129,7 @@ export const allocateTimetableSlot = catchAsync(async (req, res) => {
             courseId: ebc.Course.courseId,
             dayOfWeek: dayOfWeek.toUpperCase(),
             periodNumber,
-            Deptid,
+            departmentId,
             createdBy: userName
           });
         }
@@ -150,7 +150,7 @@ export const allocateTimetableSlot = catchAsync(async (req, res) => {
         courseId: targetCourse.courseId || targetCourse.regCourseId,
         dayOfWeek: dayOfWeek.toUpperCase(),
         periodNumber,
-        Deptid,
+        departmentId,
         createdBy: userName
       });
     }
@@ -161,7 +161,7 @@ export const allocateTimetableSlot = catchAsync(async (req, res) => {
         courseId: null,
         dayOfWeek: dayOfWeek.toUpperCase(),
         periodNumber,
-        Deptid,
+        departmentId,
         createdBy: userName
       });
     }
@@ -183,3 +183,4 @@ export const allocateTimetableSlot = catchAsync(async (req, res) => {
     res.status(400).json({ status: "error", message: error.message });
   }
 });
+

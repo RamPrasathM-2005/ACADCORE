@@ -224,7 +224,7 @@ export async function getStudentsForPeriod(req, res, next) {
           { model: Semester, required: true, attributes: ['semesterNumber'] },
           { model: Section, required: false, attributes: ['sectionName'] }
         ],
-        attributes: ['Deptid', 'sectionId', 'semesterId']
+        attributes: ['departmentId', 'sectionId', 'semesterId']
       });
 
       const semesterNumber = slot?.Semester?.semesterNumber;
@@ -235,10 +235,10 @@ export async function getStudentsForPeriod(req, res, next) {
         sectionName = sectionRow?.sectionName || null;
       }
 
-      if (slot?.Deptid && semesterNumber) {
+      if (slot?.departmentId && semesterNumber) {
         const roster = await StudentDetails.findAll({
           where: {
-            departmentId: slot.Deptid,
+            departmentId: slot.departmentId,
             semester: String(semesterNumber),
             ...(sectionName ? { section: sectionName } : {})
           },
@@ -445,7 +445,7 @@ export async function markAttendance(req, res, next) {
         periodNumber,
         attendanceDate: date,
         status: att.status,
-        Deptid: deptId,
+        departmentId: deptId,
         updatedBy: 'staff'
       }, { transaction: t });
 
@@ -485,3 +485,4 @@ export const getCourseWiseAttendance = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+

@@ -18,6 +18,7 @@ import ManageSemesters from './pages/admin/ManageSemesters/ManageSemsters';
 import ManageCourses from './pages/admin/ManageCourses/ManageCourses';
 import ManageStaff from './pages/admin/ManageStaffs/ManageStaff';
 import ManageStudents from './pages/admin/ManageStudents/ManageStudents';
+import UpdateStudentSem from './pages/admin/ManageStudents/UpdateStudentSem';
 import Timetable from './pages/admin/Timetable';
 import ManageRegulations from './pages/admin/ManageRegulations';
 import OverallConsolidatedMarks from './pages/admin/OverallConsolidatedMarks';
@@ -154,6 +155,7 @@ const routes = [
       { path: 'manage-courses', element: <ManageCourses /> },
       { path: 'manage-staff', element: <ManageStaff /> },
       { path: 'manage-students', element: <ManageStudents /> },
+      { path: 'semester-upgrade', element: <UpdateStudentSem /> },
       { path: 'timetable', element: <Timetable /> },
       {path: 'periods', element: <PeriodManager /> },
       { path: 'consolidated-marks', element: <OverallConsolidatedMarks /> },

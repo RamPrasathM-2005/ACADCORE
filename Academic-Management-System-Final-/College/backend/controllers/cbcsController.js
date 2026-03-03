@@ -17,10 +17,10 @@ const {
  */
 export const getCoursesByBatchDeptSemester = async (req, res) => {
   try {
-    const { Deptid, batchId, semesterId } = req.query;
+    const { departmentId, batchId, semesterId } = req.query;
 
-    if (!Deptid || !batchId || !semesterId) {
-      return res.status(400).json({ error: "Deptid, batchId and semesterId are required" });
+    if (!departmentId || !batchId || !semesterId) {
+      return res.status(400).json({ error: "departmentId, batchId and semesterId are required" });
     }
 
     // 1. Fetch Courses with Bucket Mapping
@@ -96,13 +96,13 @@ export const getCoursesByBatchDeptSemester = async (req, res) => {
 export const createCbcs = async (req, res) => {
   const t = await sequelize.transaction();
   try {
-    const { Deptid, batchId, semesterId, createdBy, subjects, total_students, type } = req.body;
+    const { departmentId, batchId, semesterId, createdBy, subjects, total_students, type } = req.body;
 
-    const dept = await Department.findByPk(Deptid, { transaction: t });
+    const dept = await Department.findByPk(departmentId, { transaction: t });
     const batch = await Batch.findByPk(batchId, { transaction: t });
     const semester = await Semester.findByPk(semesterId, { transaction: t });
 
-    if (!dept) throw new Error(`Invalid department id: ${Deptid}`);
+    if (!dept) throw new Error(`Invalid department id: ${departmentId}`);
     if (!batch || batch.isActive !== 'YES') throw new Error(`Invalid/inactive batch id: ${batchId}`);
     if (!semester || semester.isActive !== 'YES') throw new Error(`Invalid/inactive semester id: ${semesterId}`);
 
@@ -115,11 +115,11 @@ export const createCbcs = async (req, res) => {
     const deptAcr = String(dept.Deptacronym || '').trim().toUpperCase();
     const deptName = String(dept.Deptname || '').trim().toUpperCase();
     if (batchBranch !== deptAcr && batchBranch !== deptName) {
-      throw new Error(`Batch ${batchId} does not belong to department ${Deptid}`);
+      throw new Error(`Batch ${batchId} does not belong to department ${departmentId}`);
     }
 
     const cbcs = await CBCS.create({
-      batchId, Deptid, semesterId, 
+      batchId, departmentId, semesterId, 
       total_students: total_students || 0, 
       type: type || 'FCFS', 
       createdBy
@@ -188,7 +188,7 @@ export const getAllCbcs = async (req, res) => {
       const plain = row.get({ plain: true });
       return {
         cbcs_id: plain.cbcs_id,
-        Deptid: plain.Deptid,
+        departmentId: plain.departmentId,
         batchId: plain.batchId,
         semesterId: plain.semesterId,
         complete: plain.complete,
@@ -244,7 +244,7 @@ export const getStudentCbcsSelection = async (req, res) => {
     const { regno, batchId, deptId, semesterId } = req.query;
 
     const cbcs = await CBCS.findOne({
-      where: { batchId, Deptid: deptId, semesterId },
+      where: { batchId, departmentId: deptId, semesterId },
       include: [{ model: Department }, { model: Batch }, { model: Semester }]
     });
 
@@ -605,3 +605,4 @@ export const manualFinalizeCbcs = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+

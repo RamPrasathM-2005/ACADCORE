@@ -47,6 +47,7 @@ const AdminSidebar = () => {
     { to: "/admin/manage-courses", icon: Library, label: "Manage Courses" },
     { to: "/admin/manage-staff", icon: UserCog, label: "Allocate Staff to Course" },
     { to: "/admin/manage-students", icon: UserRoundCheck, label: "Allocate Students to Staff" },
+    { to: "/admin/semester-upgrade", icon: CalendarDays, label: "Semester Upgrade" },
     { to: "/admin/student-staff-mapping", icon: Network, label: "Staff Course Mapping" },
     { to: "/admin/student-course-mapping", icon: Route, label: "Student Course Mapping" },
     { to: "/admin/timetable", icon: CalendarClock, label: "Timetable" },

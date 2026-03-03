@@ -6,7 +6,7 @@ export default  (sequelize, DataTypes) => {
     sectionId: { type: DataTypes.INTEGER, allowNull: true },
     dayOfWeek: { type: DataTypes.ENUM('MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'), allowNull: false },
     periodNumber: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 1, max: 12 } },
-    Deptid: { type: DataTypes.INTEGER, allowNull: false },
+    departmentId: { type: DataTypes.INTEGER, allowNull: false },
     semesterId: { type: DataTypes.INTEGER, allowNull: false },
     isActive: { type: DataTypes.ENUM('YES', 'NO'), defaultValue: 'YES' },
     createdBy: { type: DataTypes.STRING(150) },
@@ -14,7 +14,7 @@ export default  (sequelize, DataTypes) => {
   }, { tableName: 'Timetable', timestamps: true, createdAt: 'createdDate', updatedAt: 'updatedDate' });
 
   Timetable.associate = (models) => {
-    Timetable.belongsTo(models.Department, { foreignKey: 'Deptid' });
+    Timetable.belongsTo(models.Department, { foreignKey: 'departmentId' });
     Timetable.belongsTo(models.Semester, { foreignKey: 'semesterId' });
     Timetable.belongsTo(models.Course, { foreignKey: 'courseId' });
     Timetable.belongsTo(models.Section, { foreignKey: 'sectionId' });
@@ -37,3 +37,4 @@ export default  (sequelize, DataTypes) => {
 
   return Timetable;
 };
+

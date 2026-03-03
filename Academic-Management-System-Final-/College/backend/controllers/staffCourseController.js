@@ -34,7 +34,7 @@ export const getUsers = catchAsync(async (req, res) => {
       { 
         model: Department, 
         as: 'department', 
-        attributes: ['Deptname', 'Deptid'] 
+        attributes: ['Deptname', 'departmentId'] 
       },
       // Try to get Employee details for better names if available
       {
@@ -128,12 +128,12 @@ export const allocateStaffToCourse = catchAsync(async (req, res) => {
     }
 
     // 3. Create Allocation
-    // Note: Model uses 'Userid' and 'Deptid' (capitalized)
+    // Note: Model uses 'Userid' and 'departmentId' (capitalized)
     const allocation = await StaffCourse.create({
       Userid,
       courseId,
       sectionId,
-      Deptid: departmentId, 
+      departmentId: departmentId, 
       createdBy: userName,
       updatedBy: userName
     }, { transaction });
@@ -195,7 +195,7 @@ export const updateStaffAllocation = catchAsync(async (req, res) => {
           Userid, 
           courseId, 
           sectionId, 
-          Deptid: departmentId, 
+          departmentId: departmentId, 
           updatedBy: userName 
         }, { transaction });
         

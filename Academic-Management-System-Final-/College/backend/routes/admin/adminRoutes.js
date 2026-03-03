@@ -53,6 +53,8 @@ import {
   getSemesters,
   getBatches,
   getStudentsByCourseAndSection,
+  getSemesterUpgradeBatches,
+  upgradeSemesterByBatchAndDepartment,
 } from "../../controllers/studentController.js";
 import {
   getAllBatches,
@@ -180,6 +182,8 @@ router.route("/students").post(requireAuth, addStudent).get(requireAuth, getAllS
 router.get("/students/branches", requireAuth, getBranches);
 router.get("/students/semesters", requireAuth, getSemesters);
 router.get("/students/batches", requireAuth, getBatches);
+router.get("/students/semester-upgrade-batches", requireAuth, getSemesterUpgradeBatches);
+router.post("/students/semester-upgrade", requireAuth, upgradeSemesterByBatchAndDepartment);
 router.get("/students/enrolled-courses", requireAuth, getStudentsByCourseAndSection);
 router.route("/students/:rollNumber").get(requireAuth, getStudentByRollNumber).put(requireAuth, updateStudent).delete(requireAuth, deleteStudent);
 router.get("/students/:rollNumber/enrolled-courses", requireAuth, getStudentEnrolledCourses);

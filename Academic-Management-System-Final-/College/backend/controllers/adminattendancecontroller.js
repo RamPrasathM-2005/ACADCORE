@@ -63,21 +63,21 @@ async function getInternalAdminUser(authUser) {
  */
 export async function getTimetableAdmin(req, res, next) {
   try {
-    const { startDate, endDate, degree, batch, branch, Deptid, semesterId } = req.query;
+    const { startDate, endDate, degree, batch, branch, departmentId, semesterId } = req.query;
 
     if (!startDate || !endDate) {
       return res.status(400).json({ status: "error", message: "Start and end dates required" });
     }
-    if (!degree || !batch || !branch || !Deptid || !semesterId) {
+    if (!degree || !batch || !branch || !departmentId || !semesterId) {
       return res.status(400).json({
         status: "error",
-        message: "Degree, batch, branch, Deptid, and semesterId are required",
+        message: "Degree, batch, branch, departmentId, and semesterId are required",
       });
     }
 
     const periods = await Timetable.findAll({
       where: {
-        Deptid: Deptid,
+        departmentId: departmentId,
         semesterId: semesterId,
         isActive: 'YES'
       },
@@ -146,7 +146,7 @@ export async function getTimetableAdmin(req, res, next) {
             courseCode: p.Course?.courseCode,
             sectionName: p.Section?.sectionName,
             semesterId: p.semesterId,
-            Deptid: p.Deptid,
+            departmentId: p.departmentId,
             departmentCode: p.department?.Deptacronym
           }));
       }
@@ -167,7 +167,7 @@ export async function getTimetableAdmin(req, res, next) {
 export async function getStudentsForPeriodAdmin(req, res, next) {
   try {
     const { courseId, sectionId, dayOfWeek, periodNumber } = req.params;
-    const { date = new Date().toISOString().split("T")[0], Deptid: queryDeptId, semesterId: querySemesterId, batch: queryBatch } = req.query;
+    const { date = new Date().toISOString().split("T")[0], departmentId: queryDeptId, semesterId: querySemesterId, batch: queryBatch } = req.query;
     const authDeptId = req.user.departmentId || null;
     const safeSectionId = Number.isNaN(parseInt(sectionId, 10)) ? null : parseInt(sectionId, 10);
     const normalizedDeptId = parseInt(queryDeptId, 10);
@@ -352,7 +352,7 @@ export async function markAttendanceAdmin(req, res, next) {
 
   try {
     const { courseId, sectionId, dayOfWeek, periodNumber } = req.params;
-    const { date, attendances, fullDay = false, Deptid: bodyDeptId, semesterId: bodySemesterId } = req.body;
+    const { date, attendances, fullDay = false, departmentId: bodyDeptId, semesterId: bodySemesterId } = req.body;
     const adminUser = await getInternalAdminUser(req.user);
     const adminUserId = adminUser.userId;
     const deptId = adminUser.departmentId || 1;
@@ -386,18 +386,18 @@ export async function markAttendanceAdmin(req, res, next) {
           isActive: "YES",
           ...(safeSectionId ? { sectionId: safeSectionId } : {})
         },
-        attributes: ["Deptid"]
+        attributes: ["departmentId"]
       });
-      effectiveDeptId = slot?.Deptid || null;
+      effectiveDeptId = slot?.departmentId || null;
     }
 
     if (effectiveDeptId) {
       const deptExists = await Department.findByPk(effectiveDeptId);
       if (!deptExists) {
-        throw new Error(`Invalid Deptid ${effectiveDeptId}. Department not found.`);
+        throw new Error(`Invalid departmentId ${effectiveDeptId}. Department not found.`);
       }
     } else {
-      throw new Error("Unable to resolve Deptid for attendance save. Please select a valid department.");
+      throw new Error("Unable to resolve departmentId for attendance save. Please select a valid department.");
     }
 
     const normalizedSemesterId = parseInt(bodySemesterId, 10);
@@ -409,7 +409,7 @@ export async function markAttendanceAdmin(req, res, next) {
     if (fullDay) {
       fullDaySlots = await Timetable.findAll({
         where: {
-          Deptid: effectiveDeptId,
+          departmentId: effectiveDeptId,
           semesterId: effectiveSemesterId,
           dayOfWeek: dayOfWeek,
           isActive: "YES",
@@ -499,7 +499,7 @@ export async function markAttendanceAdmin(req, res, next) {
             periodNumber: slot.periodNumber,
             attendanceDate: date,
             status: att.status,
-            Deptid: effectiveDeptId,
+            departmentId: effectiveDeptId,
             updatedBy: "admin"
           }, { transaction: t });
 
@@ -549,7 +549,7 @@ export async function markAttendanceAdmin(req, res, next) {
               courseId: effectiveCourseId,
               dayOfWeek: dayOfWeek,
               periodNumber: periodNumber,
-              Deptid: effectiveDeptId,
+              departmentId: effectiveDeptId,
               semesterId: effectiveSemesterId,
               isActive: "YES",
               sectionId: { [Op.ne]: null }
@@ -600,7 +600,7 @@ export async function markAttendanceAdmin(req, res, next) {
           periodNumber: periodNumber,
           attendanceDate: date,
           status: att.status,
-          Deptid: effectiveDeptId,
+          departmentId: effectiveDeptId,
           updatedBy: "admin"
         }, { transaction: t });
 
@@ -638,12 +638,12 @@ export async function markAttendanceAdmin(req, res, next) {
  * GET STUDENTS BY SEMESTER
  */
 export async function getStudentsBySemester(req, res) {
-  const { batch, semesterId, Deptid } = req.query;
+  const { batch, semesterId, departmentId } = req.query;
 
   try {
     const students = await StudentDetails.findAll({
       where: {
-        departmentId: Deptid,
+        departmentId: departmentId,
         batch: batch,
         semester: semesterId
       },
@@ -678,7 +678,7 @@ export async function getStudentsBySemester(req, res) {
 export async function markFullDayOD(req, res) {
   const t = await sequelize.transaction();
   try {
-    const { startDate, students, Deptid, semesterId, batch } = req.body;
+    const { startDate, students, departmentId, semesterId, batch } = req.body;
     const adminUser = await getInternalAdminUser(req.user);
     const adminUserId = adminUser.userId;
 
@@ -694,7 +694,7 @@ export async function markFullDayOD(req, res) {
     // Finding timetable slots for the specific group
     const timetableSlots = await Timetable.findAll({
       where: {
-        Deptid: Deptid,
+        departmentId: departmentId,
         dayOfWeek: dayOfWeek,
         semesterId: semesterId,
         isActive: 'YES',
@@ -711,7 +711,7 @@ export async function markFullDayOD(req, res) {
       await t.rollback();
       return res.status(404).json({
         status: "error",
-        message: `No classes found in timetable for Batch ${batch}, Dept ${Deptid} on ${dayOfWeek}.`,
+        message: `No classes found in timetable for Batch ${batch}, Dept ${departmentId} on ${dayOfWeek}.`,
       });
     }
 
@@ -744,7 +744,7 @@ export async function markFullDayOD(req, res) {
           periodNumber: slot.periodNumber,
           attendanceDate: startDate,
           status: "OD",
-          Deptid: Deptid,
+          departmentId: departmentId,
           updatedBy: "admin"
         }, { transaction: t });
       }
@@ -768,18 +768,18 @@ export async function markFullDayOD(req, res) {
 export async function getStudentsByDeptAndSem(req, res, next) {
   try {
     const { dayOfWeek, periodNumber } = req.params;
-    const { date, Deptid, semesterId } = req.query;
+    const { date, departmentId, semesterId } = req.query;
 
-    if (!dayOfWeek || !periodNumber || !date || !Deptid || !semesterId) {
+    if (!dayOfWeek || !periodNumber || !date || !departmentId || !semesterId) {
       return res.status(400).json({ 
         status: "error", 
-        message: "Missing required params: dayOfWeek, periodNumber, date, Deptid, semesterId" 
+        message: "Missing required params: dayOfWeek, periodNumber, date, departmentId, semesterId" 
       });
     }
 
     const students = await StudentDetails.findAll({
       where: {
-        departmentId: Deptid,
+        departmentId: departmentId,
         semester: semesterId
       },
       attributes: ['registerNumber', 'studentName'],
@@ -818,3 +818,4 @@ export async function getStudentsByDeptAndSem(req, res, next) {
     next(err);
   }
 }
+

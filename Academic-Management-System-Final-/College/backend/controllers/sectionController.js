@@ -161,7 +161,7 @@ export const deleteSection = catchAsync(async (req, res) => {
 
 export const allocateStaffToCourse = catchAsync(async (req, res) => {
   const { courseId } = req.params;
-  const { Userid, sectionId, Deptid } = req.body;
+  const { Userid, sectionId, departmentId } = req.body;
   const userName = req.user?.userName || 'admin';
 
   const transaction = await sequelize.transaction();
@@ -174,7 +174,7 @@ export const allocateStaffToCourse = catchAsync(async (req, res) => {
     if (!section) throw new Error('Active section not found for this course');
 
     const staff = await User.findOne({ 
-      where: { userId: Userid, departmentId: Deptid, status: 'Active' },
+      where: { userId: Userid, departmentId: departmentId, status: 'Active' },
       transaction 
     });
     if (!staff) throw new Error('Staff user not found or inactive');
@@ -191,7 +191,7 @@ export const allocateStaffToCourse = catchAsync(async (req, res) => {
       Userid,
       courseId,
       sectionId,
-      Deptid,
+      departmentId,
       createdBy: userName,
       updatedBy: userName
     }, { transaction });

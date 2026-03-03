@@ -63,7 +63,7 @@ export const getAvailableCoursesForStaff = catchAsync(async (req, res) => {
   }
 
   const deptRecord = await Department.findByPk(deptId, {
-    attributes: ['Deptid', 'Deptacronym']
+    attributes: ['departmentId', 'Deptacronym']
   });
   if (!deptRecord) {
     return res.status(400).json({ status: 'error', message: 'Invalid department' });
@@ -93,8 +93,8 @@ export const getAvailableCoursesForStaff = catchAsync(async (req, res) => {
         include: [{
           model: Regulation,
           required: false,
-          // CHANGE 3: Regulation model uses 'Deptid', User uses 'departmentId'
-          where: { Deptid: deptId } 
+          // CHANGE 3: Regulation model uses 'departmentId', User uses 'departmentId'
+          where: { departmentId: deptId } 
         }]
       }]
     }],
@@ -117,7 +117,7 @@ export const getAllCoursesForStaff = catchAsync(async (req, res) => {
   }
 
   const deptRecord = await Department.findByPk(deptId, {
-    attributes: ['Deptid', 'Deptacronym']
+    attributes: ['departmentId', 'Deptacronym']
   });
   if (!deptRecord) {
     return res.status(400).json({ status: 'error', message: 'Invalid department' });
@@ -171,7 +171,7 @@ export const getAllCoursesForStaff = catchAsync(async (req, res) => {
         include: [{
           model: Regulation,
           required: false,
-          where: { Deptid: deptId }
+          where: { departmentId: deptId }
         }]
       }]
     }],
@@ -207,8 +207,8 @@ export const sendCourseRequest = catchAsync(async (req, res) => {
     }]
   });
 
-  // CHANGE 5: Verify Regulation.Deptid matches User.departmentId
-  if (!course || course.Semester.Batch.Regulation.Deptid !== staffDeptId) {
+  // CHANGE 5: Verify Regulation.departmentId matches User.departmentId
+  if (!course || course.Semester.Batch.Regulation.departmentId !== staffDeptId) {
     return res.status(403).json({ status: 'error', message: 'Cannot request course outside your department' });
   }
 
@@ -316,7 +316,7 @@ export const getPendingRequestsForAdmin = catchAsync(async (req, res) => {
             include: [{ 
               model: Regulation, 
               // Filter by Department ID if provided
-              where: dept ? { Deptid: dept } : {},
+              where: dept ? { departmentId: dept } : {},
               include: [Department] 
             }]
           }]
@@ -373,14 +373,14 @@ export const acceptCourseRequest = catchAsync(async (req, res) => {
     }, { transaction: t });
 
     // 2. Insert into StaffCourse
-    // Get staff's department ID from User table to fill Deptid
+    // Get staff's department ID from User table to fill departmentId
     const staffUser = await User.findByPk(staffId, { transaction: t });
     
     await StaffCourse.create({
       Userid: staffId, // Mapping userId to Userid
       courseId,
       sectionId: availableSection.sectionId,
-      Deptid: staffUser.departmentId, // Mapping departmentId to Deptid
+      departmentId: staffUser.departmentId, // Mapping departmentId to departmentId
       createdBy: userNumber
     }, { transaction: t });
 
@@ -545,3 +545,4 @@ export const setCourseRequestWindowStatus = catchAsync(async (req, res) => {
     data: { isOpen }
   });
 });
+

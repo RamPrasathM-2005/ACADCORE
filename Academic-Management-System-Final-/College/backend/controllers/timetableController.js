@@ -83,7 +83,7 @@ async function findStaffConflictForSlot({
 
 export const getAllTimetableDepartments = catchAsync(async (req, res) => {
   const departments = await Department.findAll({
-    attributes: [['Deptid', 'Deptid'], ['Deptacronym', 'deptCode'], 'Deptname']
+    attributes: ['departmentId', ['Deptacronym', 'deptCode'], 'Deptname']
   });
 
   res.status(200).json({
@@ -149,15 +149,15 @@ export const getTimetable = catchAsync(async (req, res) => {
 });
 
 export const getTimetableByFilters = catchAsync(async (req, res) => {
-  const { degree, Deptid, semesterNumber } = req.query;
+  const { degree, departmentId, semesterNumber } = req.query;
 
-  if (!degree || !Deptid || !semesterNumber) {
-    return res.status(400).json({ status: 'failure', message: 'Missing degree, Deptid, or semesterNumber' });
+  if (!degree || !departmentId || !semesterNumber) {
+    return res.status(400).json({ status: 'failure', message: 'Missing degree, departmentId, or semesterNumber' });
   }
 
   const entries = await Timetable.findAll({
     where: { 
-      Deptid, 
+      departmentId, 
       isActive: 'YES' 
     },
     include: [
@@ -198,7 +198,7 @@ export const getTimetableByFilters = catchAsync(async (req, res) => {
 });
 
 export const createTimetableEntry = catchAsync(async (req, res) => {
-  const { courseId, bucketId, sectionId, dayOfWeek, periodNumber, Deptid, semesterId } = req.body;
+  const { courseId, bucketId, sectionId, dayOfWeek, periodNumber, departmentId, semesterId } = req.body;
   const userEmail = req.user?.email || 'admin'; // Using email as per your new controller logic
 
   const transaction = await sequelize.transaction();
@@ -259,7 +259,7 @@ export const createTimetableEntry = catchAsync(async (req, res) => {
         sectionId: sectionId || null, // sectionId might be null for electives
         dayOfWeek,
         periodNumber,
-        Deptid,
+        departmentId,
         semesterId,
         isActive: 'YES',
         createdBy: userEmail,
@@ -279,7 +279,7 @@ export const createTimetableEntry = catchAsync(async (req, res) => {
 
 export const updateTimetableEntry = catchAsync(async (req, res) => {
   const { timetableId } = req.params;
-  const { courseId, sectionId, dayOfWeek, periodNumber, Deptid, semesterId } = req.body;
+  const { courseId, sectionId, dayOfWeek, periodNumber, departmentId, semesterId } = req.body;
   const userEmail = req.user?.email || 'admin';
 
   const transaction = await sequelize.transaction();
@@ -310,7 +310,7 @@ export const updateTimetableEntry = catchAsync(async (req, res) => {
       sectionId: sectionId || null,
       dayOfWeek,
       periodNumber,
-      Deptid, // Optional: Usually Dept doesn't change on edit, but included if needed
+      departmentId, // Optional: Usually Dept doesn't change on edit, but included if needed
       semesterId,
       updatedBy: userEmail
     }, { transaction });
@@ -376,3 +376,4 @@ export const getCoursesInBucket = catchAsync(async (req, res) => {
 
   res.status(200).json({ status: "success", data: courses });
 });
+

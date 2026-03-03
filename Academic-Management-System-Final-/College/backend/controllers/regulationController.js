@@ -14,12 +14,12 @@ const {
 
 // Included branchMap as requested
 export const branchMap = {
-  CSE: { Deptid: 1, Deptname: "Computer Science Engineering" },
-  IT: { Deptid: 4, Deptname: "Information Technology" },
-  ECE: { Deptid: 2, Deptname: "Electronics & Communication" },
-  MECH: { Deptid: 3, Deptname: "Mechanical Engineering" },
-  CIVIL: { Deptid: 7, Deptname: "Civil Engineering" },
-  EEE: { Deptid: 5, Deptname: "Electrical Engineering" },
+  CSE: { departmentId: 1, Deptname: "Computer Science Engineering" },
+  IT: { departmentId: 4, Deptname: "Information Technology" },
+  ECE: { departmentId: 2, Deptname: "Electronics & Communication" },
+  MECH: { departmentId: 3, Deptname: "Mechanical Engineering" },
+  CIVIL: { departmentId: 7, Deptname: "Civil Engineering" },
+  EEE: { departmentId: 5, Deptname: "Electrical Engineering" },
 };
 
 const determineCourseType = (lectureHours, tutorialHours, practicalHours, experientialHours) => {
@@ -257,14 +257,14 @@ export const allocateRegulationToBatch = async (req, res) => {
         sequelize.fn('UPPER', sequelize.col('Deptacronym')),
         branchCode
       ),
-      attributes: ['Deptid', 'Deptacronym'],
+      attributes: ['departmentId', 'Deptacronym'],
       transaction
     });
     if (!deptInfo) throw new Error(`Invalid branch: ${batch.branch}`);
 
     const regulation = await Regulation.findOne({ where: { regulationId, isActive: 'YES' }, transaction });
     if (!regulation) throw new Error('Regulation not found');
-    if (Number(regulation.Deptid) !== Number(deptInfo.Deptid)) {
+    if (Number(regulation.departmentId) !== Number(deptInfo.departmentId)) {
       throw new Error(`Regulation department mismatch for branch ${batch.branch}`);
     }
 
@@ -414,16 +414,16 @@ export const getCoursesByVertical = async (req, res) => {
 };
 
 export const createRegulation = async (req, res) => {
-  const { Deptid, regulationYear } = req.body;
+  const { departmentId, regulationYear } = req.body;
   const createdBy = req.user?.userName || 'admin';
 
-  const deptIdNum = Number(Deptid);
+  const deptIdNum = Number(departmentId);
   const yearNum = Number(regulationYear);
 
   if (!deptIdNum || !yearNum) {
     return res.status(400).json({
       status: 'failure',
-      message: 'Deptid and regulationYear are required',
+      message: 'departmentId and regulationYear are required',
     });
   }
 
@@ -435,14 +435,14 @@ export const createRegulation = async (req, res) => {
   }
 
   try {
-    const dept = await Department.findByPk(deptIdNum, { attributes: ['Deptid'] });
+    const dept = await Department.findByPk(deptIdNum, { attributes: ['departmentId'] });
     if (!dept) {
       return res.status(404).json({ status: 'failure', message: 'Department not found' });
     }
 
     const existing = await Regulation.findOne({
       where: {
-        Deptid: deptIdNum,
+        departmentId: deptIdNum,
         regulationYear: yearNum,
         isActive: 'YES',
       },
@@ -456,7 +456,7 @@ export const createRegulation = async (req, res) => {
     }
 
     const created = await Regulation.create({
-      Deptid: deptIdNum,
+      departmentId: deptIdNum,
       regulationYear: yearNum,
       isActive: 'YES',
       createdBy,
@@ -472,3 +472,4 @@ export const createRegulation = async (req, res) => {
     return res.status(500).json({ status: 'failure', message: 'Server error: ' + err.message });
   }
 };
+

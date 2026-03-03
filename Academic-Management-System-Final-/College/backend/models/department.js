@@ -1,11 +1,11 @@
 // models/Department.js
 export default (sequelize, DataTypes) => {
   const Department = sequelize.define('Department', { 
-    Deptid: { 
-      type: DataTypes.INTEGER, 
-      primaryKey: true, 
-      autoIncrement: true, 
-      allowNull: false 
+    departmentId: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true,
+      allowNull: false
     },
     Deptname: { 
       type: DataTypes.STRING(100), 
@@ -36,13 +36,13 @@ export default (sequelize, DataTypes) => {
 
   Department.associate = (models) => {
     // Academic Associations
-    Department.hasMany(models.Regulation, { foreignKey: 'Deptid' });
-    Department.hasMany(models.User, { foreignKey: 'Deptid' });
-    Department.hasMany(models.StudentDetails, { foreignKey: 'Deptid' });
-    Department.hasMany(models.StaffCourse, { foreignKey: 'Deptid', as: 'staffCourses' });
-    Department.hasMany(models.Timetable, { foreignKey: 'Deptid' });
-    Department.hasMany(models.PeriodAttendance, { foreignKey: 'Deptid' });
-    Department.hasMany(models.CBCS, { foreignKey: 'Deptid' });
+    Department.hasMany(models.Regulation, { foreignKey: 'departmentId' });
+    Department.hasMany(models.User, { foreignKey: 'departmentId' });
+    Department.hasMany(models.StudentDetails, { foreignKey: 'departmentId' });
+    Department.hasMany(models.StaffCourse, { foreignKey: 'departmentId', as: 'staffCourses' });
+    Department.hasMany(models.Timetable, { foreignKey: 'departmentId' });
+    Department.hasMany(models.PeriodAttendance, { foreignKey: 'departmentId' });
+    Department.hasMany(models.CBCS, { foreignKey: 'departmentId' });
     
     // Corporate Associations
     Department.belongsTo(models.Company, { foreignKey: 'companyId', as: 'company' });

@@ -11,7 +11,7 @@ export default (sequelize, DataTypes) => {
     periodNumber: { type: DataTypes.INTEGER, allowNull: false },
     attendanceDate: { type: DataTypes.DATEONLY, allowNull: false },
     status: { type: DataTypes.ENUM('P', 'A', 'OD'), allowNull: false },
-    Deptid: { type: DataTypes.INTEGER, allowNull: false },
+    departmentId: { type: DataTypes.INTEGER, allowNull: false },
     updatedBy: { type: DataTypes.STRING(150), allowNull: false },
   }, { tableName: 'PeriodAttendance', timestamps: false });
 
@@ -23,7 +23,7 @@ export default (sequelize, DataTypes) => {
     
     // SAFE CHECK
     if (models.Department) {
-        PeriodAttendance.belongsTo(models.Department, { foreignKey: 'Deptid' });
+        PeriodAttendance.belongsTo(models.Department, { foreignKey: 'departmentId' });
     }
   };
 

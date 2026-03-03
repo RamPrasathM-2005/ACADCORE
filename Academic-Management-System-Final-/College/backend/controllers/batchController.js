@@ -154,14 +154,14 @@ export const deleteBatch = catchAsync(async (req, res) => {
  * INTERNAL HELPER: getOrCreateBatch
  * Used by other controllers (like Regulation)
  */
-export const getOrCreateBatch = async (Deptid, regulationYear, createdBy, updatedBy) => {
+export const getOrCreateBatch = async (departmentId, regulationYear, createdBy, updatedBy) => {
   const t = await sequelize.transaction();
   try {
     // Find if the batch exists for this department and year
-    // Note: The original query used Deptid which wasn't in your Batch model snippet, 
+    // Note: The original query used departmentId which wasn't in your Batch model snippet, 
     // but the branch name subquery suggests it matches the department acronym.
     
-    const dept = await Department.findByPk(Deptid, { transaction: t });
+    const dept = await Department.findByPk(departmentId, { transaction: t });
     if (!dept) throw new Error("Department not found");
 
     const batchName = regulationYear.toString();

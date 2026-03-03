@@ -402,7 +402,7 @@ export const getConsolidatedMarks = catchAsync(async (req, res) => {
   const d = await Department.findOne({ where: { Deptacronym: dept } });
   const b = await Batch.findOne({ where: { batch, branch: dept } });
   const s = await Semester.findOne({ where: { batchId: b.batchId, semesterNumber: sem } });
-  const students = await StudentDetails.findAll({ where: { departmentId: d.Deptid, batch, semester: sem } });
+  const students = await StudentDetails.findAll({ where: { departmentId: d.departmentId, batch, semester: sem } });
   const courses = await Course.findAll({ where: { semesterId: s.semesterId }, include: [CoursePartitions] });
   const courseCodes = [...new Set(courses.map(c => c.courseCode))];
   const relatedCourses = await Course.findAll({
@@ -734,3 +734,4 @@ export const getStudentsForCourse = catchAsync(async (req, res) => {
   const students = await StudentDetails.findAll({ include: [{ model: StudentCourse, required: true, where: { courseId: staffAssig[0].courseId, sectionId: { [Op.in]: staffAssig.map(a => a.sectionId) } } }] });
   res.json({ status: 'success', results: students.length, data: students.map(s => ({ regno: s.registerNumber, name: s.studentName })) });
 });
+

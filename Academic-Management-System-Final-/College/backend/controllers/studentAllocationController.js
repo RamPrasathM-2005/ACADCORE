@@ -175,7 +175,7 @@ export const enrollStudentInCourse = catchAsync(async (req, res) => {
     if (Userid) {
       await StaffCourse.findOrCreate({
         where: { Userid, courseId, sectionId: section.sectionId },
-        defaults: { Deptid: req.user.departmentId || 1, createdBy: adminName },
+        defaults: { departmentId: req.user.departmentId || 1, createdBy: adminName },
         transaction
       });
     }
@@ -251,3 +251,4 @@ export const getAvailableCourses = catchAsync(async (req, res) => {
     });
     res.status(200).json({ status: "success", data: courses });
 });
+
