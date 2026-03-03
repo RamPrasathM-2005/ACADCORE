@@ -1,16 +1,24 @@
 // controllers/batchController.js
 import db from "../models/index.js";
 import catchAsync from "../utils/catchAsync.js";
+import { getOrSetCache, invalidateCachePrefixes, makeCacheKey, ttl } from "../utils/cache.js";
 
 const { Batch, Department, sequelize } = db;
+const markCache = (res) => (status) => res.set("X-Cache", status);
 
 /**
  * GET ALL ACTIVE BATCHES
  */
 export const getAllBatches = catchAsync(async (req, res) => {
-  const rows = await Batch.findAll({
-    where: { isActive: 'YES' }
-  });
+  const key = makeCacheKey("batches:all", { query: req.query || {} });
+  const rows = await getOrSetCache(
+    key,
+    () =>
+      Batch.findAll({
+        where: { isActive: "YES" },
+      }),
+    { ttlSeconds: ttl.medium, onStatus: markCache(res) }
+  );
   res.status(200).json({ status: "success", data: rows });
 });
 
@@ -19,10 +27,16 @@ export const getAllBatches = catchAsync(async (req, res) => {
  */
 export const getBatchById = catchAsync(async (req, res) => {
   const { batchId } = req.params;
-  
-  const batch = await Batch.findOne({
-    where: { batchId, isActive: 'YES' }
-  });
+
+  const key = makeCacheKey("batches:byId", { batchId });
+  const batch = await getOrSetCache(
+    key,
+    () =>
+      Batch.findOne({
+        where: { batchId, isActive: "YES" },
+      }),
+    { ttlSeconds: ttl.medium, onStatus: markCache(res) }
+  );
 
   if (!batch) {
     return res.status(404).json({ 
@@ -47,9 +61,15 @@ export const getBatchByDetails = catchAsync(async (req, res) => {
     });
   }
 
-  const row = await Batch.findOne({
-    where: { degree, branch, batch, isActive: 'YES' }
-  });
+  const key = makeCacheKey("batches:byDetails", { degree, branch, batch });
+  const row = await getOrSetCache(
+    key,
+    () =>
+      Batch.findOne({
+        where: { degree, branch, batch, isActive: "YES" },
+      }),
+    { ttlSeconds: ttl.medium, onStatus: markCache(res) }
+  );
 
   if (!row) {
     return res.status(404).json({ 
@@ -90,6 +110,7 @@ export const createBatch = catchAsync(async (req, res) => {
   if (!created) {
     return res.status(400).json({ status: "failure", message: "Batch already exists" });
   }
+  await invalidateCachePrefixes(["batches", "semesters", "departments", "attendanceReports", "filters"]);
 
   res.status(201).json({ 
     status: "success", 
@@ -123,6 +144,7 @@ export const updateBatch = catchAsync(async (req, res) => {
     isActive: isActive || existingBatch.isActive,
     updatedBy: updatedBy || req.user?.userMail || 'admin'
   });
+  await invalidateCachePrefixes(["batches", "semesters", "departments", "attendanceReports", "filters"]);
 
   res.status(200).json({ status: "success", message: "Batch updated successfully" });
 });
@@ -146,6 +168,7 @@ export const deleteBatch = catchAsync(async (req, res) => {
     isActive: 'NO',
     updatedBy: req.user?.userMail || 'admin'
   });
+  await invalidateCachePrefixes(["batches", "semesters", "departments", "attendanceReports", "filters"]);
 
   res.status(200).json({ status: "success", message: "Batch deleted successfully" });
 });
@@ -195,6 +218,7 @@ export const getOrCreateBatch = async (departmentId, regulationYear, createdBy, 
     }, { transaction: t });
 
     await t.commit();
+    await invalidateCachePrefixes(["batches", "semesters", "departments", "attendanceReports", "filters"]);
     return batch.batchId;
   } catch (err) {
     await t.rollback();

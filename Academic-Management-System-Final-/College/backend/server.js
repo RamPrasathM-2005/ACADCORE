@@ -9,7 +9,7 @@ const startServer = async () => {
   try {
     // 1. Initialize DB and Seed (This handles sync and seeding internally)
     await initDatabase();
-
+    
     // 2. Start the Express Server
     app.listen(PORT, () => {
       console.log(`✅ Server is running perfectly on port ${PORT}`);

@@ -3,8 +3,10 @@ import db from "../models/index.js";
 import catchAsync from "../utils/catchAsync.js";
 import Joi from 'joi';
 import { Op } from "sequelize";
+import { getOrSetCache, invalidateCachePrefixes, makeCacheKey, ttl } from "../utils/cache.js";
 
 const { sequelize, Course, Semester, Batch } = db;
+const markCache = (res) => (status) => res.set("X-Cache", status);
 
 // Valid enum values
 const validTypes = ['THEORY', 'INTEGRATED', 'PRACTICAL', 'EXPERIENTIAL LEARNING'];
@@ -90,6 +92,7 @@ export const addCourse = catchAsync(async (req, res) => {
     }
 
     await transaction.commit();
+    await invalidateCachePrefixes(["filters:subject", "filters:studentAllocation", "filters:timetable"]);
     res.status(201).json({
       status: 'success',
       message: 'Course added successfully',
@@ -148,6 +151,7 @@ export const importCourses = catchAsync(async (req, res) => {
     }
 
     await transaction.commit();
+    await invalidateCachePrefixes(["filters:subject", "filters:studentAllocation", "filters:timetable"]);
     res.status(200).json({
       status: 'success',
       message: `Imported ${importedCount} courses successfully`,
@@ -160,13 +164,19 @@ export const importCourses = catchAsync(async (req, res) => {
 });
 
 export const getAllCourse = catchAsync(async (req, res) => {
-  const courses = await Course.findAll({
-    where: { isActive: 'YES' },
-    include: [{
-      model: Semester,
-      include: [{ model: Batch, attributes: ['branch'] }]
-    }]
-  });
+  const key = makeCacheKey("filters:subject:allCourses", { query: req.query || {} });
+  const courses = await getOrSetCache(
+    key,
+    () =>
+      Course.findAll({
+        where: { isActive: 'YES' },
+        include: [{
+          model: Semester,
+          include: [{ model: Batch, attributes: ['branch'] }]
+        }]
+      }),
+    { ttlSeconds: ttl.medium, onStatus: markCache(res) }
+  );
 
   // Flatten the branch name into the top level for frontend compatibility
   const data = courses.map(c => ({
@@ -184,13 +194,19 @@ export const getAllCourse = catchAsync(async (req, res) => {
 export const getCourseBySemester = catchAsync(async (req, res) => {
   const { semesterId } = req.params;
 
-  const courses = await Course.findAll({
-    where: { semesterId, isActive: 'YES' },
-    include: [{
-      model: Semester,
-      include: [{ model: Batch, attributes: ['branch'] }]
-    }]
-  });
+  const key = makeCacheKey("filters:subject:coursesBySemester", { semesterId });
+  const courses = await getOrSetCache(
+    key,
+    () =>
+      Course.findAll({
+        where: { semesterId, isActive: 'YES' },
+        include: [{
+          model: Semester,
+          include: [{ model: Batch, attributes: ['branch'] }]
+        }]
+      }),
+    { ttlSeconds: ttl.medium, onStatus: markCache(res) }
+  );
 
   if (courses.length === 0) {
     return res.status(404).json({ status: "failure", message: "No active courses found for this semester" });
@@ -237,6 +253,7 @@ export const updateCourse = catchAsync(async (req, res) => {
     }, { transaction });
 
     await transaction.commit();
+    await invalidateCachePrefixes(["filters:subject", "filters:studentAllocation", "filters:timetable"]);
     res.status(200).json({ status: 'success', message: 'Course updated successfully' });
   } catch (err) {
     await transaction.rollback();
@@ -253,6 +270,7 @@ export const deleteCourse = catchAsync(async (req, res) => {
 
   // Soft delete
   await course.update({ isActive: 'NO', updatedBy: userName });
+  await invalidateCachePrefixes(["filters:subject", "filters:studentAllocation", "filters:timetable"]);
 
   res.status(200).json({ status: 'success', message: 'Course deleted successfully' });
 });

@@ -1,6 +1,7 @@
 import { Op } from "sequelize";
 import db from "../models/index.js"; 
 import catchAsync from "../utils/catchAsync.js";
+import { getOrSetCache, makeCacheKey, ttl } from "../utils/cache.js";
 
 const { 
   User, StudentDetails, Department, Batch, Course, Semester, 
@@ -8,6 +9,7 @@ const {
   RegulationCourse, VerticalCourse, Vertical, NptelCreditTransfer, NptelCourse, StudentNptelEnrollment,
   DayAttendance, PeriodAttendance, Section, StudentCourse, sequelize 
 } = db;
+const markCache = (res) => (status) => res.set("X-Cache", status);
 
 // Helper to safely get user ID from req.user (handles both id and userId)
 const getCurrentUserId = (req) => req.user?.id || req.user?.userId;
@@ -40,56 +42,71 @@ export const getStudentAcademicIds = catchAsync(async (req, res) => {
     return res.status(401).json({ status: "failure", message: "User not authenticated" });
   }
 
-  const student = await User.findByPk(userId, {
-    include: [{
-      model: StudentDetails,
-      as: 'studentProfile',
-      attributes: ['departmentId', 'batch', 'semester']
-    }]
-  });
+  const key = makeCacheKey("filters:studentPage:academicIds", { userId });
+  const payload = await getOrSetCache(
+    key,
+    async () => {
+      const student = await User.findByPk(userId, {
+        include: [{
+          model: StudentDetails,
+          as: 'studentProfile',
+          attributes: ['departmentId', 'batch', 'semester']
+        }]
+      });
 
-  if (!student || !student.studentProfile) {
-    return res.status(404).json({ status: "failure", message: "Student academic details not found" });
-  }
+      if (!student || !student.studentProfile) {
+        return { statusCode: 404, body: { status: "failure", message: "Student academic details not found" } };
+      }
 
-  const profile = student.studentProfile;
+      const profile = student.studentProfile;
 
-  const dept = profile.departmentId
-    ? await Department.findByPk(profile.departmentId, { attributes: ['Deptacronym', 'Deptname'] })
-    : null;
+      const dept = profile.departmentId
+        ? await Department.findByPk(profile.departmentId, { attributes: ['Deptacronym', 'Deptname'] })
+        : null;
 
-  const batchWhere = {
-    batch: profile.batch,
-    isActive: 'YES',
-  };
-  if (dept?.Deptacronym) {
-    batchWhere.branch = dept.Deptacronym;
-  }
+      const batchWhere = {
+        batch: profile.batch,
+        isActive: 'YES',
+      };
+      if (dept?.Deptacronym) {
+        batchWhere.branch = dept.Deptacronym;
+      }
 
-  const batchRecord = await Batch.findOne({ where: batchWhere });
-  if (!batchRecord) {
-    return res.status(404).json({
-      status: "failure",
-      message: `No active Batch mapping for batch ${profile.batch} and department ${dept?.Deptacronym || profile.departmentId}`
-    });
-  }
+      const batchRecord = await Batch.findOne({ where: batchWhere });
+      if (!batchRecord) {
+        return {
+          statusCode: 404,
+          body: {
+            status: "failure",
+            message: `No active Batch mapping for batch ${profile.batch} and department ${dept?.Deptacronym || profile.departmentId}`
+          }
+        };
+      }
 
-  const semesterRecord = await Semester.findOne({
-    where: {
-      semesterNumber: profile.semester,
-      batchId: batchRecord.batchId,
-      isActive: 'YES'
-    }
-  });
+      const semesterRecord = await Semester.findOne({
+        where: {
+          semesterNumber: profile.semester,
+          batchId: batchRecord.batchId,
+          isActive: 'YES'
+        }
+      });
 
-  res.status(200).json({
-    status: "success",
-    data: {
-      deptId: profile.departmentId,
-      batchId: batchRecord ? batchRecord.batchId : null,
-      semesterId: semesterRecord ? semesterRecord.semesterId : null
-    }
-  });
+      return {
+        statusCode: 200,
+        body: {
+          status: "success",
+          data: {
+            deptId: profile.departmentId,
+            batchId: batchRecord ? batchRecord.batchId : null,
+            semesterId: semesterRecord ? semesterRecord.semesterId : null
+          }
+        }
+      };
+    },
+    { ttlSeconds: ttl.short, onStatus: markCache(res) }
+  );
+
+  return res.status(payload.statusCode).json(payload.body);
 });
 
 // 2. GET OEC/PEC PROGRESS
@@ -636,39 +653,51 @@ export const getSemesters = catchAsync(async (req, res) => {
     return res.status(401).json({ status: "failure", message: "User not authenticated" });
   }
 
-  const user = await User.findByPk(userId, {
-    include: [{ model: StudentDetails, as: 'studentProfile', attributes: ['batch', 'departmentId'] }]
-  });
+  const key = makeCacheKey("filters:studentPage:semesters", { userId });
+  const payload = await getOrSetCache(
+    key,
+    async () => {
+      const user = await User.findByPk(userId, {
+        include: [{ model: StudentDetails, as: 'studentProfile', attributes: ['batch', 'departmentId'] }]
+      });
 
-  if (!user?.studentProfile) {
-    return res.status(404).json({ status: "failure", message: "Student profile not found" });
-  }
+      if (!user?.studentProfile) {
+        return { statusCode: 404, body: { status: "failure", message: "Student profile not found" } };
+      }
 
-  const profile = user.studentProfile;
-  const dept = profile.departmentId
-    ? await Department.findByPk(profile.departmentId, { attributes: ['Deptacronym'] })
-    : null;
+      const profile = user.studentProfile;
+      const dept = profile.departmentId
+        ? await Department.findByPk(profile.departmentId, { attributes: ['Deptacronym'] })
+        : null;
 
-  const batchWhere = { batch: profile.batch, isActive: 'YES' };
-  if (dept?.Deptacronym) batchWhere.branch = dept.Deptacronym;
+      const batchWhere = { batch: profile.batch, isActive: 'YES' };
+      if (dept?.Deptacronym) batchWhere.branch = dept.Deptacronym;
 
-  const batches = await Batch.findAll({ where: batchWhere, attributes: ['batchId'] });
+      const batches = await Batch.findAll({ where: batchWhere, attributes: ['batchId'] });
 
-  const batchIds = batches.map((b) => b.batchId);
-  if (!batchIds.length) {
-    return res.status(404).json({
-      status: "failure",
-      message: `No active Batch mapping for batch ${profile.batch} and department ${dept?.Deptacronym || profile.departmentId}`
-    });
-  }
+      const batchIds = batches.map((b) => b.batchId);
+      if (!batchIds.length) {
+        return {
+          statusCode: 404,
+          body: {
+            status: "failure",
+            message: `No active Batch mapping for batch ${profile.batch} and department ${dept?.Deptacronym || profile.departmentId}`
+          }
+        };
+      }
 
-  const semesters = await Semester.findAll({
-    where: { batchId: { [Op.in]: batchIds } },
-    include: [{ model: Batch, where: { isActive: 'YES' }, required: true }],
-    order: [['semesterNumber', 'ASC']]
-  });
+      const semesters = await Semester.findAll({
+        where: { batchId: { [Op.in]: batchIds } },
+        include: [{ model: Batch, where: { isActive: 'YES' }, required: true }],
+        order: [['semesterNumber', 'ASC']]
+      });
 
-  res.status(200).json({ status: "success", data: semesters });
+      return { statusCode: 200, body: { status: "success", data: semesters } };
+    },
+    { ttlSeconds: ttl.medium, onStatus: markCache(res) }
+  );
+
+  return res.status(payload.statusCode).json(payload.body);
 });
 
 export const getUserId = catchAsync(async (req, res) => {

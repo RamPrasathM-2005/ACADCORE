@@ -1,6 +1,7 @@
 import db from "../models/index.js";
 import catchAsync from "../utils/catchAsync.js";
 import { Op } from "sequelize";
+import { getOrSetCache, invalidateCachePrefixes, makeCacheKey, ttl } from "../utils/cache.js";
 
 const {
   sequelize,
@@ -15,6 +16,7 @@ const {
   StudentElectiveSelection,
   Semester
 } = db;
+const markCache = (res) => (status) => res.set("X-Cache", status);
 
 export const searchStudents = catchAsync(async (req, res) => {
   const { branch, batch, semesterNumber } = req.query;
@@ -181,6 +183,7 @@ export const enrollStudentInCourse = catchAsync(async (req, res) => {
     }
 
     await transaction.commit();
+    await invalidateCachePrefixes(["filters:studentAllocation", "attendanceReports"]);
     res.status(201).json({ status: "success", message: "Enrollment updated" });
   } catch (err) {
     await transaction.rollback();
@@ -194,6 +197,7 @@ export const unenrollStudentFromCourse = catchAsync(async (req, res) => {
     where: { regno: rollnumber, courseId }
   });
   if (!deleted) return res.status(404).json({ status: "failure", message: "Enrollment record not found" });
+  await invalidateCachePrefixes(["filters:studentAllocation", "attendanceReports"]);
   res.status(200).json({ status: "success", message: "Student unenrolled" });
 });
 
@@ -207,48 +211,61 @@ export const updateStudentBatch = catchAsync(async (req, res) => {
   );
 
   if (updated === 0) return res.status(404).json({ status: "failure", message: "Student not found" });
+  await invalidateCachePrefixes(["filters:studentAllocation", "filters:studentPage"]);
   res.status(200).json({ status: "success", message: "Batch and Semester updated" });
 });
 
 export const getAvailableCoursesForBatch = catchAsync(async (req, res) => {
   const { batch, semesterNumber } = req.params;
 
-  const courses = await Course.findAll({
-    where: { isActive: 'YES' },
-    attributes: {
-      include: [
-        [
-          sequelize.literal(`(
-            SELECT COUNT(*) 
-            FROM StudentCourse 
-            WHERE StudentCourse.courseId = Course.courseId
-          )`),
-          'enrolledCount'
-        ]
-      ]
-    },
-    include: [
-      { 
-        model: Semester, 
-        where: { semesterNumber, isActive: 'YES' },
-        include: [{ model: Batch, where: { batch: batch } }]
-      },
-      { 
-        model: Section, 
-        include: [{ model: StaffCourse, include: [{ model: User, attributes: ['userName'] }] }] 
-      }
-    ]
-  });
+  const key = makeCacheKey("filters:studentAllocation:availableCoursesByBatch", { batch, semesterNumber });
+  const courses = await getOrSetCache(
+    key,
+    () =>
+      Course.findAll({
+        where: { isActive: "YES" },
+        attributes: {
+          include: [
+            [
+              sequelize.literal(`(
+                SELECT COUNT(*) 
+                FROM StudentCourse 
+                WHERE StudentCourse.courseId = Course.courseId
+              )`),
+              "enrolledCount",
+            ],
+          ],
+        },
+        include: [
+          {
+            model: Semester,
+            where: { semesterNumber, isActive: "YES" },
+            include: [{ model: Batch, where: { batch: batch } }],
+          },
+          {
+            model: Section,
+            include: [{ model: StaffCourse, include: [{ model: User, attributes: ["userName"] }] }],
+          },
+        ],
+      }),
+    { ttlSeconds: ttl.short, onStatus: markCache(res) }
+  );
 
   res.status(200).json({ status: "success", data: courses });
 });
 
 export const getAvailableCourses = catchAsync(async (req, res) => {
     const { semesterNumber } = req.params;
-    const courses = await Course.findAll({
-        include: [{ model: Semester, where: { semesterNumber, isActive: 'YES' } }],
-        where: { isActive: 'YES' }
-    });
+    const key = makeCacheKey("filters:studentAllocation:availableCourses", { semesterNumber });
+    const courses = await getOrSetCache(
+      key,
+      () =>
+        Course.findAll({
+          include: [{ model: Semester, where: { semesterNumber, isActive: "YES" } }],
+          where: { isActive: "YES" },
+        }),
+      { ttlSeconds: ttl.short, onStatus: markCache(res) }
+    );
     res.status(200).json({ status: "success", data: courses });
 });
 

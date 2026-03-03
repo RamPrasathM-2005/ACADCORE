@@ -1,6 +1,7 @@
 import db from "../models/index.js";
 import catchAsync from "../utils/catchAsync.js";
 import { Op } from "sequelize";
+import { invalidateCachePrefixes } from "../utils/cache.js";
 
 const {
   sequelize,
@@ -154,6 +155,7 @@ export const createElectiveBucket = catchAsync(async (req, res) => {
     bucketName: `Elective Bucket ${bucketNumber}`,
     createdBy: req.user.userId, // Matches your Sequelize User model (userId)
   });
+  await invalidateCachePrefixes(["filters:timetable"]);
 
   res.status(201).json({
     status: "success",
@@ -178,6 +180,7 @@ export const updateElectiveBucketName = catchAsync(async (req, res) => {
   if (updated === 0) {
     return res.status(404).json({ status: "failure", message: "Bucket not found" });
   }
+  await invalidateCachePrefixes(["filters:timetable"]);
 
   res.status(200).json({ status: "success", message: "Bucket name updated successfully" });
 });
@@ -302,6 +305,7 @@ export const addCoursesToBucket = catchAsync(async (req, res) => {
     }
 
     await transaction.commit();
+    await invalidateCachePrefixes(["filters:timetable"]);
     res.status(200).json({
       status: "success",
       addedCount: addedCourses.length,
@@ -329,6 +333,7 @@ export const removeCourseFromBucket = catchAsync(async (req, res) => {
   if (!deleted) {
     return res.status(404).json({ status: "failure", message: "Course not found in bucket" });
   }
+  await invalidateCachePrefixes(["filters:timetable"]);
 
   res.status(200).json({ status: "success", message: "Course removed from bucket" });
 });
@@ -343,6 +348,7 @@ export const deleteElectiveBucket = catchAsync(async (req, res) => {
   if (!deleted) {
     return res.status(404).json({ status: "failure", message: "Bucket not found" });
   }
+  await invalidateCachePrefixes(["filters:timetable"]);
 
   res.status(200).json({ status: "success", message: "Bucket deleted successfully" });
 });

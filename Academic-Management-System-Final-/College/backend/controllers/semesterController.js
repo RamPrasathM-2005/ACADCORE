@@ -2,8 +2,10 @@
 import db from "../models/index.js";
 import catchAsync from "../utils/catchAsync.js";
 import { Op } from "sequelize";
+import { getOrSetCache, invalidateCachePrefixes, makeCacheKey, ttl } from "../utils/cache.js";
 
 const { Semester, Batch, sequelize } = db;
+const markCache = (res) => (status) => res.set("X-Cache", status);
 
 // Utility: format YYYY-MM-DD safely
 function formatDate(dateStr) {
@@ -86,6 +88,7 @@ export const addSemester = catchAsync(async (req, res) => {
     createdBy: userName,
     updatedBy: userName
   });
+  await invalidateCachePrefixes(["semesters", "attendanceReports", "filters"]);
 
   return res.status(201).json({
     status: "success",
@@ -101,14 +104,22 @@ export const getSemester = catchAsync(async (req, res) => {
     return res.status(400).json({ status: "failure", message: "Missing required query parameters" });
   }
 
-  const semester = await Semester.findOne({
-    where: { semesterNumber, isActive: 'YES' },
-    include: [{
-      model: Batch,
-      where: { batch, branch, degree, isActive: 'YES' },
-      required: true
-    }]
-  });
+  const key = makeCacheKey("semesters:search", { batch, branch, degree, semesterNumber });
+  const semester = await getOrSetCache(
+    key,
+    () =>
+      Semester.findOne({
+        where: { semesterNumber, isActive: "YES" },
+        include: [
+          {
+            model: Batch,
+            where: { batch, branch, degree, isActive: "YES" },
+            required: true,
+          },
+        ],
+      }),
+    { ttlSeconds: ttl.medium, onStatus: markCache(res) }
+  );
 
   if (!semester) {
     return res.status(404).json({ status: "failure", message: "Semester not found" });
@@ -118,14 +129,22 @@ export const getSemester = catchAsync(async (req, res) => {
 });
 
 export const getAllSemesters = catchAsync(async (req, res) => {
-  const semesters = await Semester.findAll({
-    where: { isActive: 'YES' },
-    include: [{
-      model: Batch,
-      where: { isActive: 'YES' },
-      required: true
-    }]
-  });
+  const key = makeCacheKey("semesters:all", { query: req.query || {} });
+  const semesters = await getOrSetCache(
+    key,
+    () =>
+      Semester.findAll({
+        where: { isActive: "YES" },
+        include: [
+          {
+            model: Batch,
+            where: { isActive: "YES" },
+            required: true,
+          },
+        ],
+      }),
+    { ttlSeconds: ttl.medium, onStatus: markCache(res) }
+  );
   return res.status(200).json({ status: "success", data: semesters });
 });
 
@@ -136,15 +155,23 @@ export const getSemestersByBatchBranch = catchAsync(async (req, res) => {
     return res.status(400).json({ status: "failure", message: "batch, branch, and degree are required" });
   }
 
-  const semesters = await Semester.findAll({
-    where: { isActive: 'YES' },
-    include: [{
-      model: Batch,
-      where: { batch, branch, degree, isActive: 'YES' },
-      required: true
-    }],
-    order: [['semesterNumber', 'ASC']]
-  });
+  const key = makeCacheKey("semesters:byBatchBranch", { batch, branch, degree });
+  const semesters = await getOrSetCache(
+    key,
+    () =>
+      Semester.findAll({
+        where: { isActive: "YES" },
+        include: [
+          {
+            model: Batch,
+            where: { batch, branch, degree, isActive: "YES" },
+            required: true,
+          },
+        ],
+        order: [["semesterNumber", "ASC"]],
+      }),
+    { ttlSeconds: ttl.medium, onStatus: markCache(res) }
+  );
 
   if (semesters.length === 0) {
     return res.status(404).json({ status: "failure", message: "No semesters found" });
@@ -182,6 +209,7 @@ export const updateSemester = catchAsync(async (req, res) => {
   if (updatedRows === 0) {
     return res.status(404).json({ status: "failure", message: "Semester not found" });
   }
+  await invalidateCachePrefixes(["semesters", "attendanceReports", "filters"]);
 
   res.status(200).json({
     status: "success",
@@ -199,6 +227,7 @@ export const deleteSemester = catchAsync(async (req, res) => {
   if (!deleted) {
     return res.status(404).json({ status: "failure", message: "Semester not found" });
   }
+  await invalidateCachePrefixes(["semesters", "attendanceReports", "filters"]);
 
   res.status(200).json({
     status: "success",
