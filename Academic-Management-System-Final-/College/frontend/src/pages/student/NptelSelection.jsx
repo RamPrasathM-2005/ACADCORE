@@ -358,7 +358,7 @@ const NptelSelection = () => {
                       )}
                     </div>
 
-                    {enroll.importedGrade && (!enroll.studentStatus || enroll.studentStatus === "pending") && (
+                    {enroll.importedGrade && (!enroll.studentStatus === "pending") && (
                       <div className="mt-3 flex flex-wrap gap-2">
                         <button
                           onClick={() => handleStudentDecision(enroll.enrollmentId, "accepted")}

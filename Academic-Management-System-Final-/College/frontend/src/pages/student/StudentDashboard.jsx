@@ -55,7 +55,7 @@ const StudentDashboard = () => {
   const [academicIds, setAcademicIds] = useState({
     regno: '',
     batchId: '',
-    deptId: '',
+    departmentId: '',
     semesterId: ''
   });
 
@@ -179,9 +179,9 @@ const StudentDashboard = () => {
         const ids = await fetchStudentAcademicIds();
         if (!ids) return;
         setAcademicIds({
-          regno: ids.regno || regno,
+          regno: ids.regno,
           batchId: ids.batchId || '',
-          deptId: ids.deptId || '',
+          departmentId: ids.departmentId || '',
           semesterId: ids.semesterId || selectedSemester
         });
       } catch {
@@ -434,9 +434,9 @@ const StudentDashboard = () => {
   const currentStudentSemester = toNumber(studentDetails?.studentProfile?.semester, 0);
 
   const handleViewCBCS = () => {
-    if (!academicIds.batchId || !academicIds.deptId || !academicIds.semesterId || !academicIds.regno) return;
+    if (!academicIds.batchId || !academicIds.departmentId || !academicIds.semesterId || !academicIds.regno) return;
     navigate(
-      `/student/stu/${academicIds.regno}/${academicIds.batchId}/${academicIds.deptId}/${academicIds.semesterId}`
+      `/student/stu/${academicIds.regno}/${academicIds.batchId}/${academicIds.departmentId}/${academicIds.semesterId}`
     );
   };
 

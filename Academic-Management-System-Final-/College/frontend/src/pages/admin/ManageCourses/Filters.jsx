@@ -4,10 +4,10 @@ import { Search } from 'lucide-react';
 const Filters = ({ filters, setFilters, semesters, courseTypes, departments }) => {
   const deptOptions = Array.isArray(departments) && departments.length > 0
     ? departments.map((dept) => ({
-        value: String(dept.departmentId ?? dept.Deptid ?? dept.id ?? ''),
+        value: String(dept.departmentIdept.id ?? ''),
         label: `${dept.departmentName || dept.Deptname || 'Department'}${
-          dept.departmentAcr || dept.deptCode || dept.Deptacronym
-            ? ` (${dept.departmentAcr || dept.deptCode || dept.Deptacronym})`
+          dept.departmentAcr || dept.deptCodept.Deptacronym
+            ? ` (${dept.departmentAcr || dept.deptCodept.Deptacronym})`
             : ''
         }`
       })).filter(d => d.value)

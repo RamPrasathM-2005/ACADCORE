@@ -171,7 +171,7 @@
 //       }
 //     } catch (err) {
 //       console.error("API Error in handleGenerate:", err.response?.data || err);
-//       const errorMessage = err.response?.data?.message || err.message;
+//       const errorMessage = err.response?.data?.messagerr.message;
 //       setError(`Error generating timetable: ${errorMessage}`);
 //       toast.error(`Error generating timetable: ${errorMessage}`, {
 //         position: "top-right",
@@ -351,7 +351,7 @@
 //       toast.success("Students loaded successfully!", { position: "top-right" });
 //     } catch (err) {
 //       console.error("Error in handleCourseClick:", err);
-//       const errorMessage = err.response?.data?.message || err.message;
+//       const errorMessage = err.response?.data?.messagerr.message;
 //       setError(`Error fetching students: ${errorMessage}`);
 //       toast.error(`Error fetching students: ${errorMessage}`, {
 //         position: "top-right",
@@ -610,7 +610,7 @@
 //           .map(
 //             (err) =>
 //               `Failed to save attendance for ${err.period}: ${
-//                 err.error.response?.data?.message || err.error.message
+//                 err.error.response?.data?.messagerr.error.message
 //               }`
 //           )
 //           .join("; ");

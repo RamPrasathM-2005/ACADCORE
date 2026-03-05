@@ -109,7 +109,7 @@ const CourseRecommendation = () => {
         const errorMessage =
           err.response?.status === 404
             ? `No batch or semesters found for ${selectedDegree} - ${selectedDept} (${selectedBatch}). Create batch/semester first.`
-            : `Failed to fetch: ${err.response?.data?.message || err.message}`;
+            : `Failed to fetch: ${err.response?.data?.messagerr.message}`;
         console.error('Fetch error:', err.response?.data || err);
         setError(errorMessage);
         toast.error(errorMessage);
@@ -169,7 +169,7 @@ const CourseRecommendation = () => {
 
       } catch (err) {
         console.error('❌ Error loading semester data:', err);
-        const errorMessage = err.response?.data?.message || err.message;
+        const errorMessage = err.response?.data?.messagerr.message;
         setError(`Failed to load courses/buckets/electives: ${errorMessage}`);
         toast.error(`Failed to load data: ${errorMessage}`);
       } finally {
@@ -226,8 +226,8 @@ const CourseRecommendation = () => {
         toast.success('Bucket created successfully');
       }
     } catch (err) {
-      setError(`Failed to fetch updated buckets: ${err.response?.data?.message || err.message}`);
-      toast.error(`Failed to fetch updated buckets: ${err.response?.data?.message || err.message}`);
+      setError(`Failed to fetch updated buckets: ${err.response?.data?.messagerr.message}`);
+      toast.error(`Failed to fetch updated buckets: ${err.response?.data?.messagerr.message}`);
     } finally {
       setLoading(false);
     }
@@ -246,8 +246,8 @@ const CourseRecommendation = () => {
         toast.success('Bucket name updated successfully');
       }
     } catch (err) {
-      setError(`Failed to update bucket name: ${err.response?.data?.message || err.message}`);
-      toast.error(`Failed to update bucket name: ${err.response?.data?.message || err.message}`);
+      setError(`Failed to update bucket name: ${err.response?.data?.messagerr.message}`);
+      toast.error(`Failed to update bucket name: ${err.response?.data?.messagerr.message}`);
     } finally {
       setLoading(false);
     }
@@ -271,8 +271,8 @@ const CourseRecommendation = () => {
         toast.success('Bucket deleted successfully');
       }
     } catch (err) {
-      setError(`Failed to delete bucket: ${err.response?.data?.message || err.message}`);
-      toast.error(`Failed to delete bucket: ${err.response?.data?.message || err.message}`);
+      setError(`Failed to delete bucket: ${err.response?.data?.messagerr.message}`);
+      toast.error(`Failed to delete bucket: ${err.response?.data?.messagerr.message}`);
     } finally {
       setLoading(false);
     }
@@ -306,7 +306,7 @@ const CourseRecommendation = () => {
         }
       }
     } catch (err) {
-      const errorMsg = err.response?.data?.message || err.message;
+      const errorMsg = err.response?.data?.messagerr.message;
       console.error('Add courses error:', err.response?.data);
       setError(`Failed to add courses: ${errorMsg}`);
       toast.error(`Failed to add courses: ${errorMsg}`);
@@ -336,8 +336,8 @@ const CourseRecommendation = () => {
         }
       }
     } catch (err) {
-      setError(`Failed to remove course: ${err.response?.data?.message || err.message}`);
-      toast.error(`Failed to remove course: ${err.response?.data?.message || err.message}`);
+      setError(`Failed to remove course: ${err.response?.data?.messagerr.message}`);
+      toast.error(`Failed to remove course: ${err.response?.data?.messagerr.message}`);
     } finally {
       setLoading(false);
     }

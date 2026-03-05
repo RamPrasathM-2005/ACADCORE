@@ -29,7 +29,7 @@ const useManageStaffData = () => {
       // 1. Fetch Metadata
       const departmentsData = await manageStaffService.getDepartments();
       const formattedDepartments = departmentsData.map(dept => ({
-        departmentId: dept.Deptid,
+        departmentId: dept.departmentId,
         departmentName: dept.Deptname,
         departmentAcronym: dept.Deptacronym,
         isActive: 'YES',
@@ -49,7 +49,7 @@ const useManageStaffData = () => {
       // 2. Process Staff
       const staffData = Array.isArray(usersData)
         ? usersData.map(user => {
-            const department = formattedDepartments.find(d => d.departmentId === (user.Deptid || user.departmentId));
+            const department = formattedDepartments.find(d => d.departmentId === (user.departmentId));
             
             const allocatedCourses = Array.isArray(user.allocatedCourses)
               ? user.allocatedCourses.map(course => ({
@@ -71,7 +71,7 @@ const useManageStaffData = () => {
               staffId: user.staffId || `STAFF_${user.id}`, // String ID "cset01"
               name: user.name || 'Unknown',
               email: user.email || '',
-              departmentId: user.Deptid || user.departmentId || 0,
+              departmentId: user.departmentId || 0,
               departmentName: department ? department.departmentName : user.Deptname || user.departmentName || 'Unknown',
               allocatedCourses,
             };

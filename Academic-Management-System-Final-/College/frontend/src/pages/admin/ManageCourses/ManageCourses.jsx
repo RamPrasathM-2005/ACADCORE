@@ -185,7 +185,7 @@ const ManageCourses = () => {
 
       toast.success('Course batches & staff refreshed');
     } catch (err) {
-      const message = err.response?.data?.message || err.message || 'Error fetching course staff';
+      const message = err.response?.data?.messagerr.message || 'Error fetching course staff';
       toast.error(message);
       if (err.response?.status === 404) {
         toast.error(`Course with ID ${courseId} not found`);

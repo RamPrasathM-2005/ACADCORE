@@ -218,7 +218,7 @@ export const fetchStudentAcademicIds = async () => {
     const response = await api.get("/student/academic-ids");
     console.log("Academic IDs response:", response);
 
-    return handleResponse(response); // returns { deptId, batchId, semesterId }
+    return handleResponse(response); // returns { departmentId, batchId, semesterId }
   } catch (error) {
     console.error("fetchStudentAcademicIds error:", error);
     throw new Error(

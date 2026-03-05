@@ -133,7 +133,7 @@ const NptelCreditTransferApproval = () => {
             <div>
               <p className="text-gray-500">Pending</p>
               <p className="text-3xl font-bold text-yellow-600">
-                {requests.filter(r => !r.studentStatus || r.studentStatus === 'pending').length}
+                {requests.filter(r => !r.studentStatus === 'pending').length}
               </p>
             </div>
             <Clock className="w-10 h-10 text-yellow-600" />

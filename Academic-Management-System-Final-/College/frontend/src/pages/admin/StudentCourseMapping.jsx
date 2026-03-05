@@ -176,7 +176,7 @@ const StudentCourseMapping = () => {
     }))
   ];
 
-  const getDeptName = () => departments.find(d => d.Deptid === selectedDept)?.Deptacronym || selectedDept;
+  const getDeptName = () => departments.find(d => d.departmentId === selectedDept)?.Deptacronym || selectedDept;
   const getBatchName = () => selectedBatch;
 
   return (
@@ -205,7 +205,7 @@ const StudentCourseMapping = () => {
                     size="large"
                   >
                     {departments.map(d => (
-                      <Option key={d.Deptid} value={d.Deptid}>
+                      <Option key={d.departmentId} value={d.departmentId}>
                         {d.Deptname} ({d.Deptacronym})
                       </Option>
                     ))}

@@ -265,7 +265,7 @@ const useMarkAllocation = (courseCode, sectionId) => {
         }
       } catch (err) {
         console.error('Error during confirmation:', err);
-        MySwal.fire('Error', err.response?.data?.message || err.message || 'Failed to confirm partitions', 'error');
+        MySwal.fire('Error', err.response?.data?.messagerr.message || 'Failed to confirm partitions', 'error');
       }
     } else {
       setShowPartitionModal(true);
@@ -311,7 +311,7 @@ const useMarkAllocation = (courseCode, sectionId) => {
       return { success: true, message: 'Partitions and COs saved successfully' };
     } catch (err) {
       console.error('Error saving partitions:', err);
-      const errMsg = err.response?.data?.message || err.message || 'Failed to save partitions';
+      const errMsg = err.response?.data?.messagerr.message || 'Failed to save partitions';
       if (err.response?.status === 409) {
         return { success: false, error: 'Partitions already exist' };
       }
@@ -351,7 +351,7 @@ const useMarkAllocation = (courseCode, sectionId) => {
       setTempTools([]);
       return { success: true, message: 'Tools saved successfully' };
     } catch (err) {
-      const errMsg = err.response?.data?.message || err.message || 'Failed to save tools';
+      const errMsg = err.response?.data?.messagerr.message || 'Failed to save tools';
       setError(errMsg);
       return { success: false, error: errMsg };
     }
@@ -372,7 +372,7 @@ const useMarkAllocation = (courseCode, sectionId) => {
       return { success: true, message: 'Tool deleted successfully' };
     } catch (err) {
       console.error('Error deleting tool:', err);
-      const errMsg = err.response?.data?.message || err.message || 'Failed to delete tool';
+      const errMsg = err.response?.data?.messagerr.message || 'Failed to delete tool';
       setError(errMsg);
       return { success: false, error: errMsg };
     }
@@ -427,7 +427,7 @@ const useMarkAllocation = (courseCode, sectionId) => {
       return { success: true, message: 'Marks saved successfully' };
     } catch (err) {
       console.error('Error saving tool marks:', err);
-      const errMsg = err.response?.data?.message || err.message || 'Failed to save marks';
+      const errMsg = err.response?.data?.messagerr.message || 'Failed to save marks';
       setError(errMsg);
       return { success: false, error: errMsg };
     }
@@ -468,7 +468,7 @@ const useMarkAllocation = (courseCode, sectionId) => {
       return { success: true, message: response.message || 'Marks imported successfully' };
     } catch (err) {
       console.error('Error importing marks:', err);
-      const errMsg = err.response?.data?.message || err.message || 'Failed to import marks';
+      const errMsg = err.response?.data?.messagerr.message || 'Failed to import marks';
       setError(errMsg);
       MySwal.fire('Error', errMsg, 'error');
       return { success: false, error: errMsg };
@@ -482,7 +482,7 @@ const useMarkAllocation = (courseCode, sectionId) => {
       return { success: true, message: 'CSV exported successfully' };
     } catch (err) {
       console.error('Error exporting CO-wise CSV:', err);
-      const errMsg = err.response?.data?.message || err.message || 'Failed to export CSV';
+      const errMsg = err.response?.data?.messagerr.message || 'Failed to export CSV';
       setError(errMsg);
       return { success: false, error: errMsg };
     }
@@ -495,7 +495,7 @@ const useMarkAllocation = (courseCode, sectionId) => {
       return { success: true, message: 'Course-wise CSV exported successfully' };
     } catch (err) {
       console.error('Error exporting course-wise CSV:', err);
-      const errMsg = err.response?.data?.message || err.message || 'Failed to export CSV';
+      const errMsg = err.response?.data?.messagerr.message || 'Failed to export CSV';
       setError(errMsg);
       return { success: false, error: errMsg };
     }

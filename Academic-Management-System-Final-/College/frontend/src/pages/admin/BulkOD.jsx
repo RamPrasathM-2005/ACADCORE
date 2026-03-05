@@ -42,7 +42,7 @@ export default function AdminAttendanceGenerator() {
         if (dRes.data?.status === "success") {
           setDepartments(
             dRes.data.data.map((d) => ({
-              id: d.Deptid,
+              id: d.departmentId,
               name: d.Deptname,
               code: d.deptCode,
             }))
@@ -102,7 +102,7 @@ export default function AdminAttendanceGenerator() {
           degree: selectedDegree,
           batch: bData.batch,
           semesterId: selectedSemester,
-          Deptid: selectedDepartment,
+          departmentId: selectedDepartment,
         },
       });
 
@@ -144,7 +144,7 @@ export default function AdminAttendanceGenerator() {
         endDate: selectedDate,
         degree: selectedDegree,
         batch: bData.batch,
-        Deptid: selectedDepartment,
+        departmentId: selectedDepartment,
         semesterId: selectedSemester,
         students: selectedList,
       });

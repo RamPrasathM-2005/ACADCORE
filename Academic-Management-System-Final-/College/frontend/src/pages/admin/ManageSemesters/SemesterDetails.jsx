@@ -69,7 +69,7 @@ const SemesterDetails = ({ semester, onBack, onDelete, onRefresh }) => {
         setCourses(prev => [...prev, courseToDelete].sort((a, b) => a.courseId - b.courseId));
         setUpdateKey(prev => prev + 1); // Force re-render
       }
-      const message = err.response?.data?.message || err.message || 'Failed to delete course';
+      const message = err.response?.data?.messagerr.message || 'Failed to delete course';
       if (message.includes('foreign key constraint')) {
         toast.error('Cannot delete course because it has associated sections or staff allocations. Please remove them first.');
       } else {

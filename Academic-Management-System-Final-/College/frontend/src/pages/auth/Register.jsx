@@ -40,7 +40,7 @@ const Register = () => {
   const [username, setUsername] = useState("");
   const [staffId, setStaffId] = useState("");
   const [role, setRole] = useState("staff");
-  const [Deptid, setDeptid] = useState("");
+  const [departmentId, setDepartmentId] = useState("");
   const [departments, setDepartments] = useState([]);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -52,7 +52,7 @@ const Register = () => {
         const departmentList = await getDepartments();
         setDepartments(departmentList);
         if (departmentList.length > 0) {
-          setDeptid(departmentList[0].Deptid); // Set default Deptid
+          setDepartmentId(departmentList[0].departmentId); // Set default departmentId
         }
       } catch (err) {
         setError("Failed to load departments");
@@ -68,7 +68,7 @@ const Register = () => {
     setError("");
 
     // Validate inputs
-    if (!name || !email || !password || !role || !username || !Deptid) {
+    if (!name || !email || !password || !role || !username || !departmentId) {
       setError("Name, email, password, role, username, and department are required");
       toast.error("Name, email, password, role, username, and department are required");
       setIsLoading(false);
@@ -90,7 +90,7 @@ const Register = () => {
     }
 
     try {
-      const user = await register(name, email, password, role, Deptid, staffId, username);
+      const user = await register(name, email, password, role, departmentId, staffId, username);
 
       // Role-based redirect
       if (user.role === "admin") {
@@ -185,15 +185,15 @@ const Register = () => {
           <div className="space-y-2">
             <label className="text-sm font-semibold text-gray-700">Department</label>
             <select
-              value={Deptid}
-              onChange={(e) => setDeptid(e.target.value)}
+              value={departmentId}
+              onChange={(e) => setDepartmentId(e.target.value)}
               className="w-full py-3.5 px-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all bg-gray-50 focus:bg-white"
               required
             >
               <option value="">Select Department</option>
               {departments.length > 0 ? (
                 departments.map((dept) => (
-                  <option key={dept.Deptid} value={dept.Deptid}>
+                  <option key={dept.departmentId} value={dept.departmentId}>
                     {dept.Deptname} ({dept.deptCode})
                   </option>
                 ))

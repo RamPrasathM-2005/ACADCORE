@@ -111,7 +111,7 @@ const AddBucketModal = ({
     } catch (err) {
       toast.error(
         "Failed to fetch courses for vertical: " +
-          (err.response?.data?.message || err.message)
+          (err.response?.data?.messagerr.message)
       );
     } finally {
       setLoading(false);

@@ -2,6 +2,7 @@
 import { Op } from 'sequelize';
 import db from '../models/index.js';
 import { getOrSetCache, makeCacheKey, ttl } from "../utils/cache.js";
+import { sendUnmarkedAttendanceReminderEmails } from "../services/attendanceNotificationService.js";
 
 const { 
   sequelize, 
@@ -405,7 +406,7 @@ export const getUnmarkedAttendanceReport = async (req, res) => {
       },
       attributes: ['Userid', 'courseId', 'sectionId', 'departmentId'],
       include: [
-        { model: User, required: false, attributes: ['userId', 'userName', 'userNumber'] },
+        { model: User, required: false, attributes: ['userId', 'userName', 'userNumber', 'userMail'] },
         { model: Section, required: false, attributes: ['sectionId', 'sectionName'] }
       ]
     });
@@ -418,6 +419,7 @@ export const getUnmarkedAttendanceReport = async (req, res) => {
             userId: a.Userid,
             staffName: a.User?.userName || `User ${a.Userid}`,
             staffNumber: a.User?.userNumber || "-",
+            staffEmail: a.User?.userMail || "",
             sectionName: a.Section?.sectionName || "-",
           };
           assignmentMap.set(mapKey, teacher);
@@ -463,6 +465,7 @@ export const getUnmarkedAttendanceReport = async (req, res) => {
                   userId: null,
                   staffName: "Unassigned",
                   staffNumber: "-",
+                  staffEmail: "",
                   sectionName,
                 },
               ];
@@ -482,6 +485,7 @@ export const getUnmarkedAttendanceReport = async (req, res) => {
             Section: teacher.sectionName || sectionName,
             StaffName: teacher.staffName,
             StaffNumber: teacher.staffNumber,
+            StaffEmail: teacher.staffEmail || "",
             departmentId: slot.departmentId
           });
         }
@@ -498,6 +502,12 @@ export const getUnmarkedAttendanceReport = async (req, res) => {
       },
       { ttlSeconds: ttl.short, onStatus: markCache(res) }
     );
+
+    if (payload?.statusCode === 200 && payload?.body?.success && Array.isArray(payload?.body?.report)) {
+      sendUnmarkedAttendanceReminderEmails({ report: payload.body.report }).catch((emailErr) => {
+        console.error("Unmarked attendance reminder email failed:", emailErr.message);
+      });
+    }
 
     return res.status(payload.statusCode).json(payload.body);
   } catch (err) {

@@ -132,7 +132,7 @@ const MarksAllocation = () => {
   };
 
 const calculateConsolidated = useCallback((student, co) => {
-  if (!co || !co.tools || co.tools.length === 0) return 0;
+  if (!co || co.tools.length === 0) return 0;
   
   let consolidated = 0;
   let totalWeight = 0;
@@ -230,7 +230,7 @@ const calculateConsolidated = useCallback((student, co) => {
 
   // --- FIXED: Handle Save Marks without White Screen Crash ---
   const handleSaveToolMarksClick = async () => {
-    if (!selectedCO || !selectedCO.tools || selectedCO.tools.length === 0) {
+    if (!selectedCO || selectedCO.tools.length === 0) {
       MySwal.fire('Error', 'No tools selected for this CO', 'error');
       return;
     }
@@ -602,7 +602,7 @@ const calculateConsolidated = useCallback((student, co) => {
                       <h4 className="font-bold text-slate-800">Tools configured</h4>
                       <span className="text-xs text-slate-500 font-medium bg-slate-100 px-2 py-1 rounded">Read-only view</span>
                     </div>
-                    {(!co.tools || co.tools.length === 0) ? (
+                    {co.tools.length === 0 ? (
                       <p className="text-slate-400 text-sm italic">No tools configured yet.</p>
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

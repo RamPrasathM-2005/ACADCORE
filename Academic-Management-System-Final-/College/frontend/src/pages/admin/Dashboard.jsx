@@ -75,9 +75,7 @@ const AdminDashboard = () => {
           const batchValue =
             sem.Batch?.batch ||
             sem.batch ||
-            sem.Batch?.batchYears ||
-            sem.batchYears ||
-            sem.batchYear ||
+            sem.Batch?.batchYearsem.batchYearsem.batchYear ||
             "-";
 
           return {

@@ -93,7 +93,7 @@ const CourseDetailsModal = ({
       toast.success('Batch deleted successfully');
       await handleDeleteBatch(courseId, sectionName); // Trigger refetch
     } catch (err) {
-      const message = err.response?.data?.message || err.message || 'Error deleting batch';
+      const message = err.response?.data?.messagerr.message || 'Error deleting batch';
       console.error(`CourseDetailsModal: Error deleting batch ${sectionName}:`, err.response?.data || err);
       toast.error(message);
       

@@ -161,7 +161,7 @@ const Report = () => {
     if (!selectedBatch || !selectedDept || !selectedSem) return;
     try {
       const selectedBatchData = batches.find((b) => String(b.batchId) === String(selectedBatch));
-      const selectedDeptData = departments.find((d) => String(d.Deptid) === String(selectedDept));
+      const selectedDeptData = departments.find((d) => String(d.departmentId) === String(selectedDept));
       const params = {
         batch: selectedBatchData?.batch || selectedBatch,
         dept: selectedDeptData?.Deptacronym || selectedDept,
@@ -215,7 +215,7 @@ const Report = () => {
     setCourseOutcomes([]);
     try {
       const selectedBatchData = batches.find((b) => String(b.batchId) === String(selectedBatch));
-      const selectedDeptData = departments.find((d) => String(d.Deptid) === String(selectedDept));
+      const selectedDeptData = departments.find((d) => String(d.departmentId) === String(selectedDept));
       const params = {
         batch: selectedBatchData?.batch || selectedBatch,
         dept: selectedDeptData?.Deptacronym || selectedDept,
@@ -353,7 +353,7 @@ const Report = () => {
       MySwal.fire('Success', 'Mark updated successfully', 'success');
       await fetchData();
     } catch (err) {
-      MySwal.fire('Error', `Failed to update mark: ${err.response?.data?.message || err.message}`, 'error');
+      MySwal.fire('Error', `Failed to update mark: ${err.response?.data?.messagerr.message}`, 'error');
     }
     setEditingCell(null);
   };
@@ -993,7 +993,7 @@ const Report = () => {
 
   const getSelectedDeptInfo = () => {
     if (!selectedDept) return null;
-    const dept = departments.find(d => String(d.Deptid) === String(selectedDept));
+    const dept = departments.find(d => String(d.departmentId) === String(selectedDept));
     return dept;
   };
 
@@ -1093,7 +1093,7 @@ const Report = () => {
                     className="w-full"
                   >
                     {departments.map(dept => (
-                      <Option key={dept.Deptid} value={dept.Deptid}>
+                      <Option key={dept.departmentId} value={dept.departmentId}>
                         <div className="flex justify-between items-center">
                           <span className="font-medium">{dept.Deptname}</span>
                         </div>
@@ -1175,7 +1175,7 @@ const Report = () => {
                     {selectedBatch && (
                       <Badge
                         color="blue"
-                        text={`Batch: ${getSelectedBatchInfo()?.batchYears || selectedBatch}`}
+                        text={`Batch: ${getSelectedBatchInfo()?.batchYearselectedBatch}`}
                       />
                     )}
                     {selectedDept && (

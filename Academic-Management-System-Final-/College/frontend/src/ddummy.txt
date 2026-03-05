@@ -100,7 +100,7 @@ export default function AdminAttendanceGenerator() {
           Array.isArray(response.data.data)
         ) {
           const mappedDepartments = response.data.data.map((dept) => ({
-            departmentId: dept.Deptid,
+            departmentId: dept.departmentId,
             departmentCode: dept.deptCode,
             departmentName: dept.Deptname,
           }));
@@ -245,7 +245,7 @@ export default function AdminAttendanceGenerator() {
             degree: selectedDegree,
             batch: selectedBatchData.batch,
             branch: selectedBatchData.branch,
-            Deptid: selectedDepartment,
+            departmentId: selectedDepartment,
             semesterId: selectedSemester,
           },
         }
@@ -264,7 +264,7 @@ export default function AdminAttendanceGenerator() {
       }
     } catch (err) {
       console.error("API Error:", err.response?.data || err);
-      const errorMessage = err.response?.data?.message || err.message;
+      const errorMessage = err.response?.data?.messagerr.message;
       setError(`Error generating timetable: ${errorMessage}`);
       toast.error(`Error generating timetable: ${errorMessage}`, {
         position: "top-right",
@@ -342,7 +342,7 @@ export default function AdminAttendanceGenerator() {
       }
     } catch (err) {
       console.error("Error in handleCourseClick:", err);
-      const errorMessage = err.response?.data?.message || err.message;
+      const errorMessage = err.response?.data?.messagerr.message;
       setError(`Error fetching students: ${errorMessage}`);
       toast.error(`Error fetching students: ${errorMessage}`, {
         position: "top-right",
@@ -454,7 +454,7 @@ export default function AdminAttendanceGenerator() {
       }
     } catch (err) {
       console.error("Error in handleSave:", err);
-      const errorMessage = err.response?.data?.message || err.message;
+      const errorMessage = err.response?.data?.messagerr.message;
       setError(`Error saving attendance: ${errorMessage}`);
       toast.error(`Failed to save attendance: ${errorMessage}`, {
         position: "top-right",
@@ -1043,7 +1043,7 @@ const Timetable = () => {
         console.log('Departments API response:', response.data);
         if (response.data?.status === 'success' && Array.isArray(response.data.data)) {
           const mappedDepartments = response.data.data.map(dept => ({
-            departmentId: dept.Deptid,
+            departmentId: dept.departmentId,
             departmentCode: dept.deptCode,
             departmentName: dept.Deptname,
           }));
@@ -1174,7 +1174,7 @@ const Timetable = () => {
         courseTitle: allocationMode === 'manual' ? courseValue : undefined,
         dayOfWeek: selectedCell.day,
         periodNumber: backendPeriodNumber,
-        Deptid: parseInt(selectedDept),
+        departmentId: parseInt(selectedDept),
         semesterId: parseInt(selectedSem),
       });
 
@@ -1606,7 +1606,7 @@ const Timetable = () => {
               .map(entry => (
                 <div key={entry.timetableId} className="p-4 border border-gray-200 rounded-lg hover:shadow-md transition-shadow bg-white">
                   <div className="font-semibold text-gray-900">{entry.courseId}</div>
-                  <div className="text-sm text-gray-600 mb-1">{entry.courseTitle || entry.courseId}</div>
+                  <div className="text-sm text-gray-600 mb-1">{entry.courseTitlentry.courseId}</div>
                   <div className="text-xs text-gray-600">
                     {entry.dayOfWeek}, {getPeriodName(entry.periodNumber)}
                     {entry.sectionName ? ` (${entry.sectionName})` : ''}
@@ -1761,7 +1761,7 @@ const Timetable = () => {
           Array.isArray(response.data.data)
         ) {
           const mappedDepartments = response.data.data.map((dept) => ({
-            departmentId: dept.Deptid,
+            departmentId: dept.departmentId,
             departmentCode: dept.deptCode,
             departmentName: dept.Deptname,
           }));
@@ -1853,7 +1853,7 @@ const Timetable = () => {
           {
             params: {
               batchId: selectedBatch,
-              Deptid: selectedDept,
+              departmentId: selectedDept,
             },
           }
         );
@@ -1876,7 +1876,7 @@ const Timetable = () => {
       } catch (err) {
         console.error(
           "Failed to load regulation/verticals:",
-          err.response || err
+          err.responserr
         );
         setRegulation(null);
         setVerticals([]);
@@ -2020,7 +2020,7 @@ const Timetable = () => {
   //         regCourseId: selectedRegulationCourse,
   //         dayOfWeek: selectedCell.day,
   //         periodNumber: backendPeriodNumber,
-  //         Deptid: parseInt(selectedDept),
+  //         departmentId: parseInt(selectedDept),
   //         semesterId: parseInt(selectedSem),
   //       }
   //     );
@@ -2131,7 +2131,7 @@ const handleAssignAllVerticals = async () => {
         courseTitle: allocationMode === "manual" ? courseValue : undefined,
         dayOfWeek: selectedCell.day,
         periodNumber: backendPeriodNumber,
-        Deptid: parseInt(selectedDept),
+        departmentId: parseInt(selectedDept),
         semesterId: parseInt(selectedSem),
       });
 
@@ -2980,7 +2980,7 @@ const handleAssignAllVerticals = async () => {
                         {entry.courseId}
                       </div>
                       <div className="text-sm text-gray-600 mb-1">
-                        {entry.courseTitle || entry.courseId}
+                        {entry.courseTitlentry.courseId}
                       </div>
                       <div className="text-xs text-gray-600">
                         {entry.dayOfWeek}, {getPeriodName(entry.periodNumber)}

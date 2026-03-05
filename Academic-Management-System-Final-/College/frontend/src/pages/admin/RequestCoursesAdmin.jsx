@@ -226,7 +226,7 @@ const RequestCoursesAdmin = () => {
               <div className="space-y-1 text-sm text-gray-600 mb-4">
                 <p><span className="font-medium">Requested by:</span> {request.User?.userName || request.staffName || 'N/A'} ({request.User?.userMail || request.email || 'N/A'})</p>
                 <p><span className="font-medium">Branch:</span> {request.Course?.Semester?.Batch?.branch || request.branch || 'N/A'}</p>
-                <p><span className="font-medium">Semester:</span> {request.Course?.Semester?.semesterNumber || request.semesterNumber || 'N/A'}</p>
+                <p><span className="font-medium">Semester:</span> {request.Course?.Semester?.semesterNumberequest.semesterNumber || 'N/A'}</p>
                 <p><span className="font-medium">Batch:</span> {request.Course?.Semester?.Batch?.batch || request.batch || 'N/A'}</p>
                 <p><span className="font-medium">Credits:</span> {request.Course?.credits || request.credits || 'N/A'}</p>
                 <p><span className="font-medium">Department:</span> {request.Course?.Semester?.Batch?.Regulation?.Department?.Deptname || request.deptName || 'N/A'}</p>

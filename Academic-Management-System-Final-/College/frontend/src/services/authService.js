@@ -33,13 +33,13 @@ export const login = async (email, password) => {
   }
 };
 
-export const register = async (username, email, password, role, Deptid, staffId) => {
+export const register = async (username, email, password, role, departmentId, staffId) => {
   const response = await api.post('/auth/register', {
     username,
     email,
     password,
     role: role.toLowerCase(),
-    Deptid,
+    departmentId,
     staffId: staffId ? parseInt(staffId) : null,
   });
   if (response.data.status === 'success') {
@@ -88,7 +88,7 @@ export const getDepartments = async () => {
   const response = await api.get('/departments');
   if (response.data.status === 'success') {
     return response.data.data.map(dept => ({
-      Deptid: dept.Deptid,
+      departmentId: dept.departmentId,
       deptCode: dept.Deptacronym,
       Deptname: dept.Deptname,
     }));

@@ -5,7 +5,7 @@ import { branchMap } from "../../pages/admin/ManageSemesters/branchMap";
 
 // Simple CSV string generator (no external deps)
 const generateCSV = (data, fields) => {
-  if (!data || data.length === 0) return '';
+  if (!data.length === 0) return '';
   const header = fields.map(field => `"${field}"`).join(',');
   const rows = data.map(row => 
     fields.map(field => {
@@ -54,7 +54,7 @@ const StudentEnrollmentsView = () => {
       setFilteredData(fetchedData);
     } catch (err) {
       console.error('Fetch error:', err);
-      const errMsg = err.response?.data?.message || err.message || 'Unknown error';
+      const errMsg = err.response?.data?.messagerr.message || 'Unknown error';
       alert('Error fetching data: ' + errMsg);
       setData([]);
       setFilteredData([]);

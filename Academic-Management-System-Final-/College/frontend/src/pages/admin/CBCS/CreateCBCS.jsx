@@ -30,7 +30,7 @@ const CreateCBCS = () => {
   const [filters, setFilters] = useState({
     batchId: '',
     semesterId: '',
-    deptId: '',
+    departmentId: '',
     degree: '' // Added Degree to filters
   });
   const [courses, setCourses] = useState(null);
@@ -51,7 +51,7 @@ const CreateCBCS = () => {
   const [loadingSemesters, setLoadingSemesters] = useState(false);
 
   const selectedDeptObj = departments.find(
-    (d) => d.id?.toString() === filters.deptId?.toString()
+    (d) => d.id?.toString() === filters.departmentId?.toString()
   );
 
   const filteredBatches = batches.filter((batch) => {
@@ -102,7 +102,7 @@ const CreateCBCS = () => {
         const data = response.data;
         if (data.success || data.status === 'success') {
           const deptList = (data.departments || data.data || []).map(d => ({
-            id: d.Deptid || d.id,
+            id: d.departmentId.id,
             name: d.Deptname || d.name,
             acronym: d.Deptacronym // Backend needs acronym (e.g. "CSE") for branch
           }));
@@ -125,7 +125,7 @@ const CreateCBCS = () => {
   // Fetch semesters when batch, department, AND degree are selected
   useEffect(() => {
     const fetchSemesters = async () => {
-      if (!filters.batchId || !filters.deptId || !filters.degree) {
+      if (!filters.batchId || !filters.departmentId || !filters.degree) {
         setSemesters([]);
         return;
       }
@@ -134,7 +134,7 @@ const CreateCBCS = () => {
       try {
         // Map IDs back to string names for the backend logic
         const selectedBatchObj = batches.find(b => (b.batchId || b.id).toString() === filters.batchId.toString());
-        const selectedDeptObj = departments.find(d => d.id.toString() === filters.deptId.toString());
+        const selectedDeptObj = departments.find(d => d.id.toString() === filters.departmentId.toString());
 
         if (!selectedBatchObj || !selectedDeptObj) {
           setError('Invalid batch or department selection');
@@ -168,7 +168,7 @@ const CreateCBCS = () => {
     };
     
     fetchSemesters();
-  }, [filters.batchId, filters.deptId, filters.degree, batches, departments]);
+  }, [filters.batchId, filters.departmentId, filters.degree, batches, departments]);
 
   // Ensure stale/invalid batch selection is cleared when degree/department changes.
   useEffect(() => {
@@ -183,7 +183,7 @@ const CreateCBCS = () => {
 
   // Fetch courses based on filters
   const fetchCourses = async () => {
-    if (!filters.batchId || !filters.semesterId || !filters.deptId) {
+    if (!filters.batchId || !filters.semesterId || !filters.departmentId) {
       setError('Please select all filters');
       return;
     }
@@ -195,7 +195,7 @@ const CreateCBCS = () => {
     try {
       const response = await api.get('/cbcs/course', {
         params: {
-          Deptid: filters.deptId,
+          departmentId: filters.departmentId,
           batchId: filters.batchId,
           semesterId: filters.semesterId
         }
@@ -331,7 +331,7 @@ const CreateCBCS = () => {
     setSuccess('');
     try {
       const selectedBatchObj = batches.find((b) => String(b.batchId || b.id) === String(filters.batchId));
-      const selectedDeptObj = departments.find((d) => String(d.id) === String(filters.deptId));
+      const selectedDeptObj = departments.find((d) => String(d.id) === String(filters.departmentId));
       const batchDegree = String(selectedBatchObj?.degree || '').toUpperCase();
       const filterDegree = String(filters.degree || '').toUpperCase();
       const batchBranch = String(selectedBatchObj?.branch || '').toUpperCase();
@@ -350,7 +350,7 @@ const CreateCBCS = () => {
       }
 
       const payload = {
-        Deptid: parseInt(filters.deptId),
+        departmentId: parseInt(filters.departmentId),
         batchId: parseInt(filters.batchId),
         semesterId: parseInt(filters.semesterId),
         createdBy: currentUser?.userId || currentUser?.Userid || 101,
@@ -370,7 +370,7 @@ const CreateCBCS = () => {
         setError(data.message || 'Failed to create CBCS');
       }
     } catch (err) {
-      setError('Error creating CBCS: ' + (err.response?.data?.message || err.message));
+      setError('Error creating CBCS: ' + (err.response?.data?.messagerr.message));
     } finally {
       setLoading(false);
     }
@@ -475,7 +475,7 @@ const CreateCBCS = () => {
                 <option value="">{loadingBatches ? 'Loading...' : 'Select Batch'}</option>
                 {filteredBatches.map(batch => (
                   <option key={batch.batchId || batch.id} value={batch.batchId || batch.id}>
-                    {`${batch.batch || batch.name} - ${batch.branch || ''} (${batch.batchYears || ''})`}
+                    {`${batch.batch.name} - ${batch.branch || ''} (${batch.batchYears || ''})`}
                   </option>
                 ))}
               </select>
@@ -488,8 +488,8 @@ const CreateCBCS = () => {
                 Department
               </label>
               <select
-                value={filters.deptId}
-                onChange={(e) => setFilters({ ...filters, deptId: e.target.value, batchId: '', semesterId: '' })}
+                value={filters.departmentId}
+                onChange={(e) => setFilters({ ...filters, departmentId: e.target.value, batchId: '', semesterId: '' })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 transition-colors"
                 disabled={loadingDepts}
               >
@@ -512,7 +512,7 @@ const CreateCBCS = () => {
                 value={filters.semesterId}
                 onChange={(e) => setFilters({ ...filters, semesterId: e.target.value })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 transition-colors"
-                disabled={loadingSemesters || !filters.batchId || !filters.deptId || !filters.degree}
+                disabled={loadingSemesters || !filters.batchId || !filters.departmentId || !filters.degree}
               >
                 <option value="">
                   {loadingSemesters ? 'Loading...' : 

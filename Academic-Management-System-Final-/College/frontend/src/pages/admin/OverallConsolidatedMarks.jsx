@@ -161,7 +161,7 @@ const OverallConsolidatedMarks = () => {
     setError(null);
     try {
       const selectedBatchData = batches.find((b) => String(b.batchId) === String(selectedBatch));
-      const selectedDeptData = departments.find((d) => String(d.Deptid) === String(selectedDept));
+      const selectedDeptData = departments.find((d) => String(d.departmentId) === String(selectedDept));
       const params = {
         batch: selectedBatchData?.batch || selectedBatch,
         dept: selectedDeptData?.Deptacronym || selectedDept,
@@ -407,7 +407,7 @@ const OverallConsolidatedMarks = () => {
 
   const getSelectedDeptInfo = () => {
     if (!selectedDept) return null;
-    const dept = departments.find(d => String(d.Deptid) === String(selectedDept));
+    const dept = departments.find(d => String(d.departmentId) === String(selectedDept));
     return dept;
   };
 
@@ -501,7 +501,7 @@ const OverallConsolidatedMarks = () => {
                     className="w-full"
                   >
                     {departments.map(dept => (
-                      <Option key={dept.Deptid} value={dept.Deptid}>
+                      <Option key={dept.departmentId} value={dept.departmentId}>
                         <div className="flex justify-between items-center">
                           <span className="font-medium">{dept.Deptname}</span>
                           
@@ -552,7 +552,7 @@ const OverallConsolidatedMarks = () => {
                     {selectedBatch && (
                       <Badge 
                         color="blue" 
-                        text={`Batch: ${getSelectedBatchInfo()?.batchYears || selectedBatch}`} 
+                        text={`Batch: ${getSelectedBatchInfo()?.batchYearselectedBatch}`} 
                       />
                     )}
                     {selectedDept && (

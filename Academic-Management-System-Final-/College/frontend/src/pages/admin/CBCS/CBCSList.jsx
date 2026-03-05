@@ -61,7 +61,7 @@ const CBCSList = () => {
         // Handle both possible API response structures
         const deptData = data.departments || data.data || [];
         const formattedDepartments = deptData.map(dept => ({
-          id: dept.Deptid || dept.id,
+          id: dept.departmentIdept.id,
           name: dept.Deptname || dept.name,
           acronym: dept.Deptacronym || dept.acronym
         }));
@@ -93,7 +93,7 @@ const CBCSList = () => {
         setError('Failed to fetch CBCS data');
       }
     } catch (err) {
-      setError('Error fetching CBCS data: ' + (err.response?.data?.message || err.message));
+      setError('Error fetching CBCS data: ' + (err.response?.data?.messagerr.message));
     } finally {
       setLoading(false);
     }
@@ -112,7 +112,7 @@ const CBCSList = () => {
       cbcs.cbcs_id?.toString().includes(searchTerm);
 
     const matchesDepartment = filters.department === 'all' || 
-      cbcs.Deptid?.toString() === filters.department;
+      cbcs.departmentId?.toString() === filters.department;
 
     const matchesStatus = filters.status === 'all' || 
       cbcs.complete?.toLowerCase() === filters.status.toLowerCase();

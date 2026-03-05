@@ -32,7 +32,7 @@ const useManageStudentsData = (filters) => {
         ]);
         console.log('Filter Options:', { branches: branchesRes.branches, semesters: semestersRes.semesters, batches: batchesRes.batches });
         setBranches(branchesRes.branches || Object.keys(branchMap));
-        setSemesters(semestersRes.semesters || semesters);
+        setSemesters(semestersRes.semesters);
         setBatches(batchesRes.batches || []);
       } catch (err) {
         console.error('Error fetching filter options:', err);

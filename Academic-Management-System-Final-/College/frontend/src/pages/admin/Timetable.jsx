@@ -61,7 +61,7 @@ const Timetable = () => {
     axios.get(`${API_BASE_URL}/api/admin/timetable/departments`).then((res) => {
       setDepartments(
         res.data.data.map((d) => ({
-          departmentId: d.Deptid,
+          departmentId: d.departmentId,
           departmentCode: d.deptCode,
           departmentName: d.Deptname,
         })),
@@ -194,7 +194,7 @@ const Timetable = () => {
         dayOfWeek: selectedCell.day,
         periodNumber: selectedCell.periodNumber,
         semesterId: +selectedSem,
-        Deptid: +selectedDept,
+        departmentId: +selectedDept,
         // If regular, send courseId. If manual, we handle differently or send null.
         courseId: allocationMode === "select" ? +value : null,
         courseTitle: allocationMode === "manual" ? value : null,
@@ -220,7 +220,7 @@ const Timetable = () => {
         dayOfWeek: selectedCell.day,
         periodNumber: selectedCell.periodNumber,
         semesterId: +selectedSem,
-        Deptid: +selectedDept,
+        departmentId: +selectedDept,
         bucketId: +selectedBucketId,
       };
 
@@ -231,7 +231,7 @@ const Timetable = () => {
       alert("All courses from the bucket assigned successfully!");
     } catch (err) {
       console.error(err);
-      alert("Failed: " + (err.response?.data?.message || err.message));
+      alert("Failed: " + (err.response?.data?.message || err.message || "Unknown error"));
     }
   };
 
@@ -262,7 +262,7 @@ const Timetable = () => {
       console.error("Delete error:", err);
       alert(
         "Failed to remove courses: " +
-          (err.response?.data?.message || err.message),
+          (err.response?.data?.message || err.message || "Unknown error"),
       );
     }
   };
@@ -309,7 +309,7 @@ const Timetable = () => {
               // Single course (regular or manual)
               <>
                 <div className="font-semibold text-xs text-gray-900 truncate">
-                  {entries[0].courseTitle || entries[0].courseId}
+                  {entries[0].courseTitle || "Manual / Activity"}
                 </div>
                 <div className="text-xs text-gray-600 truncate">
                   {entries[0].courseCode || "Regular Course"}

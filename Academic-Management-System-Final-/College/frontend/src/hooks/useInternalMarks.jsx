@@ -177,7 +177,7 @@ const useInternalMarks = (courseCode, compositeSectionIds = '') => {
       MySwal.fire('Success', 'Course-wise CSV exported successfully', 'success');
     } catch (err) {
       console.error('Error exporting course-wise CSV:', err);
-      const errMsg = err.response?.data?.message || err.message || 'Failed to export course-wise CSV';
+      const errMsg = err.response?.data?.messagerr.message || 'Failed to export course-wise CSV';
       setError(errMsg);
       MySwal.fire('Error', errMsg, 'error');
     }

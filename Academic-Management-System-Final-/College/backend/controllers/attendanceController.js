@@ -1,6 +1,7 @@
 // controllers/staffAttendanceController.js
 import { Op } from 'sequelize';
 import db from '../models/index.js';
+import { sendAbsentAttendanceEmails } from '../services/attendanceNotificationService.js';
 
 const { 
   sequelize, 
@@ -380,6 +381,7 @@ export async function markAttendance(req, res, next) {
 
     const processed = [];
     const skipped = [];
+    const absentEntries = [];
 
     for (const att of attendances) {
       if (!att.rollnumber || !["P", "A", "OD"].includes(att.status)) {
@@ -450,9 +452,27 @@ export async function markAttendance(req, res, next) {
       }, { transaction: t });
 
       processed.push(att.rollnumber);
+      if (att.status === "A") {
+        absentEntries.push({
+          rollnumber: att.rollnumber,
+          status: att.status,
+          courseId: effectiveCourseId,
+          sectionId: resolvedSectionId,
+          periodNumber: Number(periodNumber),
+          date,
+        });
+      }
     }
 
     await t.commit();
+    sendAbsentAttendanceEmails({
+      absentEntries,
+      markedByName: user.userName || "Staff",
+      markedByEmail: user.userMail || "",
+    }).catch((emailErr) => {
+      console.error("Absent email notification failed:", emailErr.message);
+    });
+
     res.json({ status: "success", message: `Processed ${processed.length}, Skipped ${skipped.length}`, data: { processed, skipped } });
   } catch (err) {
     await t.rollback();

@@ -13,7 +13,7 @@ const Options = () => {
   // Extract useful display values with good fallbacks
   const displayTitle = course.title || course.courseTitle || 'Course Details';
   const displayCode = course.displayCode || course.courseCode || course.mainCourseCode || paramCourseId || 'Unknown Code';
-  const displaySemester = course.semester || course.semesterName || '';
+  const displaySemester = course.semesterName || '';
   const compositeSectionIds = course.compositeSectionIds || course.compositeSectionId || '';
 
   // For navigation - prefer composite if available, fallback to single courseId

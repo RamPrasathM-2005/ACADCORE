@@ -141,7 +141,7 @@ const AddBatchModal = ({
       setNewBatchForm({ numberOfBatches: 1 });
 
     } catch (err) {
-      const message = err.response?.data?.message || err.message || 'Failed to add batches';
+      const message = err.response?.data?.messagerr.message || 'Failed to add batches';
       toast.error(message);
     } finally {
       setIsSubmitting(false);

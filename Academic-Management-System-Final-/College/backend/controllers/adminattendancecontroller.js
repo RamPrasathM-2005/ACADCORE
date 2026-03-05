@@ -1,6 +1,7 @@
 // attendancecontroller.js
 import { Op } from 'sequelize';
 import db from '../models/index.js';
+import { sendAbsentAttendanceEmails } from '../services/attendanceNotificationService.js';
 
 const { 
   sequelize, 
@@ -452,6 +453,7 @@ export async function markAttendanceAdmin(req, res, next) {
 
     const processedStudents = [];
     const skippedStudents = [];
+    const absentEntries = [];
 
     for (const att of attendances) {
       if (!att.rollnumber || !["P", "A", "OD"].includes(att.status)) {
@@ -503,6 +505,16 @@ export async function markAttendanceAdmin(req, res, next) {
             updatedBy: "admin"
           }, { transaction: t });
 
+          if (att.status === "A") {
+            absentEntries.push({
+              rollnumber: att.rollnumber,
+              status: att.status,
+              courseId: resolvedCourseId,
+              sectionId: resolvedSectionId,
+              periodNumber: Number(slot.periodNumber),
+              date,
+            });
+          }
           upsertedCount += 1;
         }
 
@@ -604,11 +616,28 @@ export async function markAttendanceAdmin(req, res, next) {
           updatedBy: "admin"
         }, { transaction: t });
 
+        if (att.status === "A") {
+          absentEntries.push({
+            rollnumber: att.rollnumber,
+            status: att.status,
+            courseId: effectiveCourseId,
+            sectionId: resolvedSectionId,
+            periodNumber: Number(periodNumber),
+            date,
+          });
+        }
         processedStudents.push({ rollnumber: att.rollnumber, status: att.status });
       }
     }
 
     await t.commit();
+    sendAbsentAttendanceEmails({
+      absentEntries,
+      markedByName: adminUser.userName || "Admin",
+      markedByEmail: adminUser.userMail || "",
+    }).catch((emailErr) => {
+      console.error("Absent email notification failed:", emailErr.message);
+    });
 
     const skippedReasons = skippedStudents.reduce((acc, row) => {
       const key = row.reason || "Unknown";

@@ -43,11 +43,13 @@ const ManageRegulations = () => {
     }
   };
 
-  const fetchRegulations = async (deptId) => {
+  const fetchRegulations = async (departmentId) => {
     setLoading(true);
     try {
       const res = await api.get(`${API_BASE}/regulations`);
-      const filteredRegulations = res.data.data.filter(reg => reg.Deptid === parseInt(deptId));
+      const filteredRegulations = (res.data.data || []).filter(
+        (reg) => Number(reg.departmentId) === Number(departmentId)
+      );
       setRegulations(filteredRegulations);
     } catch (err) {
       const message = err.response?.data?.message || 'Failed to fetch regulations';
@@ -87,15 +89,15 @@ const ManageRegulations = () => {
   };
 
   const handleDeptChange = (e) => {
-    const deptId = e.target.value;
-    setSelectedDept(deptId);
+    const departmentId = e.target.value;
+    setSelectedDept(departmentId);
     setSelectedRegulation('');
     setSelectedVertical('');
     setAvailableCourses([]);
     setSelectedCourses([]);
     setError(null);
-    if (deptId) {
-      fetchRegulations(deptId);
+    if (departmentId) {
+      fetchRegulations(departmentId);
     } else {
       setRegulations([]);
     }
@@ -122,6 +124,12 @@ const ManageRegulations = () => {
       return;
     }
 
+    const departmentId = Number(selectedDept);
+    if (!Number.isInteger(departmentId) || departmentId <= 0) {
+      toast.error('Select a valid department');
+      return;
+    }
+
     const year = Number(newRegulationYear);
     if (!Number.isInteger(year) || year < 2000 || year > 2100) {
       toast.error('Enter a valid regulation year');
@@ -130,7 +138,7 @@ const ManageRegulations = () => {
 
     try {
       const res = await api.post(`${API_BASE}/regulations`, {
-        Deptid: Number(selectedDept),
+        departmentId: departmentId,
         regulationYear: year,
       });
 
@@ -417,7 +425,7 @@ const ManageRegulations = () => {
             console.warn('Backend skipped rows:', skipped);
           }
           toast.error(
-            'Failed to process Excel file: ' + (backendMessage || err.message || 'Unknown error'),
+            'Failed to process Excel file: ' + (backendMessagerr.message || 'Unknown error'),
             { toastId: 'import-error' }
           );
         } finally {
@@ -450,7 +458,7 @@ const ManageRegulations = () => {
   };
 
   const handleAllocateCourses = async () => {
-    if (!selectedVertical || selectedVertical === 'add') {
+    if (!selectedVertical === 'add') {
       toast.error('Please select a valid vertical', { toastId: 'invalid-vertical' });
       return;
     }
@@ -516,7 +524,7 @@ const ManageRegulations = () => {
                 >
                   <option value="">Select Department</option>
                   {departments.map(dept => (
-                    <option key={dept.Deptid} value={dept.Deptid}>
+                    <option key={dept.departmentId} value={dept.departmentId}>
                       {dept.Deptname} ({dept.deptCode})
                     </option>
                   ))}

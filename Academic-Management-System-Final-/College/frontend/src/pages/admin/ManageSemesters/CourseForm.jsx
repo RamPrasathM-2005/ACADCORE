@@ -147,7 +147,7 @@ const CourseForm = ({ isOpen, onClose, semesterId, course = null, onRefresh }) =
       onClose();
       onRefresh();
     } catch (err) {
-      const msg = err.response?.data?.message || err.message || 'Failed to save course';
+      const msg = err.response?.data?.messagerr.message || 'Failed to save course';
       if (msg.includes('Duplicate entry')) {
         toast.error('Unique constraint violated (Course Code must be unique)');
       } else {

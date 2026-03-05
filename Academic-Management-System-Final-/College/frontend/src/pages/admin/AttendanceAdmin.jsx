@@ -29,7 +29,7 @@ const CourseSlot = ({ courses, date, periodNumber, selectedCourse, onSelect }) =
   const [isOpen, setOpen] = useState(false);
   const buttonRef = useRef(null);
 
-  if (!courses || courses.length === 0) {
+  if (!courses.length === 0) {
     return <div className="flex h-full items-center justify-center text-slate-300">-</div>;
   }
 
@@ -148,7 +148,7 @@ export default function AdminAttendanceGenerator() {
         if (deptRes.data?.data) {
           setDepartments(
             deptRes.data.data.map((d) => ({
-              departmentId: d.Deptid,
+              departmentId: d.departmentId,
               departmentName: d.Deptname,
             }))
           );
@@ -238,7 +238,7 @@ export default function AdminAttendanceGenerator() {
           degree: selectedDegree,
           batch: batchData.batch,
           branch: batchData.branch,
-          Deptid: selectedDepartment,
+          departmentId: selectedDepartment,
           semesterId: selectedSemester,
         },
       });
@@ -263,7 +263,7 @@ export default function AdminAttendanceGenerator() {
         {
           params: {
             date,
-            Deptid: selectedDepartment,
+            departmentId: selectedDepartment,
             semesterId: selectedSemester,
             batch: batchData?.batch,
           },
@@ -304,7 +304,7 @@ export default function AdminAttendanceGenerator() {
         {
           date: selectedCourse.date,
           attendances,
-          Deptid: selectedDepartment,
+          departmentId: selectedDepartment,
           semesterId: selectedSemester,
         }
       );

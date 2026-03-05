@@ -214,7 +214,7 @@ const routes = [
       { path: 'nptel-selection', element: <NptelSelection /> },
       { path: "dashboard", element: <StudentDashboard /> },
       { path: "choose-course", element: <ChooseCourse /> },
-      { path: 'stu/:regno/:batchId/:deptId/:semesterId', element: <StudentCBCS /> },
+      { path: 'stu/:regno/:batchId/:departmentId/:semesterId', element: <StudentCBCS /> },
       { path: "*", element: <NotFound /> },
     ],
   },

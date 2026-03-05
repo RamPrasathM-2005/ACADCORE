@@ -8,7 +8,7 @@ const API_BASE_URL = "http://localhost:4000";
 axios.defaults.withCredentials = true;
 
 const PeriodCell = ({ date, periodNumber, courses, selectedSlot, onSelect }) => {
-  if (!courses || courses.length === 0) {
+  if (!courses.length === 0) {
     return <div className="flex h-full w-full items-center justify-center text-slate-300">-</div>;
   }
 
@@ -74,7 +74,7 @@ export default function DayAttendance() {
         if (deptRes.data?.data) {
           setDepartments(
             deptRes.data.data.map((d) => ({
-              departmentId: d.Deptid,
+              departmentId: d.departmentId,
               departmentName: d.Deptname,
             }))
           );
@@ -152,7 +152,7 @@ export default function DayAttendance() {
           degree: selectedDegree,
           batch: batchData.batch,
           branch: batchData.branch,
-          Deptid: selectedDepartment,
+          departmentId: selectedDepartment,
           semesterId: selectedSemester,
         },
       });
@@ -167,7 +167,7 @@ export default function DayAttendance() {
   };
 
   const handlePeriodSelect = async (courses, date, periodNumber) => {
-    if (!courses || courses.length === 0) return;
+    if (!courses.length === 0) return;
     if (!selectedDepartment || !selectedSemester) {
       toast.error("Please select department and semester");
       return;
@@ -183,7 +183,7 @@ export default function DayAttendance() {
         {
           params: {
             date,
-            Deptid: selectedDepartment,
+            departmentId: selectedDepartment,
             semesterId: selectedSemester,
           },
         }
@@ -231,7 +231,7 @@ export default function DayAttendance() {
           date: selectedSlot.date,
           attendances,
           fullDay: true,
-          Deptid: selectedDepartment,
+          departmentId: selectedDepartment,
           semesterId: selectedSemester,
         }
       );

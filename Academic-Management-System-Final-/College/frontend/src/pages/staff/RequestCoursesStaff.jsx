@@ -85,8 +85,8 @@ const RequestCoursesStaff = () => {
       const params = new URLSearchParams();
       
       // FIX: Ensure department filter is always applied using the correct user field
-      // Logic: Checks filters.dept -> user.departmentId (new DB) -> user.Deptid (old DB fallback)
-      const userDeptId = filters.dept || user?.departmentId || user?.Deptid || ''; 
+      // Logic: Checks filters.dept -> user.departmentId (new DB) -> user.departmentId (old DB fallback)
+      const userDeptId = filters.dept || user?.departmentId || ''; 
       
       params.append('dept', userDeptId);
 

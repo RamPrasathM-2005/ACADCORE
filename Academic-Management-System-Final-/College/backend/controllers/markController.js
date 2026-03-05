@@ -238,7 +238,19 @@ export const deleteTool = catchAsync(async (req, res) => {
 // 7. MARKS
 export const getStudentMarksForTool = catchAsync(async (req, res) => {
   const { toolId } = req.params;
-  const marks = await StudentCOTool.findAll({ where: { toolId }, include: [{ model: StudentDetails }] });
+  const rows = await StudentCOTool.findAll({
+    where: { toolId },
+    include: [{ model: StudentDetails }],
+    order: [['studentToolId', 'DESC']]
+  });
+  // If legacy duplicates exist, keep the latest row per student (highest studentToolId).
+  const seen = new Set();
+  const marks = [];
+  for (const row of rows) {
+    if (seen.has(row.regno)) continue;
+    seen.add(row.regno);
+    marks.push(row);
+  }
   res.json({ status: 'success', data: marks });
 });
 
@@ -249,12 +261,25 @@ export const saveStudentMarksForTool = catchAsync(async (req, res) => {
   const tool = await COTool.findByPk(toolId, { include: [ToolDetails, CourseOutcome] });
   const t = await sequelize.transaction();
   try {
+    const coTools = await COTool.findAll({ where: { coId: tool.coId }, include: [ToolDetails], transaction: t });
     for (const m of marks) {
-      await StudentCOTool.upsert({ regno: m.regno, toolId, marksObtained: m.marksObtained }, { transaction: t });
-      const coTools = await COTool.findAll({ where: { coId: tool.coId }, include: [ToolDetails], transaction: t });
+      const existing = await StudentCOTool.findOne({
+        where: { regno: m.regno, toolId },
+        order: [['studentToolId', 'DESC']],
+        transaction: t
+      });
+      if (existing) {
+        await existing.update({ marksObtained: m.marksObtained }, { transaction: t });
+      } else {
+        await StudentCOTool.create({ regno: m.regno, toolId, marksObtained: m.marksObtained }, { transaction: t });
+      }
       let consolidated = 0;
       for (const ct of coTools) {
-        const sm = await StudentCOTool.findOne({ where: { regno: m.regno, toolId: ct.toolId }, transaction: t });
+        const sm = await StudentCOTool.findOne({
+          where: { regno: m.regno, toolId: ct.toolId },
+          order: [['studentToolId', 'DESC']],
+          transaction: t
+        });
         consolidated += ((sm?.marksObtained || 0) / (ct.ToolDetail?.maxMarks || 100)) * (ct.weightage / 100);
       }
       await StudentCoMarks.upsert({ regno: m.regno, coId: tool.coId, consolidatedMark: (consolidated * 100).toFixed(2), updatedBy: staffNumber }, { transaction: t });
@@ -274,15 +299,28 @@ export const importMarksForTool = catchAsync(async (req, res) => {
   const tool = await COTool.findByPk(toolId, { include: [ToolDetails, CourseOutcome] });
   const t = await sequelize.transaction();
   try {
+    const coTools = await COTool.findAll({ where: { coId: tool.coId }, include: [ToolDetails], transaction: t });
     for (const row of results) {
       const regno = row.regNo || row.regno;
-      const marks = parseFloat(row.marks);
+      const marks = parseFloat(row.marksObtained ?? row.marks);
       if (!regno || isNaN(marks)) continue;
-      await StudentCOTool.upsert({ regno, toolId, marksObtained: marks }, { transaction: t });
-      const coTools = await COTool.findAll({ where: { coId: tool.coId }, include: [ToolDetails], transaction: t });
+      const existing = await StudentCOTool.findOne({
+        where: { regno, toolId },
+        order: [['studentToolId', 'DESC']],
+        transaction: t
+      });
+      if (existing) {
+        await existing.update({ marksObtained: marks }, { transaction: t });
+      } else {
+        await StudentCOTool.create({ regno, toolId, marksObtained: marks }, { transaction: t });
+      }
       let con = 0;
       for (const ct of coTools) {
-        const sm = await StudentCOTool.findOne({ where: { regno, toolId: ct.toolId }, transaction: t });
+        const sm = await StudentCOTool.findOne({
+          where: { regno, toolId: ct.toolId },
+          order: [['studentToolId', 'DESC']],
+          transaction: t
+        });
         con += ((sm?.marksObtained || 0) / (ct.ToolDetail?.maxMarks || 100)) * (ct.weightage / 100);
       }
       await StudentCoMarks.upsert({ regno, coId: tool.coId, consolidatedMark: (con * 100).toFixed(2), updatedBy: staffNumber }, { transaction: t });

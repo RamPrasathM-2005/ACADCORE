@@ -165,8 +165,8 @@ function AddOrEditUser({
             >
               <option value="">Select Department</option>
               {departmentsForCompany.map((dept) => (
-                <option key={dept.departmentId || dept.Deptid} value={dept.departmentId || dept.Deptid}>
-                  {dept.departmentName || dept.Deptname || `Dept ${dept.Deptid || dept.departmentId}`}
+                <option key={dept.departmentId} value={dept.departmentId}>
+                  {dept.departmentName || dept.Deptname || `Dept ${dept.departmentId}`}
                   {(dept.departmentAcr || dept.Deptacronym) && ` (${dept.departmentAcr || dept.Deptacronym})`}
                 </option>
               ))}
@@ -452,18 +452,18 @@ export default function AddUser({ selectedCompanyId, selectedCompanyName }) {
 
       // For bulk → we still need all departments (fallback)
       const allDeptsRes = await API.get("/departments");
-      const allDepartments = allDeptsRes.data.data || allDeptsRes.data || [];
+      const allDepartments = allDeptsRes.data.datallDeptsRes.data || [];
 
       const departmentIdByName = new Map(
         allDepartments.map((d) => [
           `${String(d.companyId)}::${String(d.departmentName || d.Deptname || "").trim().toLowerCase()}`,
-          String(d.departmentId || d.Deptid),
+          String(d.departmentId),
         ])
       );
       const departmentIdByAcr = new Map(
         allDepartments.map((d) => [
           `${String(d.companyId)}::${String(d.departmentAcr || d.Deptacronym || "").trim().toLowerCase()}`,
-          String(d.departmentId || d.Deptid),
+          String(d.departmentId),
         ])
       );
 
@@ -673,8 +673,8 @@ export default function AddUser({ selectedCompanyId, selectedCompanyName }) {
                     </td>
                   )}
                   <td className="py-2 px-4">
-                    {departmentsForCompany.find((d) => d.departmentId === u.departmentId || d.Deptid === u.departmentId)?.departmentAcr ||
-                     departmentsForCompany.find((d) => d.departmentId === u.departmentId || d.Deptid === u.departmentId)?.Deptacronym ||
+                    {departmentsForCompany.find((d) => d.departmentId === u.departmentId)?.departmentAcr ||
+                     departmentsForCompany.find((d) => d.departmentId === u.departmentId)?.Deptacronym ||
                      "-"}
                   </td>
                   <td className="py-2 px-4 flex gap-2">

@@ -51,7 +51,7 @@ export default function AttendanceReport() {
 
   useEffect(() => {
     const loadDepartments = async () => {
-      if (!filters.batch || filters.batch === "Select Batch") {
+      if (!filters.batch === "Select Batch") {
         setDepartments([]);
         return;
       }
@@ -74,7 +74,7 @@ export default function AttendanceReport() {
 
   useEffect(() => {
     const loadSemesters = async () => {
-      if (!filters.batch || !filters.department || filters.department === "Select Department") {
+      if (!filters.batch || !filters.department === "Select Department") {
         setSemesters([]);
         return;
       }
@@ -139,10 +139,8 @@ export default function AttendanceReport() {
 
   const handleBlackBoxReport = async () => {
     if (
-      !filters.batch ||
-      filters.batch === "Select Batch" ||
-      !filters.semester ||
-      filters.semester === "Select Semester" ||
+      !filters.batch === "Select Batch" ||
+      !filters.semester === "Select Semester" ||
       !filters.fromDate ||
       !filters.toDate
     ) {
@@ -200,7 +198,7 @@ export default function AttendanceReport() {
                 name="batch"
                 value={filters.batch}
                 onChange={handleInputChange}
-                disabled={!filters.degree || filters.degree === "Select Degree"}
+                disabled={!filters.degree === "Select Degree"}
                 className="field-input"
               >
                 <option value="Select Batch">Select Batch</option>
@@ -217,7 +215,7 @@ export default function AttendanceReport() {
                 name="department"
                 value={filters.department}
                 onChange={handleInputChange}
-                disabled={!filters.batch || filters.batch === "Select Batch"}
+                disabled={!filters.batch === "Select Batch"}
                 className="field-input"
               >
                 <option value="Select Department">Select Department</option>
@@ -234,7 +232,7 @@ export default function AttendanceReport() {
                 name="semester"
                 value={filters.semester}
                 onChange={handleInputChange}
-                disabled={!filters.department || filters.department === "Select Department"}
+                disabled={!filters.department === "Select Department"}
                 className="field-input"
               >
                 <option value="Select Semester">Select Semester</option>

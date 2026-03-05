@@ -19,7 +19,7 @@ const useManageStaffFilters = (staffList, courses, selectedStaff) => {
         );
         return (
           (!dept || staff.departmentName.toLowerCase() === dept.toLowerCase()) &&
-          (!semester && !batch || hasMatchingCourse) &&
+          ((!semester && !batch) || hasMatchingCourse) &&
           matchesName
         );
       })
