@@ -655,7 +655,7 @@ export const getStudentsForGrade = catchAsync(async (req, res) => {
       {
         model: Department,
         as: 'department',
-        where: { Deptacronym: branch },
+        where: { departmentAcr: branch },
         attributes: []
       }
     ],

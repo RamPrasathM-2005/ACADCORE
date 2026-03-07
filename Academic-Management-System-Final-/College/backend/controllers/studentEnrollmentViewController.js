@@ -50,7 +50,7 @@ export const getStudentEnrollments = catchAsync(async (req, res) => {
           { 
             model: Department, 
             as: 'department', 
-            where: dept ? { Deptacronym: dept } : {}, 
+            where: dept ? { departmentAcr: dept } : {}, 
             attributes: [] 
           }
         ]

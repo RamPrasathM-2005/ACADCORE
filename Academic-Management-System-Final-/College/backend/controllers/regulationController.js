@@ -14,12 +14,12 @@ const {
 
 // Included branchMap as requested
 export const branchMap = {
-  CSE: { departmentId: 1, Deptname: "Computer Science Engineering" },
-  IT: { departmentId: 4, Deptname: "Information Technology" },
-  ECE: { departmentId: 2, Deptname: "Electronics & Communication" },
-  MECH: { departmentId: 3, Deptname: "Mechanical Engineering" },
-  CIVIL: { departmentId: 7, Deptname: "Civil Engineering" },
-  EEE: { departmentId: 5, Deptname: "Electrical Engineering" },
+  CSE: { departmentId: 1, departmentName: "Computer Science Engineering" },
+  IT: { departmentId: 4, departmentName: "Information Technology" },
+  ECE: { departmentId: 2, departmentName: "Electronics & Communication" },
+  MECH: { departmentId: 3, departmentName: "Mechanical Engineering" },
+  CIVIL: { departmentId: 7, departmentName: "Civil Engineering" },
+  EEE: { departmentId: 5, departmentName: "Electrical Engineering" },
 };
 
 const determineCourseType = (lectureHours, tutorialHours, practicalHours, experientialHours) => {
@@ -37,7 +37,7 @@ export const getAllRegulations = async (req, res) => {
       where: { isActive: 'YES' },
       include: [{
         model: Department,
-        attributes: ['Deptacronym']
+        attributes: ['departmentAcr']
       }]
     });
     res.json({ status: 'success', data: rows });
@@ -254,10 +254,10 @@ export const allocateRegulationToBatch = async (req, res) => {
     const branchCode = String(batch.branch || '').trim().toUpperCase();
     const deptInfo = await Department.findOne({
       where: sequelize.where(
-        sequelize.fn('UPPER', sequelize.col('Deptacronym')),
+        sequelize.fn('UPPER', sequelize.col('departmentAcr')),
         branchCode
       ),
-      attributes: ['departmentId', 'Deptacronym'],
+      attributes: ['departmentId', 'departmentAcr'],
       transaction
     });
     if (!deptInfo) throw new Error(`Invalid branch: ${batch.branch}`);

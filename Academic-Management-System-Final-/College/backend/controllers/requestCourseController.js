@@ -63,12 +63,12 @@ export const getAvailableCoursesForStaff = catchAsync(async (req, res) => {
   }
 
   const deptRecord = await Department.findByPk(deptId, {
-    attributes: ['departmentId', 'Deptacronym']
+    attributes: ['departmentId', 'departmentAcr']
   });
   if (!deptRecord) {
     return res.status(400).json({ status: 'error', message: 'Invalid department' });
   }
-  const branchFilter = branch || deptRecord.Deptacronym;
+  const branchFilter = branch || deptRecord.departmentAcr;
 
   const courses = await Course.findAll({
     where: {
@@ -117,12 +117,12 @@ export const getAllCoursesForStaff = catchAsync(async (req, res) => {
   }
 
   const deptRecord = await Department.findByPk(deptId, {
-    attributes: ['departmentId', 'Deptacronym']
+    attributes: ['departmentId', 'departmentAcr']
   });
   if (!deptRecord) {
     return res.status(400).json({ status: 'error', message: 'Invalid department' });
   }
-  const branchFilter = branch || deptRecord.Deptacronym;
+  const branchFilter = branch || deptRecord.departmentAcr;
 
   const courses = await Course.findAll({
     attributes: {

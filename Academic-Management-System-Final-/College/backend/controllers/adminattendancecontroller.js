@@ -100,7 +100,7 @@ export async function getTimetableAdmin(req, res, next) {
         {
           model: Department,
           required: true,
-          attributes: ['Deptacronym']
+          attributes: ['departmentAcr']
         },
         {
           model: Semester,
@@ -148,7 +148,7 @@ export async function getTimetableAdmin(req, res, next) {
             sectionName: p.Section?.sectionName,
             semesterId: p.semesterId,
             departmentId: p.departmentId,
-            departmentCode: p.department?.Deptacronym
+            departmentCode: p.department?.departmentAcr
           }));
       }
       timetable[date] = periodsForDay;

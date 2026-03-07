@@ -437,7 +437,7 @@ export const getMyCourses = catchAsync(async (req, res) => {
 // 10. ADMIN FUNCTIONS
 export const getConsolidatedMarks = catchAsync(async (req, res) => {
   const { batch, dept, sem } = req.query;
-  const d = await Department.findOne({ where: { Deptacronym: dept } });
+  const d = await Department.findOne({ where: { departmentAcr: dept } });
   const b = await Batch.findOne({ where: { batch, branch: dept } });
   const s = await Semester.findOne({ where: { batchId: b.batchId, semesterNumber: sem } });
   const students = await StudentDetails.findAll({ where: { departmentId: d.departmentId, batch, semester: sem } });

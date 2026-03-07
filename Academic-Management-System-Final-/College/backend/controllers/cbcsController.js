@@ -112,8 +112,8 @@ export const createCbcs = async (req, res) => {
 
     // Batch.branch must correspond to the selected department.
     const batchBranch = String(batch.branch || '').trim().toUpperCase();
-    const deptAcr = String(dept.Deptacronym || '').trim().toUpperCase();
-    const deptName = String(dept.Deptname || '').trim().toUpperCase();
+    const deptAcr = String(dept.departmentAcr || '').trim().toUpperCase();
+    const deptName = String(dept.departmentName || '').trim().toUpperCase();
     if (batchBranch !== deptAcr && batchBranch !== deptName) {
       throw new Error(`Batch ${batchId} does not belong to department ${departmentId}`);
     }
@@ -176,7 +176,7 @@ export const getAllCbcs = async (req, res) => {
   try {
     const rows = await CBCS.findAll({
       include: [
-        { model: Department, attributes: ['Deptname'] },
+        { model: Department, attributes: ['departmentName'] },
         { model: Batch, attributes: ['batch'] },
         { model: Semester, attributes: ['semesterNumber'] },
         { model: CBCSSubject, attributes: ['courseCode', 'courseTitle'] }
@@ -198,7 +198,7 @@ export const getAllCbcs = async (req, res) => {
         updatedBy: plain.updatedBy,
         createdDate: plain.createdAt || plain.createdDate,
         updatedDate: plain.updatedAt || plain.updatedDate,
-        DeptName: plain.Department?.Deptname || 'N/A',
+        DeptName: plain.Department?.departmentName || 'N/A',
         batch: plain.Batch?.batch || 'N/A',
         semesterNumber: plain.Semester?.semesterNumber ?? null,
         courseNames: (plain.CBCSSubjects || []).map((s) => s.courseTitle).filter(Boolean),

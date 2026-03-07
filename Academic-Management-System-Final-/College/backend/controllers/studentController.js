@@ -87,7 +87,7 @@ export const getAllStudents = catchAsync(async (req, res) => {
     include: [{
       model: Department,
       as: 'department',
-      attributes: ['Deptname', 'Deptacronym']
+      attributes: ['departmentName', 'departmentAcr']
     }],
     order: [['registerNumber', 'ASC']]
   });
@@ -252,7 +252,7 @@ export const getStudentByRollNumber = catchAsync(async (req, res) => {
       { 
         model: Department, 
         as: 'department', 
-        attributes: ['Deptname', 'Deptacronym'] 
+        attributes: ['departmentName', 'departmentAcr'] 
       },
       {
         model: User,
@@ -338,14 +338,14 @@ export const getSemesterUpgradeBatches = catchAsync(async (req, res) => {
 
   const departments = await Department.findAll({
     where: { status: 'Active' },
-    attributes: ['departmentId', 'Deptname', 'Deptacronym'],
+    attributes: ['departmentId', 'departmentName', 'departmentAcr'],
     raw: true,
   });
 
   const departmentMap = new Map();
   for (const d of departments) {
-    if (d.Deptacronym) departmentMap.set(String(d.Deptacronym).trim().toUpperCase(), d);
-    if (d.Deptname) departmentMap.set(String(d.Deptname).trim().toUpperCase(), d);
+    if (d.departmentAcr) departmentMap.set(String(d.departmentAcr).trim().toUpperCase(), d);
+    if (d.departmentName) departmentMap.set(String(d.departmentName).trim().toUpperCase(), d);
   }
 
   const batchWhere = { isActive: 'YES' };
@@ -373,8 +373,8 @@ export const getSemesterUpgradeBatches = catchAsync(async (req, res) => {
       return {
         ...r,
         departmentId: dept?.departmentId || null,
-        departmentName: dept?.Deptname || null,
-        departmentAcronym: dept?.Deptacronym || null,
+        departmentName: dept?.departmentName || null,
+        departmentAcronym: dept?.departmentAcr || null,
       };
     })
     .filter((r) => r.departmentId !== null);

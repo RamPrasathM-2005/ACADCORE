@@ -77,12 +77,12 @@ export const getDepartments = async (req, res) => {
         if (!batch) return [];
         return Department.findAll({
           where: {
-            Deptacronym: batch.branch
+            departmentAcr: batch.branch
           },
           attributes: [
             'departmentId',
-            ['Deptname', 'departmentName'],
-            ['Deptacronym', 'departmentCode']
+            ['departmentName', 'departmentName'],
+            ['departmentAcr', 'departmentCode']
           ]
         });
       },

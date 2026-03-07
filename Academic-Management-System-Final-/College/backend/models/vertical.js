@@ -13,6 +13,6 @@ export default  (sequelize, DataTypes) => {
     Vertical.belongsTo(models.Regulation, { foreignKey: 'regulationId' });
     Vertical.hasMany(models.VerticalCourse, { foreignKey: 'verticalId' });
   };
-
+  
   return Vertical;
 };

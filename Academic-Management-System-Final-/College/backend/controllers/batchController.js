@@ -192,7 +192,7 @@ export const getOrCreateBatch = async (departmentId, regulationYear, createdBy, 
     let batch = await Batch.findOne({
       where: { 
         batch: batchName, 
-        branch: dept.Deptacronym, 
+        branch: dept.departmentAcr, 
         isActive: 'YES' 
       },
       transaction: t
@@ -209,7 +209,7 @@ export const getOrCreateBatch = async (departmentId, regulationYear, createdBy, 
 
     batch = await Batch.create({
       degree: 'B.Tech',
-      branch: dept.Deptacronym,
+      branch: dept.departmentAcr,
       batch: batchName,
       batchYears: batchYears,
       isActive: 'YES',

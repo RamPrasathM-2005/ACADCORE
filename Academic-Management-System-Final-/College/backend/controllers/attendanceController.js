@@ -102,7 +102,7 @@ export async function getTimetable(req, res, next) {
       include: [
         { model: Course, required: true, where: { isActive: 'YES' } },
         { model: Section, required: false },
-        { model: Department, attributes: ['Deptacronym'] },
+        { model: Department, attributes: ['departmentAcr'] },
         { model: Semester, required: true }
       ],
       order: [
@@ -128,7 +128,7 @@ export async function getTimetable(req, res, next) {
           courseTitle: p.Course.courseTitle,
           sectionName: p.Section?.sectionName,
           semesterId: p.semesterId,
-          departmentCode: p.department?.Deptacronym,
+          departmentCode: p.department?.departmentAcr,
           isStaffCourse: true
         })) : [];
     });

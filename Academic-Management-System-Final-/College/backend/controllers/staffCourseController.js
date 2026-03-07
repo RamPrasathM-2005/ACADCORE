@@ -34,7 +34,7 @@ export const getUsers = catchAsync(async (req, res) => {
       { 
         model: Department, 
         as: 'department', 
-        attributes: ['Deptname', 'departmentId'] 
+        attributes: ['departmentName', 'departmentId'] 
       },
       // Try to get Employee details for better names if available
       {
@@ -91,7 +91,7 @@ export const getUsers = catchAsync(async (req, res) => {
       name: displayName || "Unknown",
       email: u.userMail || "",
       departmentId: u.departmentId,
-      departmentName: u.department?.Deptname || "Unknown",
+      departmentName: u.department?.departmentName || "Unknown",
       allocatedCourses: userAllocations
     };
   });
@@ -220,7 +220,7 @@ export const getStaffAllocationsByCourse = catchAsync(async (req, res) => {
       { model: User, attributes: ['userName', 'userNumber'] },
       { model: Course, attributes: ['courseCode', 'courseTitle'] },
       { model: Section, attributes: ['sectionName'] },
-      { model: Department, as: 'department', attributes: ['Deptname', 'Deptacronym'] }
+      { model: Department, as: 'department', attributes: ['departmentName', 'departmentAcr'] }
     ]
   });
 
@@ -231,7 +231,7 @@ export const getStaffAllocationsByCourse = catchAsync(async (req, res) => {
     courseCode: item.Course?.courseCode,
     // CHANGE 'section' TO 'sectionName'
     sectionName: item.Section?.sectionName, 
-    department: item.department?.Deptacronym || 'N/A'
+    department: item.department?.departmentAcr || 'N/A'
   }));
 
   res.status(200).json({ status: "success", data: formatted });

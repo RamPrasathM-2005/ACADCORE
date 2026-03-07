@@ -8,6 +8,19 @@ const Department = db.Department || db.Department;
 const { Company } = db;
 const markCache = (res) => (status) => res.set("X-Cache", status);
 
+const serializeDepartment = (department) => {
+  const plain = department?.toJSON ? department.toJSON() : department;
+  if (!plain) return plain;
+  return {
+    ...plain,
+    departmentName: plain.departmentName,
+    departmentAcr: plain.departmentAcr,
+    Deptname: plain.departmentName,
+    Deptacronym: plain.departmentAcr,
+    deptCode: plain.departmentAcr,
+  };
+};
+
 /**
  * Helper: Normalize status string
  */
@@ -42,7 +55,7 @@ export const getDepartments = async (req, res) => {
       key,
       () =>
         Department.findAll({
-          attributes: ["departmentId", "Deptname", "Deptacronym"],
+          attributes: ["departmentId", "departmentName", "departmentAcr"],
           where: { status: "Active" },
         }),
       { ttlSeconds: ttl.medium, onStatus: markCache(res) }
@@ -50,7 +63,7 @@ export const getDepartments = async (req, res) => {
 
     res.status(200).json({
       status: 'success',
-      data: rows,
+      data: rows.map(serializeDepartment),
     });
   } catch (error) {
     console.error('Error fetching departments:', error);
@@ -72,7 +85,7 @@ export const getAllDepartments = async (req, res) => {
       () =>
         Department.findAll({
           where,
-          attributes: ["departmentId", "companyId", "Deptname", "Deptacronym"],
+          attributes: ["departmentId", "companyId", "departmentName", "departmentAcr", "status"],
           include: [
             {
               model: Company,
@@ -83,7 +96,7 @@ export const getAllDepartments = async (req, res) => {
         }),
       { ttlSeconds: ttl.medium, onStatus: markCache(res) }
     );
-    res.json(departments);
+    res.json(departments.map(serializeDepartment));
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch departments', details: error.message });
   }
@@ -105,7 +118,7 @@ export const getDepartmentById = async (req, res) => {
     );
 
     if (!department) return res.status(404).json({ error: 'Department not found' });
-    res.status(200).json(department);
+    res.status(200).json(serializeDepartment(department));
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -118,12 +131,9 @@ export const getDepartmentById = async (req, res) => {
 export const createDepartment = async (req, res) => {
   try {
     const payload = {
-      // Map JSON "departmentId" to DB "departmentId"
-      departmentId: req.body.departmentId,      
-      // Map JSON "departmentName" to DB "Deptname"
-      Deptname: req.body.departmentName,  
-      // Map JSON "departmentAcr" to DB "Deptacronym"
-      Deptacronym: req.body.departmentAcr,
+      departmentId: req.body.departmentId,
+      departmentName: req.body.departmentName,
+      departmentAcr: req.body.departmentAcr,
       companyId: req.body.companyId,
       status: normalizeStatus(req.body?.status),
       createdBy: req.body.createdBy,
@@ -131,7 +141,7 @@ export const createDepartment = async (req, res) => {
     
     const department = await Department.create(payload);
     await invalidateCachePrefixes(["departments", "attendanceReports", "filters"]);
-    res.status(201).json(department);
+    res.status(201).json(serializeDepartment(department));
   } catch (error) {
     const statusCode = error.name?.startsWith('Sequelize') ? 400 : 500;
     res.status(statusCode).json({ error: formatSequelizeError(error) });
@@ -144,8 +154,8 @@ export const createDepartment = async (req, res) => {
 export const updateDepartment = async (req, res) => {
   try {
     const payload = {
-      ...(req.body.departmentName ? { Deptname: req.body.departmentName } : {}),
-      ...(req.body.departmentAcr ? { Deptacronym: req.body.departmentAcr } : {}),
+      ...(req.body.departmentName ? { departmentName: req.body.departmentName } : {}),
+      ...(req.body.departmentAcr ? { departmentAcr: req.body.departmentAcr } : {}),
       ...(req.body.companyId ? { companyId: req.body.companyId } : {}),
       ...(req.body.status ? { status: normalizeStatus(req.body.status) } : {}),
       updatedBy: req.body.updatedBy
@@ -161,7 +171,7 @@ export const updateDepartment = async (req, res) => {
 
     const updatedDepartment = await Department.findByPk(req.params.id);
     await invalidateCachePrefixes(["departments", "attendanceReports", "filters"]);
-    res.status(200).json(updatedDepartment);
+    res.status(200).json(serializeDepartment(updatedDepartment));
   } catch (error) {
     const statusCode = error.name?.startsWith('Sequelize') ? 400 : 500;
     res.status(statusCode).json({ error: formatSequelizeError(error) });

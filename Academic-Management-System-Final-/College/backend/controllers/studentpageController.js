@@ -61,15 +61,15 @@ export const getStudentAcademicIds = catchAsync(async (req, res) => {
       const profile = student.studentProfile;
 
       const dept = profile.departmentId
-        ? await Department.findByPk(profile.departmentId, { attributes: ['Deptacronym', 'Deptname'] })
+        ? await Department.findByPk(profile.departmentId, { attributes: ['departmentAcr', 'departmentName'] })
         : null;
 
       const batchWhere = {
         batch: profile.batch,
         isActive: 'YES',
       };
-      if (dept?.Deptacronym) {
-        batchWhere.branch = dept.Deptacronym;
+      if (dept?.departmentAcr) {
+        batchWhere.branch = dept.departmentAcr;
       }
 
       const batchRecord = await Batch.findOne({ where: batchWhere });
@@ -78,7 +78,7 @@ export const getStudentAcademicIds = catchAsync(async (req, res) => {
           statusCode: 404,
           body: {
             status: "failure",
-            message: `No active Batch mapping for batch ${profile.batch} and department ${dept?.Deptacronym || profile.departmentId}`
+            message: `No active Batch mapping for batch ${profile.batch} and department ${dept?.departmentAcr || profile.departmentId}`
           }
         };
       }
@@ -154,7 +154,7 @@ export const getOecPecProgress = catchAsync(async (req, res) => {
   const batch = await Batch.findOne({ 
     where: { 
       batch: student.batch, 
-      branch: student.department?.Deptacronym || '',  // safe chaining
+      branch: student.department?.departmentAcr || '',
       isActive: 'YES' 
     } 
   });
@@ -312,10 +312,10 @@ export const getElectiveBuckets = catchAsync(async (req, res) => {
   let regulationId = user.studentProfile.regulationId || null;
   if (!regulationId) {
     const dept = user.studentProfile.departmentId
-      ? await Department.findByPk(user.studentProfile.departmentId, { attributes: ["Deptacronym"] })
+      ? await Department.findByPk(user.studentProfile.departmentId, { attributes: ["departmentAcr"] })
       : null;
     const batchWhere = { batch: user.studentProfile.batch, isActive: "YES" };
-    if (dept?.Deptacronym) batchWhere.branch = dept.Deptacronym;
+    if (dept?.departmentAcr) batchWhere.branch = dept.departmentAcr;
     const batchRecord = await Batch.findOne({
       where: batchWhere,
       attributes: ["regulationId"],
@@ -667,11 +667,11 @@ export const getSemesters = catchAsync(async (req, res) => {
 
       const profile = user.studentProfile;
       const dept = profile.departmentId
-        ? await Department.findByPk(profile.departmentId, { attributes: ['Deptacronym'] })
+        ? await Department.findByPk(profile.departmentId, { attributes: ['departmentAcr'] })
         : null;
 
       const batchWhere = { batch: profile.batch, isActive: 'YES' };
-      if (dept?.Deptacronym) batchWhere.branch = dept.Deptacronym;
+      if (dept?.departmentAcr) batchWhere.branch = dept.departmentAcr;
 
       const batches = await Batch.findAll({ where: batchWhere, attributes: ['batchId'] });
 
@@ -681,7 +681,7 @@ export const getSemesters = catchAsync(async (req, res) => {
           statusCode: 404,
           body: {
             status: "failure",
-            message: `No active Batch mapping for batch ${profile.batch} and department ${dept?.Deptacronym || profile.departmentId}`
+            message: `No active Batch mapping for batch ${profile.batch} and department ${dept?.departmentAcr || profile.departmentId}`
           }
         };
       }

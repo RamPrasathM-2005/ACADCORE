@@ -411,7 +411,7 @@ export const getElectiveReselectionRequestsForAdmin = catchAsync(async (req, res
 
   const students = await StudentDetails.findAll({
     include: [
-      { model: Department, as: "department", attributes: ["Deptname", "Deptacronym"] },
+      { model: Department, as: "department", attributes: ["departmentName", "departmentAcr"] },
       { model: User, as: "user", attributes: ["userId", "userName", "userMail"] }
     ],
     attributes: ["studentId", "studentName", "registerNumber", "semester", "batch", "messages"]
@@ -437,8 +437,8 @@ export const getElectiveReselectionRequestsForAdmin = catchAsync(async (req, res
           studentName: s.studentName,
           batch: s.batch,
           semester: s.semester,
-          department: s.department?.Deptname || null,
-          departmentAcronym: s.department?.Deptacronym || null,
+          department: s.department?.departmentName || null,
+          departmentAcronym: s.department?.departmentAcr || null,
           email: s.user?.userMail || null
         }
       });

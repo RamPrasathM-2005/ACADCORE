@@ -32,8 +32,8 @@ export const searchStudents = catchAsync(async (req, res) => {
       {
         model: Department,
         as: 'department',
-        where: branch ? { Deptacronym: branch } : {},
-        attributes: ['Deptacronym']
+        where: branch ? { departmentAcr: branch } : {},
+        attributes: ['departmentAcr']
       },
       {
         model: StudentCourse,

@@ -83,12 +83,20 @@ async function findStaffConflictForSlot({
 
 export const getAllTimetableDepartments = catchAsync(async (req, res) => {
   const departments = await Department.findAll({
-    attributes: ['departmentId', ['Deptacronym', 'deptCode'], 'Deptname']
+    attributes: ['departmentId', 'departmentName', 'departmentAcr']
   });
 
   res.status(200).json({
     status: 'success',
-    data: departments || [],
+    data: (departments || []).map((dept) => {
+      const plain = dept.toJSON();
+      return {
+        ...plain,
+        Deptname: plain.departmentName,
+        Deptacronym: plain.departmentAcr,
+        deptCode: plain.departmentAcr,
+      };
+    }),
   });
 });
 

@@ -27,7 +27,7 @@ export const getStudentCourseMatrix = catchAsync(async (req, res) => {
   const batchValue = String(batch);
 
   const deptRecord = await Department.findByPk(deptId, {
-    attributes: ["departmentId", "Deptacronym", "Deptname"],
+    attributes: ["departmentId", "departmentAcr", "departmentName"],
   });
 
   if (!deptRecord) {
@@ -49,7 +49,7 @@ export const getStudentCourseMatrix = catchAsync(async (req, res) => {
             model: Batch,
             required: true,
             where: {
-              branch: deptRecord.Deptacronym,
+              branch: deptRecord.departmentAcr,
               batch: batchValue,
             },
             attributes: [],

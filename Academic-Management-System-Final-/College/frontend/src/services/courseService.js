@@ -89,9 +89,11 @@ export const getDepartments = async () => {
   if (response.data.status === 'success') {
     return response.data.data.map(dept => ({
       departmentId: dept.departmentId,
-      departmentId: dept.departmentId,
-      deptCode: dept.Deptacronym,
-      Deptname: dept.Deptname,
+      departmentName: dept.departmentName || dept.Deptname,
+      departmentAcr: dept.departmentAcr || dept.Deptacronym,
+      deptCode: dept.departmentAcr || dept.Deptacronym,
+      Deptname: dept.departmentName || dept.Deptname,
+      Deptacronym: dept.departmentAcr || dept.Deptacronym,
     }));
   } else {
     throw new Error(response.data.message || 'Failed to fetch departments');
